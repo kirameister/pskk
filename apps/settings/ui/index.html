@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PSKK Settings</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="eyebrow">PSKK</p>
+          <h1>Settings</h1>
+        </div>
+        <nav class="panel-nav">
+          <button class="nav-item active" data-panel="general">General</button>
+          <button class="nav-item" data-panel="dictionaries">Dictionaries</button>
+          <button class="nav-item" data-panel="murenso">Murenso</button>
+          <button class="nav-item" data-panel="raw">Raw JSON</button>
+        </nav>
+        <div class="sidebar-note">
+          <p id="status">Loading settings state…</p>
+        </div>
+      </aside>
+
+      <main class="content">
+        <section class="panel active" id="panel-general">
+          <div class="section-header">
+            <h2>General</h2>
+            <p>Edit the main configuration values that already live in `config.json`.</p>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              <span>Input layout</span>
+              <select id="layout"></select>
+            </label>
+
+            <label>
+              <span>Kanchoku layout</span>
+              <select id="kanchoku_layout"></select>
+            </label>
+
+            <label class="checkbox">
+              <input type="checkbox" id="show_annotations" />
+              <span>Show candidate annotations</span>
+            </label>
+
+            <label>
+              <span>Candidate window size</span>
+              <input type="number" id="candidate_window_size" min="1" step="1" />
+            </label>
+
+            <label>
+              <span>Preedit foreground color</span>
+              <input type="text" id="preedit_foreground_color" placeholder="000000" />
+            </label>
+
+            <label>
+              <span>Preedit background color</span>
+              <input type="text" id="preedit_background_color" placeholder="d1eaff" />
+            </label>
+
+            <label class="checkbox">
+              <input type="checkbox" id="use_ibus_hint_colors" />
+              <span>Use IBus theme colors</span>
+            </label>
+          </div>
+
+          <div class="subsection">
+            <div class="subsection-head">
+              <h3>Keybindings</h3>
+              <button id="add-keybinding" class="ghost">Add Binding</button>
+            </div>
+            <div id="keybindings" class="keybinding-list"></div>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-dictionaries">
+          <div class="section-header">
+            <h2>Dictionaries</h2>
+            <p>Review discovered dictionary sources and choose which ones should be enabled.</p>
+          </div>
+
+          <div class="dictionary-columns">
+            <section class="card">
+              <h3>System Dictionaries</h3>
+              <div id="system-dictionaries" class="dictionary-list"></div>
+            </section>
+            <section class="card">
+              <h3>User Dictionaries</h3>
+              <div id="user-dictionaries" class="dictionary-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel" id="panel-murenso">
+          <div class="section-header">
+            <h2>Murenso</h2>
+            <p>This scaffold keeps murenso editable as raw rows for now. Full table editing can come next.</p>
+          </div>
+          <textarea id="murenso-json" spellcheck="false"></textarea>
+        </section>
+
+        <section class="panel" id="panel-raw">
+          <div class="section-header">
+            <h2>Raw JSON</h2>
+            <p>Snapshot of the normalized config returned by the Rust backend.</p>
+          </div>
+          <pre id="raw-config"></pre>
+        </section>
+
+        <footer class="toolbar">
+          <div id="message"></div>
+          <button id="reload" class="ghost">Reload</button>
+          <button id="save">Save Settings</button>
+        </footer>
+      </main>
+    </div>
+
+    <script type="module" src="/main.js"></script>
+  </body>
+  </html>

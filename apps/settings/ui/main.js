@@ -1,0 +1,311 @@
+import { invoke } from "@tauri-apps/api/core";
+
+const ACTION_OPTIONS = [
+  "enable_hiragana_key",
+  "disable_hiragana_key",
+  "forced_preedit_trigger_key",
+  "kanchoku_bunsetsu_marker",
+  "kanchoku_pure_trigger_key",
+  "bunsetsu_prediction_cycle_key",
+  "user_dictionary_editor_trigger",
+  "force_commit_key",
+  "to_katakana",
+  "to_hiragana",
+  "to_ascii",
+  "to_zenkaku",
+];
+
+let currentState = null;
+
+const elements = {
+  status: document.querySelector("#status"),
+  message: document.querySelector("#message"),
+  layout: document.querySelector("#layout"),
+  kanchokuLayout: document.querySelector("#kanchoku_layout"),
+  showAnnotations: document.querySelector("#show_annotations"),
+  candidateWindowSize: document.querySelector("#candidate_window_size"),
+  preeditForeground: document.querySelector("#preedit_foreground_color"),
+  preeditBackground: document.querySelector("#preedit_background_color"),
+  useIbusHint: document.querySelector("#use_ibus_hint_colors"),
+  keybindings: document.querySelector("#keybindings"),
+  systemDictionaries: document.querySelector("#system-dictionaries"),
+  userDictionaries: document.querySelector("#user-dictionaries"),
+  murensoJson: document.querySelector("#murenso-json"),
+  rawConfig: document.querySelector("#raw-config"),
+  reload: document.querySelector("#reload"),
+  save: document.querySelector("#save"),
+  addKeybinding: document.querySelector("#add-keybinding"),
+};
+
+document.querySelectorAll(".nav-item").forEach((button) => {
+  button.addEventListener("click", () => {
+    document
+      .querySelectorAll(".nav-item")
+      .forEach((item) => item.classList.toggle("active", item === button));
+    document.querySelectorAll(".panel").forEach((panel) => {
+      panel.classList.toggle(
+        "active",
+        panel.id === `panel-${button.dataset.panel}`,
+      );
+    });
+  });
+});
+
+elements.reload.addEventListener("click", () => loadState());
+elements.save.addEventListener("click", () => saveState());
+elements.addKeybinding.addEventListener("click", () => {
+  renderKeybindingRow("", "");
+});
+
+loadState();
+
+async function loadState() {
+  setStatus("Loading settings state…");
+  try {
+    currentState = await invoke("load_settings_state");
+    renderState(currentState);
+    setStatus("Settings state loaded");
+    setMessage(currentState.warnings?.join("\n") || "");
+  } catch (error) {
+    console.error(error);
+    setStatus("Failed to load settings state");
+    setMessage(String(error));
+  }
+}
+
+async function saveState() {
+  if (!currentState) return;
+
+  setStatus("Saving settings…");
+  try {
+    const result = await invoke("save_settings_state", {
+      input: collectSaveInput(),
+      murensoMappings: collectMurensoMappings(),
+    });
+    currentState = result.state;
+    renderState(currentState);
+
+    if (!result.saved) {
+      setStatus("Save blocked by keybinding conflicts");
+      setMessage(
+        Object.entries(result.keybinding_conflicts)
+          .map(([key, actions]) => `${key}: ${actions.join(", ")}`)
+          .join("\n"),
+      );
+      return;
+    }
+
+    setStatus("Settings saved");
+    setMessage(result.config_path ? `Saved to ${result.config_path}` : "Saved");
+  } catch (error) {
+    console.error(error);
+    setStatus("Failed to save settings");
+    setMessage(String(error));
+  }
+}
+
+function renderState(state) {
+  renderSelect(elements.layout, state.layouts, state.config.layout);
+  renderSelect(
+    elements.kanchokuLayout,
+    state.kanchoku_layouts,
+    state.config.kanchoku_layout,
+  );
+
+  const ui = state.config.ui || {};
+  elements.showAnnotations.checked = Boolean(ui.show_annotations);
+  elements.candidateWindowSize.value = ui.candidate_window_size ?? 9;
+  elements.preeditForeground.value = stripColorPrefix(
+    state.config.preedit_foreground_color || "0x000000",
+  );
+  elements.preeditBackground.value = stripColorPrefix(
+    state.config.preedit_background_color || "0xd1eaff",
+  );
+  elements.useIbusHint.checked = Boolean(state.config.use_ibus_hint_colors);
+
+  renderKeybindingsFromConfig(state.config);
+  renderSystemDictionaries(state.system_dictionaries);
+  renderUserDictionaries(state.user_dictionaries);
+  elements.murensoJson.value = JSON.stringify(state.murenso_mappings, null, 2);
+  elements.rawConfig.textContent = JSON.stringify(state.config, null, 2);
+}
+
+function renderSelect(element, items, selectedId) {
+  element.innerHTML = "";
+  for (const item of items) {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.display_label;
+    option.selected = item.id === selectedId;
+    element.appendChild(option);
+  }
+}
+
+function renderKeybindingsFromConfig(config) {
+  elements.keybindings.innerHTML = "";
+  const topLevel = [
+    "enable_hiragana_key",
+    "disable_hiragana_key",
+    "forced_preedit_trigger_key",
+    "kanchoku_bunsetsu_marker",
+    "kanchoku_pure_trigger_key",
+    "bunsetsu_prediction_cycle_key",
+    "user_dictionary_editor_trigger",
+    "force_commit_key",
+  ];
+
+  for (const action of topLevel) {
+    for (const key of config[action] || []) {
+      renderKeybindingRow(action, key);
+    }
+  }
+
+  const conversionKeys = config.conversion_keys || {};
+  for (const action of ["to_katakana", "to_hiragana", "to_ascii", "to_zenkaku"]) {
+    for (const key of conversionKeys[action] || []) {
+      renderKeybindingRow(action, key);
+    }
+  }
+}
+
+function renderKeybindingRow(actionId, keyValue) {
+  const row = document.createElement("div");
+  row.className = "keybinding-row";
+
+  const actionSelect = document.createElement("select");
+  for (const action of ACTION_OPTIONS) {
+    const option = document.createElement("option");
+    option.value = action;
+    option.textContent = action;
+    option.selected = action === actionId;
+    actionSelect.appendChild(option);
+  }
+
+  const keyInput = document.createElement("input");
+  keyInput.type = "text";
+  keyInput.value = keyValue;
+  keyInput.placeholder = "Control+Shift+K";
+
+  const removeButton = document.createElement("button");
+  removeButton.textContent = "Remove";
+  removeButton.className = "ghost";
+  removeButton.addEventListener("click", () => row.remove());
+
+  row.appendChild(actionSelect);
+  row.appendChild(keyInput);
+  row.appendChild(removeButton);
+  elements.keybindings.appendChild(row);
+}
+
+function renderSystemDictionaries(entries) {
+  elements.systemDictionaries.innerHTML = "";
+  for (const entry of entries) {
+    elements.systemDictionaries.appendChild(renderDictionaryEntry({
+      label: entry.relative_path,
+      fullPath: entry.full_path,
+      enabled: entry.enabled,
+      weight: entry.weight,
+      datasetType: "system",
+    }));
+  }
+}
+
+function renderUserDictionaries(entries) {
+  elements.userDictionaries.innerHTML = "";
+  for (const entry of entries) {
+    elements.userDictionaries.appendChild(renderDictionaryEntry({
+      label: entry.filename,
+      fullPath: entry.filename,
+      enabled: entry.enabled,
+      weight: entry.weight,
+      datasetType: "user",
+    }));
+  }
+}
+
+function renderDictionaryEntry({ label, fullPath, enabled, weight, datasetType }) {
+  const row = document.createElement("label");
+  row.className = "dictionary-row";
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = enabled;
+  checkbox.dataset.path = fullPath;
+  checkbox.dataset.type = datasetType;
+
+  const text = document.createElement("span");
+  text.textContent = label;
+
+  const weightInput = document.createElement("input");
+  weightInput.type = "number";
+  weightInput.min = "1";
+  weightInput.step = "1";
+  weightInput.value = String(weight || 1);
+  weightInput.dataset.path = fullPath;
+  weightInput.dataset.type = datasetType;
+
+  row.appendChild(checkbox);
+  row.appendChild(text);
+  row.appendChild(weightInput);
+  return row;
+}
+
+function collectSaveInput() {
+  const keybindingsByAction = {};
+  for (const row of elements.keybindings.querySelectorAll(".keybinding-row")) {
+    const action = row.querySelector("select").value;
+    const key = row.querySelector("input[type=text]").value.trim();
+    if (!action || !key) continue;
+    keybindingsByAction[action] ||= [];
+    keybindingsByAction[action].push(key);
+  }
+
+  return {
+    layout: elements.layout.value,
+    kanchoku_layout: elements.kanchokuLayout.value,
+    show_annotations: elements.showAnnotations.checked,
+    candidate_window_size: Number(elements.candidateWindowSize.value || 9),
+    preedit_foreground_color: elements.preeditForeground.value,
+    preedit_background_color: elements.preeditBackground.value,
+    use_ibus_hint_colors: elements.useIbusHint.checked,
+    keybindings_by_action: keybindingsByAction,
+    enabled_system_dicts: collectDictionaryWeights("system"),
+    enabled_user_dicts: collectDictionaryWeights("user"),
+  };
+}
+
+function collectDictionaryWeights(type) {
+  const result = {};
+  const selector =
+    type === "system" ? "#system-dictionaries .dictionary-row" : "#user-dictionaries .dictionary-row";
+
+  for (const row of document.querySelectorAll(selector)) {
+    const checkbox = row.querySelector("input[type=checkbox]");
+    const weight = row.querySelector("input[type=number]");
+    if (checkbox.checked) {
+      result[checkbox.dataset.path] = Math.max(1, Number(weight.value || 1));
+    }
+  }
+  return result;
+}
+
+function collectMurensoMappings() {
+  try {
+    const parsed = JSON.parse(elements.murensoJson.value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return currentState?.murenso_mappings || [];
+  }
+}
+
+function stripColorPrefix(value) {
+  return String(value).replace(/^0x/i, "").replace(/^#/, "");
+}
+
+function setStatus(value) {
+  elements.status.textContent = value;
+}
+
+function setMessage(value) {
+  elements.message.textContent = value;
+}

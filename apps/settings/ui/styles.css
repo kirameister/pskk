@@ -1,0 +1,276 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f1e8;
+  --bg-strong: #e7dcc8;
+  --panel: #fffdf8;
+  --ink: #1f1b16;
+  --muted: #64594c;
+  --line: #d9cbb7;
+  --accent: #0f766e;
+  --accent-soft: #d6f0ed;
+  --danger: #b91c1c;
+  font-family:
+    "IBM Plex Sans",
+    "Noto Sans JP",
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, #fff4d8 0, transparent 28rem),
+    linear-gradient(135deg, var(--bg), #efe7d8);
+  color: var(--ink);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 18rem 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  padding: 2rem 1.25rem;
+  background: rgba(31, 27, 22, 0.9);
+  color: #f8f4ea;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.eyebrow {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.75rem;
+  color: #d8c8b2;
+}
+
+.brand h1,
+.section-header h2,
+.subsection-head h3,
+.card h3 {
+  margin: 0;
+  font-family:
+    "IBM Plex Serif",
+    "Noto Serif JP",
+    serif;
+}
+
+.panel-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.nav-item {
+  text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: inherit;
+  padding: 0.8rem 0.95rem;
+  border-radius: 0.9rem;
+  cursor: pointer;
+}
+
+.nav-item.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.sidebar-note {
+  margin-top: auto;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d8c8b2;
+}
+
+.content {
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.panel {
+  display: none;
+  background: rgba(255, 253, 248, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 1.5rem;
+  padding: 1.5rem;
+  box-shadow: 0 16px 50px rgba(61, 45, 24, 0.08);
+}
+
+.panel.active {
+  display: block;
+}
+
+.section-header p {
+  margin: 0.4rem 0 0;
+  color: var(--muted);
+  max-width: 52rem;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.form-grid label,
+.dictionary-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.checkbox {
+  flex-direction: row;
+  align-items: center;
+}
+
+input[type="text"],
+input[type="number"],
+select,
+textarea,
+pre {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: #fff;
+  padding: 0.8rem 0.9rem;
+}
+
+textarea {
+  min-height: 26rem;
+  resize: vertical;
+  font-family: "IBM Plex Mono", monospace;
+}
+
+pre {
+  overflow: auto;
+  min-height: 26rem;
+  margin: 1rem 0 0;
+  background: #fffdf8;
+}
+
+.subsection,
+.dictionary-columns {
+  margin-top: 1.5rem;
+}
+
+.subsection-head,
+.toolbar,
+.dictionary-columns {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.subsection-head {
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.keybinding-list,
+.dictionary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.keybinding-row,
+.dictionary-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.8rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+}
+
+.dictionary-columns {
+  align-items: stretch;
+}
+
+.card {
+  flex: 1;
+  padding: 1rem;
+  border-radius: 1.25rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.dictionary-row {
+  grid-template-columns: auto 1fr 6rem;
+}
+
+.toolbar {
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-radius: 1.25rem;
+  background: rgba(255, 253, 248, 0.9);
+  border: 1px solid var(--line);
+}
+
+button {
+  border: none;
+  border-radius: 999px;
+  padding: 0.8rem 1.1rem;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+}
+
+button.ghost {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+#message {
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    gap: 1rem;
+  }
+
+  .form-grid,
+  .dictionary-columns {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .keybinding-row,
+  .dictionary-row {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PSKK Settings",
+  "version": "0.1.0",
+  "identifier": "com.kirameister.pskk.settings",
+  "build": {
+    "beforeDevCommand": "npm --prefix ../ui run dev -- --host 127.0.0.1",
+    "beforeBuildCommand": "npm --prefix ../ui run build",
+    "devUrl": "http://127.0.0.1:1420",
+    "frontendDist": "../ui/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "PSKK Settings",
+        "width": 1100,
+        "height": 780,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all"
+  }
+}

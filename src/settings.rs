@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use crate::util::{
     get_datadir, get_dictionary_files, get_kanchoku_layout, get_user_config_dir,
     get_user_dictionaries_dir, save_config_data, write_json_value, UtilError,
@@ -7,7 +8,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiscoveredFile {
     pub id: String,
     pub display_label: String,
@@ -15,7 +16,7 @@ pub struct DiscoveredFile {
     pub system_path: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SystemDictionaryEntry {
     pub enabled: bool,
     pub relative_path: String,
@@ -23,28 +24,28 @@ pub struct SystemDictionaryEntry {
     pub weight: i32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserDictionaryEntry {
     pub enabled: bool,
     pub filename: String,
     pub weight: i32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExtDictionaryEntry {
     pub enabled: bool,
     pub display_name: String,
     pub full_path: PathBuf,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MurensoMapping {
     pub first_key: String,
     pub second_key: String,
     pub kanji: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SaveSettingsInput {
     pub layout: String,
     pub kanchoku_layout: String,
@@ -58,7 +59,7 @@ pub struct SaveSettingsInput {
     pub enabled_user_dicts: HashMap<String, i32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SaveSettingsOutput {
     pub config_path: PathBuf,
     pub keybinding_conflicts: HashMap<String, Vec<String>>,
