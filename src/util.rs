@@ -1,5 +1,10 @@
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::env;
+use std::fmt;
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 pub const PACKAGE_NAME: &str = "ibus-pskk";
@@ -33,7 +38,7 @@ impl CharType {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CrfFeatureMaterials {
     pub max_key_len_starting_with: HashMap<String, usize>,
     pub max_key_len_ending_with: HashMap<String, usize>,
@@ -59,6 +64,39 @@ pub struct DictionaryBuildStats {
     pub total_readings: usize,
     pub total_candidates: usize,
     pub okurigana_entries_expanded: usize,
+}
+
+#[derive(Debug)]
+pub enum UtilError {
+    Io(io::Error),
+    Json(serde_json::Error),
+    InvalidConfig(&'static str),
+    MissingField(&'static str),
+}
+
+impl fmt::Display for UtilError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io(err) => write!(f, "{err}"),
+            Self::Json(err) => write!(f, "{err}"),
+            Self::InvalidConfig(message) => write!(f, "{message}"),
+            Self::MissingField(field) => write!(f, "missing required field: {field}"),
+        }
+    }
+}
+
+impl std::error::Error for UtilError {}
+
+impl From<io::Error> for UtilError {
+    fn from(value: io::Error) -> Self {
+        Self::Io(value)
+    }
+}
+
+impl From<serde_json::Error> for UtilError {
+    fn from(value: serde_json::Error) -> Self {
+        Self::Json(value)
+    }
 }
 
 pub fn char_type(c: char) -> CharType {
@@ -528,6 +566,100 @@ pub fn get_crf_model_path() -> PathBuf {
     get_user_config_dir().join("bunsetsu.crfsuite")
 }
 
+pub fn read_json_value(path: &Path) -> Result<Value, UtilError> {
+    let content = fs::read_to_string(path)?;
+    Ok(serde_json::from_str(&content)?)
+}
+
+pub fn write_json_value(path: &Path, value: &Value) -> Result<(), UtilError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let content = serde_json::to_string_pretty(value)?;
+    fs::write(path, content)?;
+    Ok(())
+}
+
+pub fn get_default_config_data() -> Result<Value, UtilError> {
+    read_json_value(&get_default_config_path())
+}
+
+pub fn get_config_data() -> Result<(Value, Vec<String>), UtilError> {
+    let config_path = get_user_config_dir().join("config.json");
+    let mut warnings = Vec::new();
+    let default_config = get_default_config_data()?;
+
+    if !config_path.exists() {
+        fs::create_dir_all(get_user_config_dir())?;
+        write_json_value(&config_path, &default_config)?;
+        warnings.push(format!(
+            "config.json not found under {}. Copied default config from {}",
+            get_user_config_dir().display(),
+            get_default_config_path().display()
+        ));
+        return Ok((default_config, warnings));
+    }
+
+    let mut config_data = match read_json_value(&config_path) {
+        Ok(value) => value,
+        Err(UtilError::Json(_)) => default_config.clone(),
+        Err(err) => return Err(err),
+    };
+
+    merge_default_config(&mut config_data, &default_config, &mut warnings);
+    validate_dictionaries_config(&mut config_data, &default_config, &mut warnings);
+    Ok((config_data, warnings))
+}
+
+pub fn save_config_data(config_data: &Value) -> Result<(), UtilError> {
+    write_json_value(&get_user_config_dir().join("config.json"), config_data)
+}
+
+pub fn get_layout_data(config: &Value) -> Result<Value, UtilError> {
+    let layout_name = config
+        .get("layout")
+        .and_then(Value::as_str)
+        .ok_or(UtilError::MissingField("layout"))?;
+
+    let user_path = get_user_config_dir().join("layouts").join(layout_name);
+    let system_path = get_datadir().join("layouts").join(layout_name);
+    let fallback_path = get_datadir().join("layouts").join("shingeta.json");
+
+    let chosen = if user_path.exists() {
+        user_path
+    } else if system_path.exists() {
+        system_path
+    } else {
+        fallback_path
+    };
+
+    read_json_value(&chosen)
+}
+
+pub fn get_kanchoku_layout(config: &Value) -> Result<Value, UtilError> {
+    let layout_name = config
+        .get("kanchoku_layout")
+        .and_then(Value::as_str)
+        .ok_or(UtilError::MissingField("kanchoku_layout"))?;
+
+    let candidates = [
+        get_user_config_dir()
+            .join("kanchoku_layouts")
+            .join(layout_name),
+        get_user_config_dir().join(layout_name),
+        get_datadir().join("kanchoku_layouts").join(layout_name),
+        get_datadir().join("kanchoku_layouts").join("aki_code.json"),
+    ];
+
+    let chosen = candidates
+        .iter()
+        .find(|path| path.exists())
+        .cloned()
+        .unwrap_or_else(|| candidates.last().unwrap().clone());
+
+    read_json_value(&chosen)
+}
+
 pub fn get_dictionary_files(config_dir: Option<&Path>) -> Vec<PathBuf> {
     let base = config_dir
         .map(PathBuf::from)
@@ -544,6 +676,35 @@ pub fn get_dictionary_files(config_dir: Option<&Path>) -> Vec<PathBuf> {
         .map(|name| base.join(name))
         .filter(|path| path.exists())
         .collect()
+}
+
+pub fn load_dictionary_json(path: &Path) -> Result<Dictionary, UtilError> {
+    let value = read_json_value(path)?;
+    dictionary_from_value(value)
+}
+
+pub fn write_dictionary_json(path: &Path, dictionary: &Dictionary) -> Result<(), UtilError> {
+    write_json_value(path, &dictionary_to_value(dictionary))
+}
+
+pub fn load_and_merge_dictionary_files(paths: &[PathBuf]) -> Result<Dictionary, UtilError> {
+    let mut merged = Dictionary::new();
+
+    for path in paths {
+        if !path.exists() {
+            continue;
+        }
+
+        let dictionary = load_dictionary_json(path)?;
+        for (reading, candidates) in dictionary {
+            let merged_candidates = merged.entry(reading).or_default();
+            for (candidate, count) in candidates {
+                *merged_candidates.entry(candidate).or_insert(0) += count;
+            }
+        }
+    }
+
+    Ok(merged)
 }
 
 pub fn build_crf_feature_materials(merged_dictionary: &Dictionary) -> CrfFeatureMaterials {
@@ -580,6 +741,28 @@ pub fn build_crf_feature_materials(merged_dictionary: &Dictionary) -> CrfFeature
     }
 
     materials
+}
+
+pub fn generate_crf_feature_materials(
+    output_path: Option<&Path>,
+) -> Result<(PathBuf, CrfFeatureMaterials), UtilError> {
+    let path = output_path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| get_user_config_dir().join("crf_feature_materials.json"));
+    let merged = load_and_merge_dictionary_files(&get_dictionary_files(None))?;
+    let materials = build_crf_feature_materials(&merged);
+    write_json_value(&path, &serde_json::to_value(&materials)?)?;
+    Ok((path, materials))
+}
+
+pub fn load_crf_feature_materials(path: Option<&Path>) -> Result<CrfFeatureMaterials, UtilError> {
+    let path = path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| get_user_config_dir().join("crf_feature_materials.json"));
+    if !path.exists() {
+        return Ok(CrfFeatureMaterials::default());
+    }
+    Ok(serde_json::from_value(read_json_value(&path)?)?)
 }
 
 pub fn parse_skk_dictionary_line(line: &str) -> Option<(String, Vec<String>)> {
@@ -668,6 +851,50 @@ where
     (merged_dictionary, stats)
 }
 
+pub fn generate_system_dictionary_from_skk_lines<'a, I>(
+    entries: I,
+    output_path: Option<&Path>,
+    source_weight: i32,
+    expand_okurigana: impl Fn(&str, &str, i32) -> Vec<(String, String, i32)>,
+    is_skk_okurigana_entry: impl Fn(&str) -> bool,
+) -> Result<(PathBuf, DictionaryBuildStats), UtilError>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let path = output_path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| get_user_config_dir().join("system_dictionary.json"));
+    let (dictionary, stats) = merge_weighted_skk_entries(
+        entries,
+        source_weight,
+        expand_okurigana,
+        is_skk_okurigana_entry,
+    );
+    write_dictionary_json(&path, &dictionary)?;
+    Ok((path, stats))
+}
+
+pub fn generate_user_dictionary_from_skk_lines<'a, I>(
+    entries: I,
+    output_path: Option<&Path>,
+    source_weight: i32,
+) -> Result<(PathBuf, DictionaryBuildStats), UtilError>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let default_output = get_user_config_dir().join("imported_user_dictionary.json");
+    let resolved_output = output_path
+        .map(PathBuf::from)
+        .unwrap_or(default_output);
+    generate_system_dictionary_from_skk_lines(
+        entries,
+        Some(resolved_output.as_path()),
+        source_weight,
+        |_reading, _candidate, _weight| Vec::new(),
+        |_reading| false,
+    )
+}
+
 pub enum LineOrTokens {
     Line(String),
     Tokens(Vec<String>),
@@ -707,9 +934,144 @@ fn log2_bucket(value: usize) -> usize {
     bucket
 }
 
+fn merge_default_config(target: &mut Value, default_config: &Value, warnings: &mut Vec<String>) {
+    let (Some(target_obj), Some(default_obj)) = (target.as_object_mut(), default_config.as_object())
+    else {
+        return;
+    };
+
+    for (key, default_value) in default_obj {
+        match target_obj.get(key) {
+            Some(existing) if same_json_type(existing, default_value) => {}
+            Some(_) => {
+                warnings.push(format!(
+                    "type mismatch for key \"{key}\". Replaced with default value"
+                ));
+                target_obj.insert(key.clone(), default_value.clone());
+            }
+            None => {
+                warnings.push(format!(
+                    "missing key \"{key}\" in config.json. Added default value"
+                ));
+                target_obj.insert(key.clone(), default_value.clone());
+            }
+        }
+    }
+}
+
+fn validate_dictionaries_config(target: &mut Value, default_config: &Value, warnings: &mut Vec<String>) {
+    let Some(target_obj) = target.as_object_mut() else {
+        return;
+    };
+    let default_dicts = default_config
+        .get("dictionaries")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_else(|| {
+            Map::from_iter([
+                ("system".to_string(), Value::Object(Map::new())),
+                ("user".to_string(), Value::Object(Map::new())),
+            ])
+        });
+
+    let dicts_value = target_obj
+        .entry("dictionaries".to_string())
+        .or_insert_with(|| Value::Object(default_dicts.clone()));
+
+    let Some(dicts_obj) = dicts_value.as_object_mut() else {
+        *dicts_value = Value::Object(default_dicts);
+        warnings.push("invalid dictionaries config. Reset to default".to_string());
+        return;
+    };
+
+    for key in ["system", "user"] {
+        match dicts_obj.get(key) {
+            Some(Value::Object(_)) | Some(Value::Array(_)) => {}
+            Some(_) => {
+                warnings.push(format!(
+                    "dictionaries.{key} has invalid type. Reset to default"
+                ));
+                if let Some(default_value) = default_config
+                    .get("dictionaries")
+                    .and_then(Value::as_object)
+                    .and_then(|obj| obj.get(key))
+                {
+                    dicts_obj.insert(key.to_string(), default_value.clone());
+                }
+            }
+            None => {
+                warnings.push(format!(
+                    "dictionaries.{key} missing from config. Added default"
+                ));
+                if let Some(default_value) = default_config
+                    .get("dictionaries")
+                    .and_then(Value::as_object)
+                    .and_then(|obj| obj.get(key))
+                {
+                    dicts_obj.insert(key.to_string(), default_value.clone());
+                }
+            }
+        }
+    }
+}
+
+fn same_json_type(left: &Value, right: &Value) -> bool {
+    matches!(
+        (left, right),
+        (Value::Null, Value::Null)
+            | (Value::Bool(_), Value::Bool(_))
+            | (Value::Number(_), Value::Number(_))
+            | (Value::String(_), Value::String(_))
+            | (Value::Array(_), Value::Array(_))
+            | (Value::Object(_), Value::Object(_))
+    )
+}
+
+fn dictionary_to_value(dictionary: &Dictionary) -> Value {
+    let mut root = Map::new();
+    for (reading, candidates) in dictionary {
+        let mut candidate_map = Map::new();
+        for (candidate, count) in candidates {
+            candidate_map.insert(candidate.clone(), Value::from(*count));
+        }
+        root.insert(reading.clone(), Value::Object(candidate_map));
+    }
+    Value::Object(root)
+}
+
+fn dictionary_from_value(value: Value) -> Result<Dictionary, UtilError> {
+    let root = value
+        .as_object()
+        .ok_or(UtilError::InvalidConfig("dictionary JSON must be an object"))?;
+    let mut dictionary = Dictionary::new();
+
+    for (reading, candidates_value) in root {
+        let candidates_obj = candidates_value.as_object().ok_or(UtilError::InvalidConfig(
+            "dictionary entry candidates must be a JSON object",
+        ))?;
+        let mut candidates = CandidateCounts::new();
+        for (candidate, count_value) in candidates_obj {
+            let count = match count_value {
+                Value::Number(number) => number.as_i64().unwrap_or(1) as i32,
+                Value::Object(legacy) => legacy
+                    .get("cost")
+                    .and_then(Value::as_i64)
+                    .map(|cost| -(cost as i32))
+                    .unwrap_or(1),
+                _ => 1,
+            };
+            candidates.insert(candidate.clone(), count);
+        }
+        dictionary.insert(reading.clone(), candidates);
+    }
+
+    Ok(dictionary)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn labels(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_string()).collect()
@@ -869,5 +1231,47 @@ mod tests {
         assert_eq!(dictionary["あい"]["愛"], 2);
         assert_eq!(dictionary["かく"]["書く"], 2);
         assert_eq!(stats.okurigana_entries_expanded, 1);
+    }
+
+    #[test]
+    fn normalizes_config_against_defaults() {
+        let mut config = json!({
+            "layout": 1,
+            "dictionaries": {
+                "system": true
+            }
+        });
+        let default_config = json!({
+            "layout": "shingeta.json",
+            "kanchoku_layout": "aki_code.json",
+            "dictionaries": {
+                "system": {},
+                "user": {}
+            }
+        });
+        let mut warnings = Vec::new();
+
+        merge_default_config(&mut config, &default_config, &mut warnings);
+        validate_dictionaries_config(&mut config, &default_config, &mut warnings);
+
+        assert_eq!(config["layout"], json!("shingeta.json"));
+        assert_eq!(config["kanchoku_layout"], json!("aki_code.json"));
+        assert!(config["dictionaries"]["system"].is_object());
+        assert!(config["dictionaries"]["user"].is_object());
+        assert!(!warnings.is_empty());
+    }
+
+    #[test]
+    fn parses_dictionary_json_with_legacy_cost_entries() {
+        let value = json!({
+            "あい": {
+                "愛": 3,
+                "藍": { "cost": -5 }
+            }
+        });
+
+        let dictionary = dictionary_from_value(value).unwrap();
+        assert_eq!(dictionary["あい"]["愛"], 3);
+        assert_eq!(dictionary["あい"]["藍"], 5);
     }
 }
