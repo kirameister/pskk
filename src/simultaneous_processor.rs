@@ -284,7 +284,7 @@ mod tests {
         ]));
         processor.previous_typed_timestamp_ms = 0.0;
 
-        let (output, pending) = processor.get_layout_output_at("j", "k", true, 0.030);
+        let (output, pending) = processor.get_layout_output_at("j", "k", true, 30.0);
 
         assert_eq!(output, Some("じゅ".to_string()));
         assert_eq!(pending, Some(String::new()));
@@ -298,7 +298,7 @@ mod tests {
         ]));
         processor.previous_typed_timestamp_ms = 0.0;
 
-        let (output, pending) = processor.get_layout_output_at("j", "k", true, 0.100);
+        let (output, pending) = processor.get_layout_output_at("j", "k", true, 100.0);
 
         assert_eq!(output, Some("j".to_string()));
         assert_eq!(pending, Some("k".to_string()));
