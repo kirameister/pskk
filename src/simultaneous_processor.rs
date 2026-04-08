@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayoutEntry {
@@ -25,20 +25,22 @@ pub struct SimultaneousInputProcessor {
     pub layout_data: Option<Vec<RawLayoutEntry>>,
     pub simultaneous_map: Vec<HashMap<String, LayoutEntry>>,
     pub max_simul_limit_ms: u64,
-    pub previous_typed_timestamp: f64,
+    pub previous_typed_timestamp_ms: f64,
+    clock_origin: Option<Instant>,
 }
 
 impl SimultaneousInputProcessor {
     pub fn new(layout_data: Option<Vec<RawLayoutEntry>>) -> Self {
+        let clock_origin = Instant::now();
         let mut processor = Self {
             layout_data,
             simultaneous_map: Vec::new(),
             max_simul_limit_ms: 0,
-            previous_typed_timestamp: 0.0,
+            previous_typed_timestamp_ms: 0.0,
+            clock_origin: Some(clock_origin),
         };
         processor.build_simultaneous_map();
-        processor.previous_typed_timestamp =
-            current_time_seconds() - (processor.max_simul_limit_ms as f64 * 1000.0);
+        processor.previous_typed_timestamp_ms = -(processor.max_simul_limit_ms as f64 * 1000.0);
         processor
     }
 
@@ -81,7 +83,7 @@ impl SimultaneousInputProcessor {
     }
 
     pub fn simultaneous_reset(&mut self) {
-        self.previous_typed_timestamp -= self.max_simul_limit_ms as f64 * 1000.0;
+        self.previous_typed_timestamp_ms -= self.max_simul_limit_ms as f64 * 1000.0;
     }
 
     pub fn get_layout_output(
@@ -90,8 +92,8 @@ impl SimultaneousInputProcessor {
         input_char: &str,
         is_pressed: bool,
     ) -> (Option<String>, Option<String>) {
-        let current_time = current_time_seconds();
-        self.get_layout_output_at(past_pending, input_char, is_pressed, current_time)
+        let current_time_ms = self.current_time_ms();
+        self.get_layout_output_at(past_pending, input_char, is_pressed, current_time_ms)
     }
 
     pub fn get_layout_output_at(
@@ -99,18 +101,18 @@ impl SimultaneousInputProcessor {
         past_pending: &str,
         input_char: &str,
         is_pressed: bool,
-        current_time: f64,
+        current_time_ms: f64,
     ) -> (Option<String>, Option<String>) {
         if !is_pressed {
             self.simultaneous_reset();
             return (None, None);
         }
 
-        let time_diff_ms = (current_time - self.previous_typed_timestamp) * 1000.0;
+        let time_diff_ms = current_time_ms - self.previous_typed_timestamp_ms;
         let pending_chars: Vec<char> = past_pending.chars().collect();
 
         if self.simultaneous_map.is_empty() {
-            self.previous_typed_timestamp = current_time;
+            self.previous_typed_timestamp_ms = current_time_ms;
             return (Some(format!("{past_pending}{input_char}")), None);
         }
 
@@ -144,23 +146,24 @@ impl SimultaneousInputProcessor {
                 }
             }
 
-            self.previous_typed_timestamp = current_time;
+            self.previous_typed_timestamp_ms = current_time_ms;
             return (
                 Some(format!("{dropped_prefix}{}", entry.output)),
                 Some(entry.pending.clone()),
             );
         }
 
-        self.previous_typed_timestamp = current_time;
+        self.previous_typed_timestamp_ms = current_time_ms;
         (Some(format!("{past_pending}{input_char}")), None)
     }
-}
 
-fn current_time_seconds() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time before unix epoch")
-        .as_secs_f64()
+    fn current_time_ms(&self) -> f64 {
+        self.clock_origin
+            .unwrap_or_else(Instant::now)
+            .elapsed()
+            .as_secs_f64()
+            * 1000.0
+    }
 }
 
 #[cfg(test)]
@@ -225,12 +228,12 @@ mod tests {
     fn release_resets_and_returns_none_tuple() {
         let mut processor =
             SimultaneousInputProcessor::new(Some(vec![entry("jk", "じゅ", "", Some(50))]));
-        processor.previous_typed_timestamp = 1000.0;
+        processor.previous_typed_timestamp_ms = 1000.0;
 
         let result = processor.get_layout_output_at("abc", "x", false, 1001.0);
 
         assert_eq!(result, (None, None));
-        assert_eq!(processor.previous_typed_timestamp, 1000.0 - 50_000.0);
+        assert_eq!(processor.previous_typed_timestamp_ms, 1000.0 - 50_000.0);
     }
 
     #[test]
@@ -279,7 +282,7 @@ mod tests {
             entry("k", "", "k", None),
             entry("jk", "じゅ", "", Some(50)),
         ]));
-        processor.previous_typed_timestamp = 0.0;
+        processor.previous_typed_timestamp_ms = 0.0;
 
         let (output, pending) = processor.get_layout_output_at("j", "k", true, 0.030);
 
@@ -293,7 +296,7 @@ mod tests {
             entry("k", "", "k", None),
             entry("jk", "じゅ", "", Some(50)),
         ]));
-        processor.previous_typed_timestamp = 0.0;
+        processor.previous_typed_timestamp_ms = 0.0;
 
         let (output, pending) = processor.get_layout_output_at("j", "k", true, 0.100);
 
