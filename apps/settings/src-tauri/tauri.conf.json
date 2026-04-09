@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "PSKK Settings",
-        "width": 1100,
-        "height": 780,
+        "width": 800,
+        "height": 600,
         "resizable": true
       }
     ]

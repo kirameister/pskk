@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 const ACTION_OPTIONS = [
   "enable_hiragana_key",
@@ -53,6 +54,13 @@ document.querySelectorAll(".nav-item").forEach((button) => {
       );
     });
   });
+});
+
+document.addEventListener("keydown", async (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    await getCurrentWindow().close();
+  }
 });
 
 elements.reload.addEventListener("click", () => loadState());
