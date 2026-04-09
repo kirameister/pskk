@@ -30,11 +30,15 @@ const elements = {
   keybindings: document.querySelector("#keybindings"),
   systemDictionaries: document.querySelector("#system-dictionaries"),
   userDictionaries: document.querySelector("#user-dictionaries"),
+  extSystemDictionaries: document.querySelector("#ext-system-dictionaries"),
+  extUserDictionaries: document.querySelector("#ext-user-dictionaries"),
   murensoJson: document.querySelector("#murenso-json"),
   rawConfig: document.querySelector("#raw-config"),
   reload: document.querySelector("#reload"),
   save: document.querySelector("#save"),
   addKeybinding: document.querySelector("#add-keybinding"),
+  convertSystemDicts: document.querySelector("#convert-system-dicts"),
+  convertUserDicts: document.querySelector("#convert-user-dicts"),
 };
 
 document.querySelectorAll(".nav-item").forEach((button) => {
@@ -56,6 +60,8 @@ elements.save.addEventListener("click", () => saveState());
 elements.addKeybinding.addEventListener("click", () => {
   renderKeybindingRow("", "");
 });
+elements.convertSystemDicts.addEventListener("click", () => convertSystemDictionaries());
+elements.convertUserDicts.addEventListener("click", () => convertUserDictionaries());
 
 loadState();
 
@@ -104,6 +110,40 @@ async function saveState() {
   }
 }
 
+async function convertSystemDictionaries() {
+  setStatus("Converting system dictionaries…");
+  try {
+    const result = await invoke("convert_system_dictionaries", {
+      sourceWeights: collectDictionaryWeights("system"),
+    });
+    currentState = result.state;
+    renderState(currentState);
+    setStatus("System dictionary conversion complete");
+    setMessage(formatDictionaryResult(result));
+  } catch (error) {
+    console.error(error);
+    setStatus("System dictionary conversion failed");
+    setMessage(String(error));
+  }
+}
+
+async function convertUserDictionaries() {
+  setStatus("Converting user dictionaries…");
+  try {
+    const result = await invoke("convert_user_dictionaries", {
+      sourceWeights: collectDictionaryWeights("user"),
+    });
+    currentState = result.state;
+    renderState(currentState);
+    setStatus("User dictionary conversion complete");
+    setMessage(formatDictionaryResult(result));
+  } catch (error) {
+    console.error(error);
+    setStatus("User dictionary conversion failed");
+    setMessage(String(error));
+  }
+}
+
 function renderState(state) {
   renderSelect(elements.layout, state.layouts, state.config.layout);
   renderSelect(
@@ -126,6 +166,8 @@ function renderState(state) {
   renderKeybindingsFromConfig(state.config);
   renderSystemDictionaries(state.system_dictionaries);
   renderUserDictionaries(state.user_dictionaries);
+  renderExtDictionaries(elements.extSystemDictionaries, state.ext_system_dictionaries);
+  renderExtDictionaries(elements.extUserDictionaries, state.ext_user_dictionaries);
   elements.murensoJson.value = JSON.stringify(state.murenso_mappings, null, 2);
   elements.rawConfig.textContent = JSON.stringify(state.config, null, 2);
 }
@@ -223,6 +265,26 @@ function renderUserDictionaries(entries) {
   }
 }
 
+function renderExtDictionaries(container, entries) {
+  container.innerHTML = "";
+  for (const entry of entries) {
+    const row = document.createElement("label");
+    row.className = "dictionary-row compact";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = entry.enabled;
+    checkbox.dataset.path = entry.full_path;
+
+    const text = document.createElement("span");
+    text.textContent = entry.display_name;
+
+    row.appendChild(checkbox);
+    row.appendChild(text);
+    container.appendChild(row);
+  }
+}
+
 function renderDictionaryEntry({ label, fullPath, enabled, weight, datasetType }) {
   const row = document.createElement("label");
   row.className = "dictionary-row";
@@ -300,6 +362,18 @@ function collectMurensoMappings() {
 
 function stripColorPrefix(value) {
   return String(value).replace(/^0x/i, "").replace(/^#/, "");
+}
+
+function formatDictionaryResult(result) {
+  const lines = [];
+  if (result.output_path) lines.push(`Output: ${result.output_path}`);
+  lines.push(`Files processed: ${result.files_processed}`);
+  lines.push(`Total readings: ${result.total_readings}`);
+  lines.push(`Total candidates: ${result.total_candidates}`);
+  if (result.okurigana_entries_expanded) {
+    lines.push(`Okurigana expanded: ${result.okurigana_entries_expanded}`);
+  }
+  return lines.join("\n");
 }
 
 function setStatus(value) {

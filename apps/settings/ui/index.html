@@ -85,12 +85,29 @@
 
           <div class="dictionary-columns">
             <section class="card">
-              <h3>System Dictionaries</h3>
+              <div class="card-head">
+                <h3>System Dictionaries</h3>
+                <button id="convert-system-dicts" class="ghost">Convert</button>
+              </div>
               <div id="system-dictionaries" class="dictionary-list"></div>
             </section>
             <section class="card">
-              <h3>User Dictionaries</h3>
+              <div class="card-head">
+                <h3>User Dictionaries</h3>
+                <button id="convert-user-dicts" class="ghost">Convert</button>
+              </div>
               <div id="user-dictionaries" class="dictionary-list"></div>
+            </section>
+          </div>
+
+          <div class="dictionary-columns">
+            <section class="card">
+              <h3>Ext Sources: System</h3>
+              <div id="ext-system-dictionaries" class="dictionary-list"></div>
+            </section>
+            <section class="card">
+              <h3>Ext Sources: User</h3>
+              <div id="ext-user-dictionaries" class="dictionary-list"></div>
             </section>
           </div>
         </section>

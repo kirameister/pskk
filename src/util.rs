@@ -895,6 +895,64 @@ where
     )
 }
 
+pub fn generate_system_dictionary_from_sources(
+    source_weights: &HashMap<String, i32>,
+) -> Result<(PathBuf, DictionaryBuildStats), UtilError> {
+    let mut merged = Dictionary::new();
+    let mut stats = DictionaryBuildStats::default();
+    let output_path = get_user_config_dir().join("system_dictionary.json");
+
+    for (file_path, weight) in source_weights {
+        let lines = read_utf8_lines(Path::new(file_path))?;
+        let (dictionary, file_stats) = merge_weighted_skk_entries(
+            lines.iter().map(String::as_str),
+            *weight,
+            |reading, kanji, base_count| {
+                crate::katsuyou::expand_skk_okurigana(reading, kanji, base_count)
+            },
+            crate::katsuyou::is_skk_okurigana_entry,
+        );
+        merge_dictionary_into(&mut merged, dictionary);
+        stats.files_processed += usize::from(file_stats.files_processed > 0);
+        stats.okurigana_entries_expanded += file_stats.okurigana_entries_expanded;
+    }
+
+    stats.total_readings = merged.len();
+    stats.total_candidates = merged.values().map(HashMap::len).sum();
+    write_dictionary_json(&output_path, &merged)?;
+    Ok((output_path, stats))
+}
+
+pub fn generate_user_dictionary_from_sources(
+    source_weights: &HashMap<String, i32>,
+) -> Result<(Option<PathBuf>, DictionaryBuildStats), UtilError> {
+    let mut merged = Dictionary::new();
+    let mut stats = DictionaryBuildStats::default();
+
+    if source_weights.is_empty() {
+        return Ok((None, stats));
+    }
+
+    for (filename, weight) in source_weights {
+        let path = get_user_dictionaries_dir().join(filename);
+        let lines = read_utf8_lines(&path)?;
+        let (dictionary, file_stats) = merge_weighted_skk_entries(
+            lines.iter().map(String::as_str),
+            *weight,
+            |_reading, _kanji, _base_count| Vec::new(),
+            |_reading| false,
+        );
+        merge_dictionary_into(&mut merged, dictionary);
+        stats.files_processed += usize::from(file_stats.files_processed > 0);
+    }
+
+    stats.total_readings = merged.len();
+    stats.total_candidates = merged.values().map(HashMap::len).sum();
+    let output_path = get_user_config_dir().join("imported_user_dictionary.json");
+    write_dictionary_json(&output_path, &merged)?;
+    Ok((Some(output_path), stats))
+}
+
 pub enum LineOrTokens {
     Line(String),
     Tokens(Vec<String>),
@@ -1066,6 +1124,20 @@ fn dictionary_from_value(value: Value) -> Result<Dictionary, UtilError> {
     }
 
     Ok(dictionary)
+}
+
+fn read_utf8_lines(path: &Path) -> Result<Vec<String>, UtilError> {
+    let content = fs::read_to_string(path)?;
+    Ok(content.lines().map(|line| line.to_string()).collect())
+}
+
+fn merge_dictionary_into(target: &mut Dictionary, source: Dictionary) {
+    for (reading, candidates) in source {
+        let target_candidates = target.entry(reading).or_default();
+        for (candidate, count) in candidates {
+            *target_candidates.entry(candidate).or_insert(0) += count;
+        }
+    }
 }
 
 #[cfg(test)]
