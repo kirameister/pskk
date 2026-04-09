@@ -56,12 +56,15 @@ document.querySelectorAll(".nav-item").forEach((button) => {
   });
 });
 
-document.addEventListener("keydown", async (event) => {
-  if (event.key === "Escape") {
-    event.preventDefault();
-    await getCurrentWindow().close();
-  }
-});
+const handleEscapeToClose = async (event) => {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  event.stopPropagation();
+  await getCurrentWindow().close();
+};
+
+window.addEventListener("keydown", handleEscapeToClose, true);
+document.addEventListener("keydown", handleEscapeToClose, true);
 
 elements.reload.addEventListener("click", () => loadState());
 elements.save.addEventListener("click", () => saveState());
