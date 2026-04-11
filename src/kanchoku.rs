@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 pub const MISSING_KANCHOKU_KANJI: &str = "無";
 
 /// Nested mapping of first stroke -> second stroke -> output kanji.
+/// This is equivalent to dict(dict())
 pub type KanchokuLayout = HashMap<char, HashMap<char, String>>;
 
 /// Return value for [`KanchokuProcessor::process_key`].
