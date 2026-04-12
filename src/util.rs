@@ -7,9 +7,9 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub const PACKAGE_NAME: &str = "ibus-pskk";
+pub const PACKAGE_NAME: &str = "pskk";
 pub const VERSION: &str = "0.0.1";
-pub const DEFAULT_INSTALL_ROOT: &str = "/opt/ibus-pskk";
+pub const DEFAULT_INSTALL_ROOT: &str = "/opt/pskk";
 
 pub type CandidateCounts = HashMap<String, i32>;
 pub type Dictionary = HashMap<String, CandidateCounts>;
