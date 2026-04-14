@@ -66,6 +66,16 @@ pub struct DictionaryBuildStats {
     pub okurigana_entries_expanded: usize,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtendedDictionaryStats {
+    pub files_processed: usize,
+    pub yomi_kanji_mappings: usize,
+    pub kanchoku_kanji_count: usize,
+    pub source_entries_scanned: usize,
+    pub total_readings: usize,
+    pub total_candidates: usize,
+}
+
 #[derive(Debug)]
 pub enum UtilError {
     Io(io::Error),
@@ -953,6 +963,83 @@ pub fn generate_user_dictionary_from_sources(
     Ok((Some(output_path), stats))
 }
 
+pub fn generate_extended_dictionary(
+    config: &Value,
+    source_paths: &[String],
+) -> Result<(PathBuf, ExtendedDictionaryStats), UtilError> {
+    let mut stats = ExtendedDictionaryStats::default();
+    let output_path = get_user_config_dir().join("extended_dictionary.json");
+    let kanchoku_layout = get_kanchoku_layout(config)?;
+
+    let mut kanchoku_kanji = HashSet::new();
+    if let Some(root) = kanchoku_layout.as_object() {
+        for second_value in root.values() {
+            let Some(second_map) = second_value.as_object() else {
+                continue;
+            };
+            for kanji in second_map.values().filter_map(Value::as_str) {
+                kanchoku_kanji.insert(kanji.to_string());
+            }
+        }
+    }
+    stats.kanchoku_kanji_count = kanchoku_kanji.len();
+
+    let mut yomi_to_kanji: HashMap<String, HashSet<String>> = HashMap::new();
+    for file_path in source_paths {
+        let path = Path::new(file_path);
+        if !path.is_file() {
+            continue;
+        }
+
+        let lines = read_utf8_lines(path)?;
+        let mut processed = false;
+        for line in &lines {
+            let Some((reading, candidates)) = parse_skk_dictionary_line(line) else {
+                continue;
+            };
+            for candidate in candidates {
+                if candidate.chars().count() == 1 && kanchoku_kanji.contains(&candidate) {
+                    yomi_to_kanji
+                        .entry(reading.clone())
+                        .or_default()
+                        .insert(candidate);
+                }
+            }
+            processed = true;
+        }
+        if processed {
+            stats.files_processed += 1;
+        }
+    }
+    stats.yomi_kanji_mappings = yomi_to_kanji.values().map(HashSet::len).sum();
+
+    let config_dir = get_user_config_dir();
+    let mut combined_dictionary = Dictionary::new();
+    for dict_filename in ["system_dictionary.json", "imported_user_dictionary.json"] {
+        let dict_path = config_dir.join(dict_filename);
+        if !dict_path.exists() {
+            continue;
+        }
+        let dictionary = load_dictionary_json(&dict_path)?;
+        for (reading, candidates) in dictionary {
+            let merged_candidates = combined_dictionary.entry(reading).or_default();
+            for (candidate, count) in candidates {
+                let current = merged_candidates.entry(candidate).or_insert(count);
+                if count > *current {
+                    *current = count;
+                }
+            }
+        }
+    }
+    stats.source_entries_scanned = combined_dictionary.len();
+
+    let extended_dictionary = build_extended_dictionary(&combined_dictionary, &yomi_to_kanji);
+    stats.total_readings = extended_dictionary.len();
+    stats.total_candidates = extended_dictionary.values().map(HashMap::len).sum();
+    write_dictionary_json(&output_path, &extended_dictionary)?;
+    Ok((output_path, stats))
+}
+
 pub enum LineOrTokens {
     Line(String),
     Tokens(Vec<String>),
@@ -1131,6 +1218,76 @@ fn read_utf8_lines(path: &Path) -> Result<Vec<String>, UtilError> {
     Ok(content.lines().map(|line| line.to_string()).collect())
 }
 
+fn find_substring_positions(haystack: &str, needle: &str) -> Vec<usize> {
+    if needle.is_empty() {
+        return Vec::new();
+    }
+
+    let mut positions = Vec::new();
+    let mut start = 0;
+    while start < haystack.len() {
+        let Some(pos) = haystack[start..].find(needle) else {
+            break;
+        };
+        let absolute_pos = start + pos;
+        positions.push(absolute_pos);
+
+        let advance = haystack[absolute_pos..]
+            .chars()
+            .next()
+            .map(char::len_utf8)
+            .unwrap_or(1);
+        start = absolute_pos + advance;
+    }
+    positions
+}
+
+fn build_extended_dictionary(
+    combined_dictionary: &Dictionary,
+    yomi_to_kanji: &HashMap<String, HashSet<String>>,
+) -> Dictionary {
+    let mut extended_dictionary = Dictionary::new();
+
+    for (reading, candidates) in combined_dictionary {
+        for (yomi, kanji_set) in yomi_to_kanji {
+            let positions = find_substring_positions(reading, yomi);
+            if positions.is_empty() {
+                continue;
+            }
+
+            for pos in positions {
+                for kanji in kanji_set {
+                    let matching_candidates: Vec<(&String, &i32)> = candidates
+                        .iter()
+                        .filter(|(candidate, _count)| {
+                            candidate.contains(kanji) && candidate.chars().count() > 1
+                        })
+                        .collect();
+                    if matching_candidates.is_empty() {
+                        continue;
+                    }
+
+                    let new_reading = format!(
+                        "{}{}{}",
+                        &reading[..pos],
+                        kanji,
+                        &reading[pos + yomi.len()..]
+                    );
+                    let target_candidates = extended_dictionary.entry(new_reading).or_default();
+                    for (candidate, count) in matching_candidates {
+                        let current = target_candidates.entry(candidate.clone()).or_insert(*count);
+                        if *count > *current {
+                            *current = *count;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    extended_dictionary
+}
+
 fn merge_dictionary_into(target: &mut Dictionary, source: Dictionary) {
     for (reading, candidates) in source {
         let target_candidates = target.entry(reading).or_default();
@@ -1303,6 +1460,32 @@ mod tests {
         assert_eq!(dictionary["あい"]["愛"], 2);
         assert_eq!(dictionary["かく"]["書く"], 2);
         assert_eq!(stats.okurigana_entries_expanded, 1);
+    }
+
+    #[test]
+    fn finds_overlapping_substring_positions() {
+        assert_eq!(find_substring_positions("あああ", "ああ"), vec![0, 3]);
+    }
+
+    #[test]
+    fn builds_extended_dictionary_entries() {
+        let combined = HashMap::from([(
+            "きぎょう".to_string(),
+            HashMap::from([
+                ("企業".to_string(), 3),
+                ("起業".to_string(), 2),
+                ("企".to_string(), 10),
+            ]),
+        )]);
+        let yomi_to_kanji = HashMap::from([(
+            "き".to_string(),
+            HashSet::from(["企".to_string()]),
+        )]);
+
+        let generated = build_extended_dictionary(&combined, &yomi_to_kanji);
+        assert_eq!(generated["企ぎょう"]["企業"], 3);
+        assert!(!generated["企ぎょう"].contains_key("起業"));
+        assert!(!generated["企ぎょう"].contains_key("企"));
     }
 
     #[test]

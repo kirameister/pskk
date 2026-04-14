@@ -197,8 +197,15 @@ pre {
   margin-bottom: 0.55rem;
 }
 
+.inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
 .keybinding-list,
-.dictionary-list {
+.dictionary-list,
+.murenso-list {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
@@ -242,6 +249,32 @@ pre {
 
 .dictionary-row.compact {
   grid-template-columns: auto 1fr;
+}
+
+.murenso-header,
+.murenso-row {
+  display: grid;
+  grid-template-columns: 5.5rem 5.5rem 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.murenso-header {
+  margin-bottom: 0.35rem;
+  padding: 0 0.2rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.murenso-row {
+  padding: 0.55rem 0.65rem;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+}
+
+.murenso-row.hidden {
+  display: none;
 }
 
 .toolbar {
@@ -290,7 +323,9 @@ button.ghost {
   }
 
   .keybinding-row,
-  .dictionary-row {
+  .dictionary-row,
+  .murenso-row,
+  .murenso-header {
     grid-template-columns: 1fr;
   }
 
@@ -311,5 +346,10 @@ button.ghost {
 
   .keybinding-row {
     grid-template-columns: 1fr;
+  }
+
+  .inline-actions {
+    width: 100%;
+    flex-wrap: wrap;
   }
 }

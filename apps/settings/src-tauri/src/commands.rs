@@ -5,8 +5,8 @@ use pskk::settings::{
     SaveSettingsInput,
 };
 use pskk::util::{
-    generate_crf_feature_materials, generate_system_dictionary_from_sources,
-    generate_user_dictionary_from_sources, get_config_data,
+    generate_crf_feature_materials, generate_extended_dictionary,
+    generate_system_dictionary_from_sources, generate_user_dictionary_from_sources, get_config_data,
 };
 use serde::Serialize;
 use std::collections::HashMap;
@@ -40,6 +40,19 @@ pub struct DictionaryGenerationResult {
     pub total_readings: usize,
     pub total_candidates: usize,
     pub okurigana_entries_expanded: usize,
+    pub state: SettingsAppState,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExtendedDictionaryGenerationResult {
+    pub success: bool,
+    pub output_path: Option<String>,
+    pub files_processed: usize,
+    pub yomi_kanji_mappings: usize,
+    pub kanchoku_kanji_count: usize,
+    pub source_entries_scanned: usize,
+    pub total_readings: usize,
+    pub total_candidates: usize,
     pub state: SettingsAppState,
 }
 
@@ -104,6 +117,28 @@ pub fn convert_user_dictionaries(
         total_readings: stats.total_readings,
         total_candidates: stats.total_candidates,
         okurigana_entries_expanded: stats.okurigana_entries_expanded,
+        state: build_state().map_err(|err| err.to_string())?,
+    })
+}
+
+#[tauri::command]
+pub fn convert_extended_dictionary(
+    source_paths: Vec<String>,
+) -> Result<ExtendedDictionaryGenerationResult, String> {
+    let (config, _warnings) = get_config_data().map_err(|err| err.to_string())?;
+    let (output_path, stats) =
+        generate_extended_dictionary(&config, &source_paths).map_err(|err| err.to_string())?;
+    let _ = generate_crf_feature_materials(None);
+
+    Ok(ExtendedDictionaryGenerationResult {
+        success: true,
+        output_path: output_path.to_str().map(|value| value.to_string()),
+        files_processed: stats.files_processed,
+        yomi_kanji_mappings: stats.yomi_kanji_mappings,
+        kanchoku_kanji_count: stats.kanchoku_kanji_count,
+        source_entries_scanned: stats.source_entries_scanned,
+        total_readings: stats.total_readings,
+        total_candidates: stats.total_candidates,
         state: build_state().map_err(|err| err.to_string())?,
     })
 }

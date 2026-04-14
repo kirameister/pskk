@@ -33,13 +33,17 @@ const elements = {
   userDictionaries: document.querySelector("#user-dictionaries"),
   extSystemDictionaries: document.querySelector("#ext-system-dictionaries"),
   extUserDictionaries: document.querySelector("#ext-user-dictionaries"),
-  murensoJson: document.querySelector("#murenso-json"),
+  murensoList: document.querySelector("#murenso-list"),
+  murensoFilter: document.querySelector("#murenso-filter"),
   rawConfig: document.querySelector("#raw-config"),
   reload: document.querySelector("#reload"),
   save: document.querySelector("#save"),
   addKeybinding: document.querySelector("#add-keybinding"),
   convertSystemDicts: document.querySelector("#convert-system-dicts"),
   convertUserDicts: document.querySelector("#convert-user-dicts"),
+  convertExtDicts: document.querySelector("#convert-ext-dicts"),
+  addMurenso: document.querySelector("#add-murenso"),
+  reloadMurenso: document.querySelector("#reload-murenso"),
 };
 
 document.querySelectorAll(".nav-item").forEach((button) => {
@@ -73,6 +77,16 @@ elements.addKeybinding.addEventListener("click", () => {
 });
 elements.convertSystemDicts.addEventListener("click", () => convertSystemDictionaries());
 elements.convertUserDicts.addEventListener("click", () => convertUserDictionaries());
+elements.convertExtDicts.addEventListener("click", () => convertExtendedDictionary());
+elements.addMurenso.addEventListener("click", () => {
+  elements.murensoList.appendChild(renderMurensoRow({ first_key: "", second_key: "", kanji: "" }));
+  applyMurensoFilter();
+});
+elements.reloadMurenso.addEventListener("click", () => {
+  if (!currentState) return;
+  renderMurensoMappings(currentState.murenso_mappings || []);
+});
+elements.murensoFilter.addEventListener("input", () => applyMurensoFilter());
 
 loadState();
 
@@ -155,6 +169,23 @@ async function convertUserDictionaries() {
   }
 }
 
+async function convertExtendedDictionary() {
+  setStatus("Generating extended dictionary…");
+  try {
+    const result = await invoke("convert_extended_dictionary", {
+      sourcePaths: collectExtSourcePaths(),
+    });
+    currentState = result.state;
+    renderState(currentState);
+    setStatus("Extended dictionary generation complete");
+    setMessage(formatExtendedDictionaryResult(result));
+  } catch (error) {
+    console.error(error);
+    setStatus("Extended dictionary generation failed");
+    setMessage(String(error));
+  }
+}
+
 function renderState(state) {
   renderSelect(elements.layout, state.layouts, state.config.layout);
   renderSelect(
@@ -179,7 +210,7 @@ function renderState(state) {
   renderUserDictionaries(state.user_dictionaries);
   renderExtDictionaries(elements.extSystemDictionaries, state.ext_system_dictionaries);
   renderExtDictionaries(elements.extUserDictionaries, state.ext_user_dictionaries);
-  elements.murensoJson.value = JSON.stringify(state.murenso_mappings, null, 2);
+  renderMurensoMappings(state.murenso_mappings);
   elements.rawConfig.textContent = JSON.stringify(state.config, null, 2);
 }
 
@@ -363,11 +394,97 @@ function collectDictionaryWeights(type) {
 }
 
 function collectMurensoMappings() {
-  try {
-    const parsed = JSON.parse(elements.murensoJson.value);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return currentState?.murenso_mappings || [];
+  const result = [];
+  for (const row of elements.murensoList.querySelectorAll(".murenso-row")) {
+    const firstKey = row.querySelector("[data-field=first_key]").value.trim();
+    const secondKey = row.querySelector("[data-field=second_key]").value.trim();
+    const kanji = row.querySelector("[data-field=kanji]").value.trim();
+    if (!firstKey && !secondKey && !kanji) continue;
+    result.push({
+      first_key: firstKey,
+      second_key: secondKey,
+      kanji,
+    });
+  }
+  return result;
+}
+
+function collectExtSourcePaths() {
+  const result = [];
+  for (const selector of ["#ext-system-dictionaries", "#ext-user-dictionaries"]) {
+    for (const checkbox of document.querySelectorAll(`${selector} input[type=checkbox]`)) {
+      if (checkbox.checked) {
+        result.push(checkbox.dataset.path);
+      }
+    }
+  }
+  return result;
+}
+
+function renderMurensoMappings(mappings) {
+  elements.murensoList.innerHTML = "";
+  for (const mapping of mappings) {
+    elements.murensoList.appendChild(renderMurensoRow(mapping));
+  }
+  if (!mappings.length) {
+    elements.murensoList.appendChild(
+      renderMurensoRow({ first_key: "", second_key: "", kanji: "" }),
+    );
+  }
+  applyMurensoFilter();
+}
+
+function renderMurensoRow(mapping) {
+  const row = document.createElement("div");
+  row.className = "murenso-row";
+
+  row.appendChild(createMurensoInput("first_key", mapping.first_key || "", 1));
+  row.appendChild(createMurensoInput("second_key", mapping.second_key || "", 1));
+  row.appendChild(createMurensoInput("kanji", mapping.kanji || "", 8));
+
+  const removeButton = document.createElement("button");
+  removeButton.textContent = "Remove";
+  removeButton.className = "ghost";
+  removeButton.addEventListener("click", () => {
+    row.remove();
+    if (!elements.murensoList.children.length) {
+      elements.murensoList.appendChild(
+        renderMurensoRow({ first_key: "", second_key: "", kanji: "" }),
+      );
+    }
+  });
+  row.appendChild(removeButton);
+  return row;
+}
+
+function createMurensoInput(field, value, maxLength) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = value;
+  input.dataset.field = field;
+  if (maxLength) input.maxLength = maxLength;
+  if (field !== "kanji") {
+    input.placeholder = "1 key";
+  } else {
+    input.placeholder = "漢字";
+  }
+  input.addEventListener("input", () => {
+    if (field !== "kanji" && input.value.length > 1) {
+      input.value = input.value.slice(0, 1);
+    }
+    applyMurensoFilter();
+  });
+  return input;
+}
+
+function applyMurensoFilter() {
+  const filter = elements.murensoFilter.value.trim().toLowerCase();
+  for (const row of elements.murensoList.querySelectorAll(".murenso-row")) {
+    const text = Array.from(row.querySelectorAll("input"))
+      .map((input) => input.value)
+      .join(" ")
+      .toLowerCase();
+    row.classList.toggle("hidden", Boolean(filter) && !text.includes(filter));
   }
 }
 
@@ -384,6 +501,18 @@ function formatDictionaryResult(result) {
   if (result.okurigana_entries_expanded) {
     lines.push(`Okurigana expanded: ${result.okurigana_entries_expanded}`);
   }
+  return lines.join("\n");
+}
+
+function formatExtendedDictionaryResult(result) {
+  const lines = [];
+  if (result.output_path) lines.push(`Output: ${result.output_path}`);
+  lines.push(`Files processed: ${result.files_processed}`);
+  lines.push(`Kanchoku kanji: ${result.kanchoku_kanji_count}`);
+  lines.push(`Yomi→kanji mappings: ${result.yomi_kanji_mappings}`);
+  lines.push(`Dictionary entries scanned: ${result.source_entries_scanned}`);
+  lines.push(`Total readings: ${result.total_readings}`);
+  lines.push(`Total candidates: ${result.total_candidates}`);
   return lines.join("\n");
 }
 
