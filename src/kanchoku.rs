@@ -14,7 +14,7 @@ pub struct ProcessResult {
     pub pending: Option<char>,
     pub consumed: bool,
 }
-
+//// This is like the implementation section of defined/declared return-value types??
 impl ProcessResult {
     fn new(output: Option<String>, pending: Option<char>, consumed: bool) -> Self {
         Self {
