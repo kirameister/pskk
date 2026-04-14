@@ -74,3 +74,46 @@ clean:
   rm -rf apps/ime-tester/ui/node_modules apps/ime-tester/ui/dist
   rm -rf apps/settings/src-tauri/target
   rm -rf apps/ime-tester/src-tauri/target
+
+# Package for distribution
+package-settings:
+  cd apps/settings/src-tauri && cargo tauri build
+  @echo "Packages created in apps/settings/src-tauri/target/release/bundle/"
+
+package-ime-tester:
+  cd apps/ime-tester/src-tauri && cargo tauri build
+  @echo "Packages created in apps/ime-tester/src-tauri/target/release/bundle/"
+
+package-all:
+  just package-settings
+  just package-ime-tester
+
+# Show build outputs
+show-outputs:
+  @echo "=== Core Library ==="
+  @ls -lh target/release/libpskk.* 2>/dev/null || echo "Not built yet"
+  @echo ""
+  @echo "=== Settings App ==="
+  @ls -lh apps/settings/src-tauri/target/release/pskk-settings 2>/dev/null || echo "Not built yet"
+  @echo ""
+  @echo "=== Settings Packages ==="
+  @find apps/settings/src-tauri/target/release/bundle -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" 2>/dev/null || echo "Not packaged yet"
+  @echo ""
+  @echo "=== IME Tester ==="
+  @ls -lh apps/ime-tester/src-tauri/target/release/pskk-ime-tester 2>/dev/null || echo "Not built yet"
+  @echo ""
+  @echo "=== IME Tester Packages ==="
+  @find apps/ime-tester/src-tauri/target/release/bundle -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" 2>/dev/null || echo "Not packaged yet"
+
+# Install locally (for testing)
+install-local:
+  mkdir -p ~/.local/bin
+  cp apps/settings/src-tauri/target/release/pskk-settings ~/.local/bin/ 2>/dev/null || echo "Build settings first with: just settings-tauri-build"
+  cp apps/ime-tester/src-tauri/target/release/pskk-ime-tester ~/.local/bin/ 2>/dev/null || echo "Build ime-tester first with: just ime-tester-build"
+  @echo "Installed to ~/.local/bin (ensure it's in your PATH)"
+
+# Uninstall local installation
+uninstall-local:
+  rm -f ~/.local/bin/pskk-settings
+  rm -f ~/.local/bin/pskk-ime-tester
+  @echo "Removed from ~/.local/bin"
