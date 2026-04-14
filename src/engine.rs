@@ -28,13 +28,13 @@ pub enum MarkerState {
     KanchokuSecondPressed,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PreeditSegment {
     pub text: String,
     pub is_selected: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EngineOutput {
     pub commit_string: Option<String>,
     pub preedit_segments: Vec<PreeditSegment>,
