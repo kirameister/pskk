@@ -117,3 +117,43 @@ uninstall-local:
   rm -f ~/.local/bin/pskk-settings
   rm -f ~/.local/bin/pskk-ime-tester
   @echo "Removed from ~/.local/bin"
+
+# Install to /opt/pskk (system-wide, requires sudo)
+install-system PREFIX="/opt/pskk":
+  @echo "Installing to {{PREFIX}}..."
+  sudo mkdir -p {{PREFIX}}/bin
+  sudo mkdir -p {{PREFIX}}/lib
+  sudo mkdir -p {{PREFIX}}/share/data
+  sudo cp target/release/libpskk.rlib {{PREFIX}}/lib/ 2>/dev/null || echo "Core library not built"
+  sudo cp apps/settings/src-tauri/target/release/pskk-settings {{PREFIX}}/bin/ 2>/dev/null || echo "Settings app not built"
+  sudo cp apps/ime-tester/src-tauri/target/release/pskk-ime-tester {{PREFIX}}/bin/ 2>/dev/null || echo "IME tester not built"
+  sudo mkdir -p /usr/local/bin
+  sudo ln -sf {{PREFIX}}/bin/pskk-settings /usr/local/bin/pskk-settings
+  sudo ln -sf {{PREFIX}}/bin/pskk-ime-tester /usr/local/bin/pskk-ime-tester
+  @echo "Installed to {{PREFIX}}"
+  @echo "Symlinks created in /usr/local/bin"
+
+# Uninstall from /opt/pskk
+uninstall-system PREFIX="/opt/pskk":
+  @echo "Uninstalling from {{PREFIX}}..."
+  sudo rm -f /usr/local/bin/pskk-settings
+  sudo rm -f /usr/local/bin/pskk-ime-tester
+  sudo rm -rf {{PREFIX}}
+  @echo "Uninstalled from {{PREFIX}}"
+
+# Install IBus engine (when implemented)
+install-ibus PREFIX="/opt/pskk":
+  @echo "Installing IBus engine to {{PREFIX}}..."
+  sudo mkdir -p {{PREFIX}}/libexec
+  sudo mkdir -p {{PREFIX}}/share/ibus/component
+  sudo cp target/release/ibus-engine-pskk {{PREFIX}}/libexec/ 2>/dev/null || echo "IBus engine not built yet"
+  sudo chmod +x {{PREFIX}}/libexec/ibus-engine-pskk 2>/dev/null || true
+  @echo "TODO: Copy IBus component XML to {{PREFIX}}/share/ibus/component/"
+  @echo "TODO: Register with IBus"
+  @echo "Run 'ibus restart' after installation"
+
+# Uninstall IBus engine
+uninstall-ibus PREFIX="/opt/pskk":
+  sudo rm -f {{PREFIX}}/libexec/ibus-engine-pskk
+  sudo rm -f {{PREFIX}}/share/ibus/component/pskk.xml
+  @echo "Run 'ibus restart' to complete uninstallation"
