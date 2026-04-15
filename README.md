@@ -44,7 +44,7 @@ sudo pacman -S ibus
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/pskk.git
+git clone https://github.com/kirameister/pskk.git
 cd pskk
 
 # Install dependencies
