@@ -29,16 +29,16 @@ mkdir -p "${PSKK_IBUS_COMPONENT_DIR}"
 
 # Install binaries
 echo "Installing binaries..."
-if [ -f "target/release/pskk-settings" ]; then
-    cp target/release/pskk-settings "${PSKK_BIN_DIR}/"
+if [ -f "apps/settings/src-tauri/target/release/pskk-settings" ]; then
+    cp apps/settings/src-tauri/target/release/pskk-settings "${PSKK_BIN_DIR}/"
     chmod +x "${PSKK_BIN_DIR}/pskk-settings"
     echo "  ✓ pskk-settings"
 else
     echo "  ⚠ pskk-settings not found (build with: just settings-tauri-build)"
 fi
 
-if [ -f "target/release/pskk-ime-tester" ]; then
-    cp target/release/pskk-ime-tester "${PSKK_BIN_DIR}/"
+if [ -f "apps/ime-tester/src-tauri/target/release/pskk-ime-tester" ]; then
+    cp apps/ime-tester/src-tauri/target/release/pskk-ime-tester "${PSKK_BIN_DIR}/"
     chmod +x "${PSKK_BIN_DIR}/pskk-ime-tester"
     echo "  ✓ pskk-ime-tester"
 else

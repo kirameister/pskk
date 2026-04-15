@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "com.kirameister.pskk.ime-tester",
   "build": {
-    "beforeDevCommand": "npm --prefix ../ui run dev -- --host 127.0.0.1",
-    "beforeBuildCommand": "npm --prefix ../ui run build",
+    "beforeDevCommand": "npm --prefix ui run dev -- --host 127.0.0.1",
+    "beforeBuildCommand": "npm --prefix ui run build",
     "devUrl": "http://127.0.0.1:1421",
     "frontendDist": "../ui/dist"
   },
