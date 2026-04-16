@@ -44,19 +44,19 @@ textarea {
 }
 
 .app-shell {
-  display: grid;
-  grid-template-columns: 14rem 1fr;
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
 }
 
 .sidebar {
-  padding: 8px;
+  padding: 0;
   background: var(--bg-strong);
   color: var(--ink);
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .eyebrow {
@@ -65,6 +65,11 @@ textarea {
   letter-spacing: 0.18em;
   font-size: 0.68rem;
   color: var(--muted);
+}
+
+.brand {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
 }
 
 .brand h1,
@@ -85,47 +90,51 @@ textarea {
 
 .panel-nav {
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  flex-direction: row;
+  gap: 0;
+  padding: 0 12px;
 }
 
 .nav-item {
-  text-align: left;
-  border: 1px solid transparent;
+  text-align: center;
+  border: none;
+  border-bottom: 2px solid transparent;
   background: transparent;
-  color: inherit;
-  padding: 6px 10px;
-  border-radius: 4px;
+  color: var(--muted);
+  padding: 12px 20px;
+  border-radius: 0;
   cursor: pointer;
   line-height: 1.4;
   font-size: 13px;
-  transition: background 0.15s;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
 }
 
 .nav-item:hover {
+  color: var(--ink);
   background: var(--bg);
 }
 
 .nav-item.active {
-  background: var(--accent);
-  color: #ffffff;
+  background: transparent;
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 500;
 }
 
 .sidebar-note {
-  margin-top: auto;
-  padding: 8px;
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--muted);
-  font-size: 12px;
-  border: 1px solid var(--line);
+  display: none;
 }
 
 .content {
-  padding: 12px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .panel {
@@ -359,12 +368,18 @@ button.ghost:active {
 }
 
 @media (max-width: 960px) {
-  .app-shell {
-    grid-template-columns: 1fr;
+  .panel-nav {
+    overflow-x: auto;
+    padding: 0 8px;
   }
 
-  .sidebar {
-    gap: 0.8rem;
+  .nav-item {
+    padding: 10px 16px;
+    font-size: 12px;
+  }
+
+  .content {
+    padding: 12px;
   }
 
   .form-grid,
