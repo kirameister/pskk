@@ -32,8 +32,8 @@ body {
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 button,
@@ -63,7 +63,7 @@ textarea {
   margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.18em;
-  font-size: 0.68rem;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -83,9 +83,20 @@ textarea {
     serif;
 }
 
-.brand h1,
+.brand h1 {
+  font-size: 20px;
+  font-weight: 600;
+}
+
 .section-header h2 {
-  font-size: 1.45rem;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.subsection-head h3,
+.card h3 {
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .panel-nav {
@@ -101,11 +112,11 @@ textarea {
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--muted);
-  padding: 12px 20px;
+  padding: 14px 24px;
   border-radius: 0;
   cursor: pointer;
-  line-height: 1.4;
-  font-size: 13px;
+  line-height: 1.5;
+  font-size: 15px;
   transition: color 0.15s, border-color 0.15s;
   white-space: nowrap;
 }
@@ -151,10 +162,11 @@ textarea {
 }
 
 .section-header p {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   color: var(--muted);
   max-width: 52rem;
-  font-size: 13px;
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .form-grid {
@@ -169,6 +181,12 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 0.28rem;
+}
+
+.form-grid label {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
 }
 
 .checkbox {
@@ -186,8 +204,9 @@ pre {
   border-radius: 4px;
   background: var(--bg-strong);
   color: var(--ink);
-  padding: 6px 8px;
-  font-size: 13px;
+  padding: 8px 12px;
+  font-size: 15px;
+  line-height: 1.5;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
@@ -203,8 +222,8 @@ textarea:focus {
 textarea {
   min-height: 18rem;
   resize: vertical;
-  font-family: "IBM Plex Mono", monospace;
-  line-height: 1.35;
+  font-family: "Consolas", "Monaco", "Courier New", monospace;
+  line-height: 1.6;
 }
 
 pre {
@@ -212,8 +231,8 @@ pre {
   min-height: 18rem;
   margin: 8px 0 0;
   background: var(--bg);
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--ink);
   font-family: "Consolas", "Monaco", "Courier New", monospace;
 }
@@ -302,7 +321,8 @@ pre {
   margin-bottom: 0.35rem;
   padding: 0 0.2rem;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .murenso-row {
@@ -327,12 +347,12 @@ pre {
 button {
   border: 1px solid var(--accent);
   border-radius: 4px;
-  padding: 6px 16px;
+  padding: 8px 20px;
   background: var(--accent);
   color: #ffffff;
   cursor: pointer;
   line-height: 1.5;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
   transition: background 0.15s, border-color 0.15s;
 }
@@ -364,7 +384,8 @@ button.ghost:active {
 #message {
   color: var(--muted);
   white-space: pre-wrap;
-  font-size: 0.9rem;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 @media (max-width: 960px) {
