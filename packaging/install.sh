@@ -69,6 +69,8 @@ fi
 echo "Installing data files..."
 if [ -d "data" ]; then
     cp -r data/* "${PSKK_DATA_DIR}/" 2>/dev/null || true
+    # Make data files readable by all users
+    chmod -R a+rX "${PSKK_DATA_DIR}"
     echo "  ✓ Data files"
 fi
 
