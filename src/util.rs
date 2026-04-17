@@ -554,18 +554,13 @@ pub fn get_localedir() -> PathBuf {
 }
 
 pub fn get_homedir() -> Option<PathBuf> {
-    env::var_os("HOME").map(PathBuf::from)
+    dirs::home_dir()
 }
 
 pub fn get_user_config_dir() -> PathBuf {
-    if let Some(config_home) = env::var_os("XDG_CONFIG_HOME") {
-        return PathBuf::from(config_home).join(PACKAGE_NAME);
-    }
-
-    get_homedir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".config")
-        .join(PACKAGE_NAME)
+    dirs::config_dir()
+        .map(|p| p.join(PACKAGE_NAME))
+        .unwrap_or_else(|| PathBuf::from(".").join(PACKAGE_NAME))
 }
 
 pub fn get_user_dictionaries_dir() -> PathBuf {
