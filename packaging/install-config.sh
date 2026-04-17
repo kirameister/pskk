@@ -9,7 +9,7 @@ export PSKK_PREFIX="${PSKK_PREFIX:-/opt/pskk}"
 export PSKK_BIN_DIR="${PSKK_PREFIX}/bin"
 export PSKK_LIB_DIR="${PSKK_PREFIX}/lib"
 export PSKK_LIBEXEC_DIR="${PSKK_PREFIX}/libexec"
-export PSKK_DATA_DIR="${PSKK_PREFIX}/share/data"
+export PSKK_DATA_DIR="${PSKK_PREFIX}/data"
 export PSKK_IBUS_COMPONENT_DIR="${PSKK_PREFIX}/share/ibus/component"
 
 # System integration paths

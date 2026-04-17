@@ -123,7 +123,7 @@ install-system PREFIX="/opt/pskk":
   @echo "Installing to {{PREFIX}}..."
   sudo mkdir -p {{PREFIX}}/bin
   sudo mkdir -p {{PREFIX}}/lib
-  sudo mkdir -p {{PREFIX}}/share/data
+  sudo mkdir -p {{PREFIX}}/data
   sudo cp target/release/libpskk.rlib {{PREFIX}}/lib/ 2>/dev/null || echo "Core library not built"
   sudo cp apps/settings/src-tauri/target/release/pskk-settings {{PREFIX}}/bin/ 2>/dev/null || echo "Settings app not built"
   sudo cp apps/ime-tester/src-tauri/target/release/pskk-ime-tester {{PREFIX}}/bin/ 2>/dev/null || echo "IME tester not built"

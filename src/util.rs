@@ -546,7 +546,7 @@ pub fn get_datadir() -> PathBuf {
 }
 
 pub fn get_default_config_path() -> PathBuf {
-    get_datadir().join("share/data/default_user_config.json")
+    get_datadir().join("data/default_user_config.json")
 }
 
 pub fn get_localedir() -> PathBuf {
