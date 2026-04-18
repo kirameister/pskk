@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fmt;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 pub const PACKAGE_NAME: &str = "pskk";
@@ -589,6 +589,40 @@ pub fn get_default_config_data() -> Result<Value, UtilError> {
     read_json_value(&get_default_config_path())
 }
 
+fn write_log(message: &str) -> Result<(), UtilError> {
+    let log_path = get_user_config_dir().join("pskk.log");
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)?;
+    
+    // Get current timestamp in a simple readable format
+    let now = std::time::SystemTime::now();
+    let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    let secs = duration.as_secs();
+    
+    // Simple date/time formatting: YYYY-MM-DD HH:MM:SS
+    let days_since_epoch = secs / 86400;
+    let secs_today = secs % 86400;
+    let hours = secs_today / 3600;
+    let minutes = (secs_today % 3600) / 60;
+    let seconds = secs_today % 60;
+    
+    // Approximate date (this is simplified, not accounting for leap years perfectly)
+    let years_since_1970 = days_since_epoch / 365;
+    let year = 1970 + years_since_1970;
+    let day_of_year = days_since_epoch % 365;
+    let month = (day_of_year / 30) + 1;
+    let day = (day_of_year % 30) + 1;
+    
+    writeln!(
+        file,
+        "[{:04}-{:02}-{:02} {:02}:{:02}:{:02}] {}",
+        year, month, day, hours, minutes, seconds, message
+    )?;
+    Ok(())
+}
+
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), UtilError> {
     if !dst.exists() {
         fs::create_dir_all(dst)?;
@@ -662,14 +696,20 @@ pub fn get_config_data() -> Result<(Value, Vec<String>), UtilError> {
     if !config_path.exists() {
         fs::create_dir_all(get_user_config_dir())?;
         write_json_value(&config_path, &default_config)?;
-        warnings.push(format!(
+        
+        let msg = format!(
             "config.json not found under {}. Copied default config from {}",
             get_user_config_dir().display(),
             get_default_config_path().display()
-        ));
+        );
+        let _ = write_log(&msg);
+        warnings.push(msg);
         
         // Initialize user config directory with layouts and CRF model
         let mut init_warnings = initialize_user_config_files()?;
+        for warning in &init_warnings {
+            let _ = write_log(warning);
+        }
         warnings.append(&mut init_warnings);
         
         return Ok((default_config, warnings));
@@ -683,6 +723,12 @@ pub fn get_config_data() -> Result<(Value, Vec<String>), UtilError> {
 
     merge_default_config(&mut config_data, &default_config, &mut warnings);
     validate_dictionaries_config(&mut config_data, &default_config, &mut warnings);
+    
+    // Log all warnings
+    for warning in &warnings {
+        let _ = write_log(warning);
+    }
+    
     Ok((config_data, warnings))
 }
 
