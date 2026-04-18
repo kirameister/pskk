@@ -589,6 +589,71 @@ pub fn get_default_config_data() -> Result<Value, UtilError> {
     read_json_value(&get_default_config_path())
 }
 
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), UtilError> {
+    if !dst.exists() {
+        fs::create_dir_all(dst)?;
+    }
+    
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        
+        if file_type.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path)?;
+        }
+    }
+    
+    Ok(())
+}
+
+fn initialize_user_config_files() -> Result<Vec<String>, UtilError> {
+    let mut warnings = Vec::new();
+    let user_config_dir = get_user_config_dir();
+    let data_dir = get_datadir().join("data");
+    
+    // Copy kanchoku_layouts directory
+    let kanchoku_src = data_dir.join("kanchoku_layouts");
+    let kanchoku_dst = user_config_dir.join("kanchoku_layouts");
+    if kanchoku_src.exists() {
+        copy_dir_recursive(&kanchoku_src, &kanchoku_dst)?;
+        warnings.push(format!(
+            "Copied kanchoku_layouts from {} to {}",
+            kanchoku_src.display(),
+            kanchoku_dst.display()
+        ));
+    }
+    
+    // Copy layouts directory
+    let layouts_src = data_dir.join("layouts");
+    let layouts_dst = user_config_dir.join("layouts");
+    if layouts_src.exists() {
+        copy_dir_recursive(&layouts_src, &layouts_dst)?;
+        warnings.push(format!(
+            "Copied layouts from {} to {}",
+            layouts_src.display(),
+            layouts_dst.display()
+        ));
+    }
+    
+    // Copy bunsetsu.crfsuite file
+    let crfsuite_src = data_dir.join("crf_training/bunsetsu.crfsuite");
+    let crfsuite_dst = user_config_dir.join("bunsetsu.crfsuite");
+    if crfsuite_src.exists() {
+        fs::copy(&crfsuite_src, &crfsuite_dst)?;
+        warnings.push(format!(
+            "Copied bunsetsu.crfsuite from {} to {}",
+            crfsuite_src.display(),
+            crfsuite_dst.display()
+        ));
+    }
+    
+    Ok(warnings)
+}
+
 pub fn get_config_data() -> Result<(Value, Vec<String>), UtilError> {
     let config_path = get_user_config_dir().join("config.json");
     let mut warnings = Vec::new();
@@ -602,6 +667,11 @@ pub fn get_config_data() -> Result<(Value, Vec<String>), UtilError> {
             get_user_config_dir().display(),
             get_default_config_path().display()
         ));
+        
+        // Initialize user config directory with layouts and CRF model
+        let mut init_warnings = initialize_user_config_files()?;
+        warnings.append(&mut init_warnings);
+        
         return Ok((default_config, warnings));
     }
 
