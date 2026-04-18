@@ -42,29 +42,9 @@
               <select id="kanchoku_layout"></select>
             </label>
 
-            <label class="checkbox">
-              <input type="checkbox" id="show_annotations" />
-              <span>Show candidate annotations</span>
-            </label>
-
             <label>
               <span>Candidate window size</span>
               <input type="number" id="candidate_window_size" min="1" step="1" />
-            </label>
-
-            <label>
-              <span>Preedit foreground color</span>
-              <input type="text" id="preedit_foreground_color" placeholder="000000" />
-            </label>
-
-            <label>
-              <span>Preedit background color</span>
-              <input type="text" id="preedit_background_color" placeholder="d1eaff" />
-            </label>
-
-            <label class="checkbox">
-              <input type="checkbox" id="use_ibus_hint_colors" />
-              <span>Use IBus theme colors</span>
             </label>
           </div>
 
@@ -153,6 +133,34 @@
           <button id="save">Save Settings</button>
         </footer>
       </main>
+    </div>
+
+    <!-- Key Capture Modal -->
+    <div id="key-capture-modal" class="modal" style="display: none;">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Press a Key</h3>
+          <button id="modal-close" class="ghost">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>Press any key combination to capture it.</p>
+          <div class="key-display">
+            <div class="key-info">
+              <strong>Key:</strong> <span id="captured-key">—</span>
+            </div>
+            <div class="key-info">
+              <strong>Code:</strong> <span id="captured-code">—</span>
+            </div>
+            <div class="key-info">
+              <strong>Modifiers:</strong> <span id="captured-modifiers">—</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="modal-cancel" class="ghost">Cancel</button>
+          <button id="modal-accept">Use This Key</button>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="/main.js"></script>

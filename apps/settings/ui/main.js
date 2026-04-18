@@ -23,11 +23,7 @@ const elements = {
   message: document.querySelector("#message"),
   layout: document.querySelector("#layout"),
   kanchokuLayout: document.querySelector("#kanchoku_layout"),
-  showAnnotations: document.querySelector("#show_annotations"),
   candidateWindowSize: document.querySelector("#candidate_window_size"),
-  preeditForeground: document.querySelector("#preedit_foreground_color"),
-  preeditBackground: document.querySelector("#preedit_background_color"),
-  useIbusHint: document.querySelector("#use_ibus_hint_colors"),
   keybindings: document.querySelector("#keybindings"),
   systemDictionaries: document.querySelector("#system-dictionaries"),
   userDictionaries: document.querySelector("#user-dictionaries"),
@@ -195,15 +191,7 @@ function renderState(state) {
   );
 
   const ui = state.config.ui || {};
-  elements.showAnnotations.checked = Boolean(ui.show_annotations);
   elements.candidateWindowSize.value = ui.candidate_window_size ?? 9;
-  elements.preeditForeground.value = stripColorPrefix(
-    state.config.preedit_foreground_color || "0x000000",
-  );
-  elements.preeditBackground.value = stripColorPrefix(
-    state.config.preedit_background_color || "0xd1eaff",
-  );
-  elements.useIbusHint.checked = Boolean(state.config.use_ibus_hint_colors);
 
   renderKeybindingsFromConfig(state.config);
   renderSystemDictionaries(state.system_dictionaries);
@@ -269,6 +257,12 @@ function renderKeybindingRow(actionId, keyValue) {
   keyInput.type = "text";
   keyInput.value = keyValue;
   keyInput.placeholder = "Control+Shift+K";
+  keyInput.readOnly = true;
+
+  const captureButton = document.createElement("button");
+  captureButton.textContent = "Capture";
+  captureButton.className = "ghost";
+  captureButton.addEventListener("click", () => openKeyCapture(keyInput));
 
   const removeButton = document.createElement("button");
   removeButton.textContent = "Remove";
@@ -277,6 +271,7 @@ function renderKeybindingRow(actionId, keyValue) {
 
   row.appendChild(actionSelect);
   row.appendChild(keyInput);
+  row.appendChild(captureButton);
   row.appendChild(removeButton);
   elements.keybindings.appendChild(row);
 }
@@ -367,11 +362,7 @@ function collectSaveInput() {
   return {
     layout: elements.layout.value,
     kanchoku_layout: elements.kanchokuLayout.value,
-    show_annotations: elements.showAnnotations.checked,
     candidate_window_size: Number(elements.candidateWindowSize.value || 9),
-    preedit_foreground_color: elements.preeditForeground.value,
-    preedit_background_color: elements.preeditBackground.value,
-    use_ibus_hint_colors: elements.useIbusHint.checked,
     keybindings_by_action: keybindingsByAction,
     enabled_system_dicts: collectDictionaryWeights("system"),
     enabled_user_dicts: collectDictionaryWeights("user"),
@@ -523,3 +514,82 @@ function setStatus(value) {
 function setMessage(value) {
   elements.message.textContent = value;
 }
+
+// Key Capture Modal
+let currentKeyInput = null;
+let capturedKeyValue = null;
+
+const modal = document.getElementById("key-capture-modal");
+const modalClose = document.getElementById("modal-close");
+const modalCancel = document.getElementById("modal-cancel");
+const modalAccept = document.getElementById("modal-accept");
+const capturedKeySpan = document.getElementById("captured-key");
+const capturedCodeSpan = document.getElementById("captured-code");
+const capturedModifiersSpan = document.getElementById("captured-modifiers");
+
+function openKeyCapture(inputElement) {
+  currentKeyInput = inputElement;
+  capturedKeyValue = null;
+  capturedKeySpan.textContent = "—";
+  capturedCodeSpan.textContent = "—";
+  capturedModifiersSpan.textContent = "—";
+  modal.style.display = "flex";
+  modalAccept.disabled = true;
+}
+
+function closeKeyCapture() {
+  modal.style.display = "none";
+  currentKeyInput = null;
+  capturedKeyValue = null;
+}
+
+function handleKeyCapture(event) {
+  if (modal.style.display !== "flex") return;
+  
+  event.preventDefault();
+  event.stopPropagation();
+  
+  // Build modifier string
+  const modifiers = [];
+  if (event.ctrlKey) modifiers.push("Control");
+  if (event.altKey) modifiers.push("Alt");
+  if (event.shiftKey) modifiers.push("Shift");
+  if (event.metaKey) modifiers.push("Meta");
+  
+  // Use event.key for the key representation
+  const key = event.key;
+  
+  // Build the full key string (e.g., "Control+Shift+K")
+  const keyParts = [...modifiers];
+  if (key && key !== "Control" && key !== "Alt" && key !== "Shift" && key !== "Meta") {
+    keyParts.push(key);
+  }
+  
+  capturedKeyValue = keyParts.join("+");
+  
+  // Display captured information
+  capturedKeySpan.textContent = event.key || "—";
+  capturedCodeSpan.textContent = event.code || "—";
+  capturedModifiersSpan.textContent = modifiers.length > 0 ? modifiers.join(", ") : "None";
+  
+  modalAccept.disabled = keyParts.length === 0;
+}
+
+modalClose.addEventListener("click", closeKeyCapture);
+modalCancel.addEventListener("click", closeKeyCapture);
+modalAccept.addEventListener("click", () => {
+  if (currentKeyInput && capturedKeyValue) {
+    currentKeyInput.value = capturedKeyValue;
+  }
+  closeKeyCapture();
+});
+
+// Close modal when clicking outside
+modal.addEventListener("click", (e) => {
+  if (e.target === modal) {
+    closeKeyCapture();
+  }
+});
+
+// Capture keyboard events globally when modal is open
+document.addEventListener("keydown", handleKeyCapture);
