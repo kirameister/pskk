@@ -49,11 +49,7 @@ pub struct MurensoMapping {
 pub struct SaveSettingsInput {
     pub layout: String,
     pub kanchoku_layout: String,
-    pub show_annotations: bool,
     pub candidate_window_size: i32,
-    pub preedit_foreground_color: String,
-    pub preedit_background_color: String,
-    pub use_ibus_hint_colors: bool,
     pub keybindings_by_action: HashMap<String, Vec<String>>,
     pub enabled_system_dicts: HashMap<String, i32>,
     pub enabled_user_dicts: HashMap<String, i32>,
@@ -363,14 +359,8 @@ pub fn save_settings(
     config["layout"] = Value::String(input.layout);
     config["kanchoku_layout"] = Value::String(input.kanchoku_layout);
     config["ui"] = json!({
-        "show_annotations": input.show_annotations,
         "candidate_window_size": input.candidate_window_size,
     });
-    config["preedit_foreground_color"] =
-        Value::String(format!("0x{}", normalize_hex_color(&input.preedit_foreground_color, "000000")));
-    config["preedit_background_color"] =
-        Value::String(format!("0x{}", normalize_hex_color(&input.preedit_background_color, "d1eaff")));
-    config["use_ibus_hint_colors"] = Value::Bool(input.use_ibus_hint_colors);
 
     for config_key in [
         "enable_hiragana_key",
