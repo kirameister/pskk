@@ -557,7 +557,25 @@ function handleKeyCapture(event) {
   if (event.metaKey) modifiers.push("Meta");
   
   // Use event.key for the key representation
-  const key = event.key;
+  let key = event.key;
+  
+  // Normalize special keys to readable names
+  const keyNormalizations = {
+    " ": "Space",
+    "Enter": "Enter",
+    "Tab": "Tab",
+    "Escape": "Escape",
+    "Backspace": "Backspace",
+    "Delete": "Delete",
+    "ArrowUp": "ArrowUp",
+    "ArrowDown": "ArrowDown",
+    "ArrowLeft": "ArrowLeft",
+    "ArrowRight": "ArrowRight",
+  };
+  
+  if (keyNormalizations[key]) {
+    key = keyNormalizations[key];
+  }
   
   // Build the full key string (e.g., "Control+Shift+K")
   const keyParts = [...modifiers];
@@ -567,8 +585,8 @@ function handleKeyCapture(event) {
   
   capturedKeyValue = keyParts.join("+");
   
-  // Display captured information
-  capturedKeySpan.textContent = event.key || "—";
+  // Display captured information (show normalized key name)
+  capturedKeySpan.textContent = key || "—";
   capturedCodeSpan.textContent = event.code || "—";
   capturedModifiersSpan.textContent = modifiers.length > 0 ? modifiers.join(", ") : "None";
   
