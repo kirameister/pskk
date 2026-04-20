@@ -60,41 +60,64 @@
         <section class="panel" id="panel-dictionaries">
           <div class="section-header">
             <h2>Dictionaries</h2>
-            <p>Review discovered dictionary sources, convert merged dictionaries, and generate the extension dictionary.</p>
+            <p>Manage SKK dictionaries and their weights for candidate ordering.</p>
           </div>
 
-          <div class="dictionary-columns">
-            <section class="card">
-              <div class="card-head">
-                <h3>System Dictionaries</h3>
-                <button id="convert-system-dicts" class="ghost">Convert</button>
-              </div>
-              <div id="system-dictionaries" class="dictionary-list"></div>
-            </section>
-            <section class="card">
-              <div class="card-head">
-                <h3>User Dictionaries</h3>
-                <button id="convert-user-dicts" class="ghost">Convert</button>
-              </div>
-              <div id="user-dictionaries" class="dictionary-list"></div>
-            </section>
-          </div>
+          <!-- Nested tabs for dictionary types -->
+          <nav class="sub-panel-nav">
+            <button class="sub-nav-item active" data-subpanel="dict-system">System</button>
+            <button class="sub-nav-item" data-subpanel="dict-user">User</button>
+            <button class="sub-nav-item" data-subpanel="dict-extended">Extended</button>
+          </nav>
 
-          <div class="dictionary-columns">
-            <section class="card">
-              <div class="card-head">
-                <h3>Ext Sources: System</h3>
+          <!-- System Dictionaries Tab -->
+          <section class="sub-panel active" id="subpanel-dict-system">
+            <div class="subsection-head">
+              <h3>System SKK Dictionaries</h3>
+              <button id="convert-system-dicts" class="ghost">Convert</button>
+            </div>
+            <p class="help-text">Select dictionaries from /opt/pskk/data/skk_dict/ and set their weights. Higher weights appear first in candidates.</p>
+            
+            <div class="dict-table">
+              <div class="dict-table-header">
+                <span>Enabled</span>
+                <span>Dictionary Name</span>
+                <span>Weight</span>
               </div>
-              <div id="ext-system-dictionaries" class="dictionary-list"></div>
-            </section>
-            <section class="card">
-              <div class="card-head">
-                <h3>Ext Sources: User</h3>
-                <button id="convert-ext-dicts" class="ghost">Generate Ext-Dict</button>
-              </div>
-              <div id="ext-user-dictionaries" class="dictionary-list"></div>
-            </section>
-          </div>
+              <div id="system-dictionaries" class="dict-table-body"></div>
+            </div>
+          </section>
+
+          <!-- User Dictionaries Tab -->
+          <section class="sub-panel" id="subpanel-dict-user">
+            <div class="subsection-head">
+              <h3>User Dictionaries</h3>
+              <button id="convert-user-dicts" class="ghost">Convert</button>
+            </div>
+            <div id="user-dictionaries" class="dictionary-list"></div>
+          </section>
+
+          <!-- Extended Dictionaries Tab -->
+          <section class="sub-panel" id="subpanel-dict-extended">
+            <div class="subsection-head">
+              <h3>Extended Dictionary Sources</h3>
+              <button id="convert-ext-dicts" class="ghost">Generate Ext-Dict</button>
+            </div>
+            <div class="dictionary-columns">
+              <section class="card">
+                <div class="card-head">
+                  <h4>System Sources</h4>
+                </div>
+                <div id="ext-system-dictionaries" class="dictionary-list"></div>
+              </section>
+              <section class="card">
+                <div class="card-head">
+                  <h4>User Sources</h4>
+                </div>
+                <div id="ext-user-dictionaries" class="dictionary-list"></div>
+              </section>
+            </div>
+          </section>
         </section>
 
         <section class="panel" id="panel-murenso">

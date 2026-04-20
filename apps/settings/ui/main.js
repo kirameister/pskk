@@ -56,6 +56,21 @@ document.querySelectorAll(".nav-item").forEach((button) => {
   });
 });
 
+// Nested sub-panel navigation for Dictionaries
+document.querySelectorAll(".sub-nav-item").forEach((button) => {
+  button.addEventListener("click", () => {
+    document
+      .querySelectorAll(".sub-nav-item")
+      .forEach((item) => item.classList.toggle("active", item === button));
+    document.querySelectorAll(".sub-panel").forEach((panel) => {
+      panel.classList.toggle(
+        "active",
+        panel.id === `subpanel-${button.dataset.subpanel}`,
+      );
+    });
+  });
+});
+
 const handleEscapeToClose = async (event) => {
   if (event.key !== "Escape") return;
   event.preventDefault();
@@ -279,13 +294,38 @@ function renderKeybindingRow(actionId, keyValue) {
 function renderSystemDictionaries(entries) {
   elements.systemDictionaries.innerHTML = "";
   for (const entry of entries) {
-    elements.systemDictionaries.appendChild(renderDictionaryEntry({
-      label: entry.relative_path,
-      fullPath: entry.full_path,
-      enabled: entry.enabled,
-      weight: entry.weight,
-      datasetType: "system",
-    }));
+    const row = document.createElement("div");
+    row.className = "dict-table-row";
+    row.dataset.path = entry.relative_path;
+    
+    // Enabled checkbox
+    const enabledCell = document.createElement("div");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = entry.enabled;
+    checkbox.dataset.type = "system";
+    enabledCell.appendChild(checkbox);
+    
+    // Dictionary name (read-only)
+    const nameCell = document.createElement("div");
+    nameCell.className = "dict-name";
+    nameCell.textContent = entry.relative_path;
+    nameCell.title = entry.full_path;
+    
+    // Weight input
+    const weightCell = document.createElement("div");
+    const weightInput = document.createElement("input");
+    weightInput.type = "number";
+    weightInput.value = entry.weight;
+    weightInput.min = "0";
+    weightInput.step = "1";
+    weightInput.dataset.type = "system";
+    weightCell.appendChild(weightInput);
+    
+    row.appendChild(enabledCell);
+    row.appendChild(nameCell);
+    row.appendChild(weightCell);
+    elements.systemDictionaries.appendChild(row);
   }
 }
 
