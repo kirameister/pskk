@@ -145,10 +145,16 @@ pub fn list_user_dictionary_entries(config: &Value) -> Vec<UserDictionaryEntry> 
     if let Ok(read_dir) = fs::read_dir(&root) {
         for entry in read_dir.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("txt") {
+            
+            // Skip directories and hidden files
+            if !path.is_file() {
                 continue;
             }
             let filename = path.file_name().unwrap().to_string_lossy().to_string();
+            if filename.starts_with('.') {
+                continue;
+            }
+            
             entries.push(UserDictionaryEntry {
                 enabled: weights.contains_key(&filename),
                 filename: filename.clone(),

@@ -94,7 +94,16 @@
               <h3>User Dictionaries</h3>
               <button id="convert-user-dicts" class="ghost">Convert</button>
             </div>
-            <div id="user-dictionaries" class="dictionary-list"></div>
+            <p class="help-text">Manage your personal SKK dictionaries from ~/.config/pskk/dictionaries/ and set their weights.</p>
+            
+            <div class="dict-table">
+              <div class="dict-table-header">
+                <span>Enabled</span>
+                <span>Dictionary Name</span>
+                <span>Weight</span>
+              </div>
+              <div id="user-dictionaries" class="dict-table-body"></div>
+            </div>
           </section>
 
           <!-- Extended Dictionaries Tab -->

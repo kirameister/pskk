@@ -332,13 +332,38 @@ function renderSystemDictionaries(entries) {
 function renderUserDictionaries(entries) {
   elements.userDictionaries.innerHTML = "";
   for (const entry of entries) {
-    elements.userDictionaries.appendChild(renderDictionaryEntry({
-      label: entry.filename,
-      fullPath: entry.filename,
-      enabled: entry.enabled,
-      weight: entry.weight,
-      datasetType: "user",
-    }));
+    const row = document.createElement("div");
+    row.className = "dict-table-row";
+    row.dataset.path = entry.filename;  // Use filename as the key for user dicts
+    
+    // Enabled checkbox
+    const enabledCell = document.createElement("div");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = entry.enabled;
+    checkbox.dataset.type = "user";
+    enabledCell.appendChild(checkbox);
+    
+    // Dictionary name (read-only)
+    const nameCell = document.createElement("div");
+    nameCell.className = "dict-name";
+    nameCell.textContent = entry.filename;
+    nameCell.title = entry.filename;
+    
+    // Weight input
+    const weightCell = document.createElement("div");
+    const weightInput = document.createElement("input");
+    weightInput.type = "number";
+    weightInput.value = entry.weight;
+    weightInput.min = "0";
+    weightInput.step = "1";
+    weightInput.dataset.type = "user";
+    weightCell.appendChild(weightInput);
+    
+    row.appendChild(enabledCell);
+    row.appendChild(nameCell);
+    row.appendChild(weightCell);
+    elements.userDictionaries.appendChild(row);
   }
 }
 
@@ -412,7 +437,7 @@ function collectSaveInput() {
 function collectDictionaryWeights(type) {
   const result = {};
   const selector =
-    type === "system" ? "#system-dictionaries .dict-table-row" : "#user-dictionaries .dictionary-row";
+    type === "system" ? "#system-dictionaries .dict-table-row" : "#user-dictionaries .dict-table-row";
 
   for (const row of document.querySelectorAll(selector)) {
     const checkbox = row.querySelector("input[type=checkbox]");
