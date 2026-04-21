@@ -106,9 +106,15 @@ pub fn list_system_dictionary_entries(config: &Value) -> Vec<SystemDictionaryEnt
         .unwrap_or_else(|| json!({}));
     let weights = normalize_weight_map(&dict_config);
 
-    let root = get_datadir().join("dictionaries");
+    let root = get_datadir().join("data/skk_dict");
     let mut entries = Vec::new();
     for path in collect_files_recursive(&root) {
+        // Skip non-dictionary files (like .gitignore)
+        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if filename.starts_with('.') || filename.is_empty() {
+            continue;
+        }
+        
         let rel = path
             .strip_prefix(&root)
             .unwrap_or(path.as_path())
