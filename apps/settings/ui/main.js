@@ -296,7 +296,7 @@ function renderSystemDictionaries(entries) {
   for (const entry of entries) {
     const row = document.createElement("div");
     row.className = "dict-table-row";
-    row.dataset.path = entry.relative_path;
+    row.dataset.path = entry.full_path;  // Use full_path for backend matching
     
     // Enabled checkbox
     const enabledCell = document.createElement("div");
@@ -309,7 +309,7 @@ function renderSystemDictionaries(entries) {
     // Dictionary name (read-only)
     const nameCell = document.createElement("div");
     nameCell.className = "dict-name";
-    nameCell.textContent = entry.relative_path;
+    nameCell.textContent = entry.relative_path;  // Display relative path
     nameCell.title = entry.full_path;
     
     // Weight input
@@ -412,13 +412,16 @@ function collectSaveInput() {
 function collectDictionaryWeights(type) {
   const result = {};
   const selector =
-    type === "system" ? "#system-dictionaries .dictionary-row" : "#user-dictionaries .dictionary-row";
+    type === "system" ? "#system-dictionaries .dict-table-row" : "#user-dictionaries .dictionary-row";
 
   for (const row of document.querySelectorAll(selector)) {
     const checkbox = row.querySelector("input[type=checkbox]");
     const weight = row.querySelector("input[type=number]");
-    if (checkbox.checked) {
-      result[checkbox.dataset.path] = Math.max(1, Number(weight.value || 1));
+    if (checkbox && checkbox.checked) {
+      const path = row.dataset.path;
+      if (path) {
+        result[path] = Math.max(1, Number(weight.value || 1));
+      }
     }
   }
   return result;
