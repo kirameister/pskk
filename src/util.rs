@@ -685,6 +685,16 @@ fn initialize_user_config_files() -> Result<Vec<String>, UtilError> {
         ));
     }
     
+    // Create empty dictionaries directory for user SKK dictionaries
+    let user_dicts_dir = get_user_dictionaries_dir();
+    if !user_dicts_dir.exists() {
+        fs::create_dir_all(&user_dicts_dir)?;
+        warnings.push(format!(
+            "Created user dictionaries directory at {}",
+            user_dicts_dir.display()
+        ));
+    }
+    
     Ok(warnings)
 }
 
