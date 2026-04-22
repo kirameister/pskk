@@ -370,19 +370,25 @@ function renderUserDictionaries(entries) {
 function renderExtDictionaries(container, entries) {
   container.innerHTML = "";
   for (const entry of entries) {
-    const row = document.createElement("label");
-    row.className = "dictionary-row compact";
+    const row = document.createElement("div");
+    row.className = "dict-table-row two-col";
+    row.dataset.path = entry.full_path;
 
+    // Include checkbox
+    const checkboxCell = document.createElement("div");
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = entry.enabled;
-    checkbox.dataset.path = entry.full_path;
+    checkboxCell.appendChild(checkbox);
 
-    const text = document.createElement("span");
-    text.textContent = entry.display_name;
+    // Dictionary name (read-only)
+    const nameCell = document.createElement("div");
+    nameCell.className = "dict-name";
+    nameCell.textContent = entry.display_name;
+    nameCell.title = entry.full_path;
 
-    row.appendChild(checkbox);
-    row.appendChild(text);
+    row.appendChild(checkboxCell);
+    row.appendChild(nameCell);
     container.appendChild(row);
   }
 }
@@ -471,9 +477,13 @@ function collectMurensoMappings() {
 function collectExtSourcePaths() {
   const result = [];
   for (const selector of ["#ext-system-dictionaries", "#ext-user-dictionaries"]) {
-    for (const checkbox of document.querySelectorAll(`${selector} input[type=checkbox]`)) {
-      if (checkbox.checked) {
-        result.push(checkbox.dataset.path);
+    for (const row of document.querySelectorAll(`${selector} .dict-table-row`)) {
+      const checkbox = row.querySelector("input[type=checkbox]");
+      if (checkbox && checkbox.checked) {
+        const path = row.dataset.path;
+        if (path) {
+          result.push(path);
+        }
       }
     }
   }

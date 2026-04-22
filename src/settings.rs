@@ -167,9 +167,15 @@ pub fn list_user_dictionary_entries(config: &Value) -> Vec<UserDictionaryEntry> 
 }
 
 pub fn list_ext_dictionary_entries() -> (Vec<ExtDictionaryEntry>, Vec<ExtDictionaryEntry>) {
-    let sys_root = get_datadir().join("dictionaries");
+    let sys_root = get_datadir().join("data/skk_dict");
     let mut sys_entries = Vec::new();
     for path in collect_files_recursive(&sys_root) {
+        // Skip hidden files
+        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if filename.starts_with('.') || filename.is_empty() {
+            continue;
+        }
+        
         let rel = path
             .strip_prefix(&sys_root)
             .unwrap_or(path.as_path())
@@ -187,12 +193,19 @@ pub fn list_ext_dictionary_entries() -> (Vec<ExtDictionaryEntry>, Vec<ExtDiction
     if let Ok(read_dir) = fs::read_dir(&user_root) {
         for entry in read_dir.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("txt") {
+            
+            // Skip directories and hidden files
+            if !path.is_file() {
                 continue;
             }
+            let filename = path.file_name().unwrap().to_string_lossy().to_string();
+            if filename.starts_with('.') {
+                continue;
+            }
+            
             user_entries.push(ExtDictionaryEntry {
                 enabled: false,
-                display_name: path.file_name().unwrap().to_string_lossy().to_string(),
+                display_name: filename,
                 full_path: path,
             });
         }

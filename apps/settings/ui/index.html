@@ -112,19 +112,26 @@
               <h3>Extended Dictionary Sources</h3>
               <button id="convert-ext-dicts" class="ghost">Generate Ext-Dict</button>
             </div>
-            <div class="dictionary-columns">
-              <section class="card">
-                <div class="card-head">
-                  <h4>System Sources</h4>
-                </div>
-                <div id="ext-system-dictionaries" class="dictionary-list"></div>
-              </section>
-              <section class="card">
-                <div class="card-head">
-                  <h4>User Sources</h4>
-                </div>
-                <div id="ext-user-dictionaries" class="dictionary-list"></div>
-              </section>
+            <p class="help-text">Select SKK dictionaries to include in the extended dictionary for kanchoku conversion suggestions.</p>
+            
+            <!-- System Dictionary Sources -->
+            <h4 class="ext-section-title">System Dictionaries</h4>
+            <div class="dict-table">
+              <div class="dict-table-header two-col">
+                <span>Include</span>
+                <span>Dictionary Name</span>
+              </div>
+              <div id="ext-system-dictionaries" class="dict-table-body"></div>
+            </div>
+            
+            <!-- User Dictionary Sources -->
+            <h4 class="ext-section-title">User Dictionaries</h4>
+            <div class="dict-table">
+              <div class="dict-table-header two-col">
+                <span>Include</span>
+                <span>Dictionary Name</span>
+              </div>
+              <div id="ext-user-dictionaries" class="dict-table-body"></div>
             </div>
           </section>
         </section>
