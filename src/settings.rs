@@ -81,7 +81,7 @@ pub fn list_available_layouts() -> Vec<DiscoveredFile> {
 
 pub fn list_available_kanchoku_layouts() -> Vec<DiscoveredFile> {
     let user_dir = get_user_config_dir().join("kanchoku_layouts");
-    let system_dir = get_datadir().join("kanchoku_layouts");
+    let system_dir = get_datadir().join("data/kanchoku_layouts");
     discover_json_files_with_precedence(
         &user_dir,
         &system_dir,
