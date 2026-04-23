@@ -82,19 +82,31 @@ pub fn list_available_layouts() -> Vec<DiscoveredFile> {
 pub fn list_available_kanchoku_layouts() -> Vec<DiscoveredFile> {
     let user_dir = get_user_config_dir().join("kanchoku_layouts");
     let system_dir = get_datadir().join("data/kanchoku_layouts");
-    discover_json_files_with_precedence(
-        &user_dir,
-        &system_dir,
-        |filename, in_user, in_system| {
-            if in_user && in_system {
-                format!("{filename} (User, System)")
-            } else if in_user {
-                format!("{filename} (User)")
-            } else {
-                format!("{filename} (System)")
-            }
-        },
-    )
+    
+    let mut layouts = Vec::new();
+    
+    // Add user layouts
+    for filename in collect_json_filenames(&user_dir) {
+        layouts.push(DiscoveredFile {
+            id: format!("user:{}", filename),
+            display_label: format!("{} (User)", filename),
+            user_path: Some(user_dir.join(&filename)),
+            system_path: None,
+        });
+    }
+    
+    // Add system layouts
+    for filename in collect_json_filenames(&system_dir) {
+        layouts.push(DiscoveredFile {
+            id: format!("system:{}", filename),
+            display_label: format!("{} (System)", filename),
+            user_path: None,
+            system_path: Some(system_dir.join(&filename)),
+        });
+    }
+    
+    layouts.sort_by(|a, b| a.display_label.cmp(&b.display_label));
+    layouts
 }
 
 pub fn list_system_dictionary_entries(config: &Value) -> Vec<SystemDictionaryEntry> {
