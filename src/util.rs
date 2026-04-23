@@ -779,27 +779,37 @@ pub fn get_layout_data(config: &Value) -> Result<Value, UtilError> {
 }
 
 pub fn get_kanchoku_layout(config: &Value) -> Result<Value, UtilError> {
-    let layout_name = config
+    let layout_id = config
         .get("kanchoku_layout")
         .and_then(Value::as_str)
         .ok_or(UtilError::MissingField("kanchoku_layout"))?;
 
-    let candidates = [
-        get_user_config_dir()
-            .join("kanchoku_layouts")
-            .join(layout_name),
-        get_user_config_dir().join(layout_name),
-        get_datadir().join("kanchoku_layouts").join(layout_name),
-        get_datadir().join("kanchoku_layouts").join("aki_code.json"),
-    ];
+    // Handle new format: "user:filename.json" or "system:filename.json"
+    let layout_path = if let Some((source, filename)) = layout_id.split_once(':') {
+        match source {
+            "user" => get_user_config_dir().join("kanchoku_layouts").join(filename),
+            "system" => get_datadir().join("data/kanchoku_layouts").join(filename),
+            _ => return Err(UtilError::InvalidConfig("Unknown kanchoku layout source")),
+        }
+    } else {
+        // Fallback for old format (just filename)
+        let candidates = [
+            get_user_config_dir()
+                .join("kanchoku_layouts")
+                .join(layout_id),
+            get_user_config_dir().join(layout_id),
+            get_datadir().join("data/kanchoku_layouts").join(layout_id),
+            get_datadir().join("data/kanchoku_layouts").join("aki_code.json"),
+        ];
 
-    let chosen = candidates
-        .iter()
-        .find(|path| path.exists())
-        .cloned()
-        .unwrap_or_else(|| candidates.last().unwrap().clone());
+        candidates
+            .iter()
+            .find(|path| path.exists())
+            .cloned()
+            .unwrap_or_else(|| candidates.last().unwrap().clone())
+    };
 
-    read_json_value(&chosen)
+    read_json_value(&layout_path)
 }
 
 pub fn get_dictionary_files(config_dir: Option<&Path>) -> Vec<PathBuf> {

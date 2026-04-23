@@ -86,6 +86,31 @@ pub fn save_settings_state(
 }
 
 #[tauri::command]
+pub fn load_kanchoku_mappings(layout_id: String) -> Result<Vec<MurensoMapping>, String> {
+    use pskk::settings::flatten_kanchoku_layout;
+    use pskk::util::{get_datadir, get_user_config_dir, read_json_value};
+    use std::path::PathBuf;
+    
+    // Parse layout_id: "user:filename.json" or "system:filename.json"
+    let (source, filename) = layout_id
+        .split_once(':')
+        .ok_or_else(|| format!("Invalid layout_id format: {}", layout_id))?;
+    
+    let layout_path: PathBuf = match source {
+        "user" => get_user_config_dir().join("kanchoku_layouts").join(filename),
+        "system" => get_datadir().join("data/kanchoku_layouts").join(filename),
+        _ => return Err(format!("Unknown source: {}", source)),
+    };
+    
+    if !layout_path.exists() {
+        return Err(format!("Layout file not found: {}", layout_path.display()));
+    }
+    
+    let layout = read_json_value(&layout_path).map_err(|err| err.to_string())?;
+    Ok(flatten_kanchoku_layout(&layout))
+}
+
+#[tauri::command]
 pub fn convert_system_dictionaries(
     source_weights: HashMap<String, i32>,
 ) -> Result<DictionaryGenerationResult, String> {

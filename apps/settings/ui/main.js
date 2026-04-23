@@ -107,6 +107,19 @@ elements.murensoFilterSecond.addEventListener("input", (e) => {
   applyMurensoFilter();
 });
 elements.murensoFilterKanji.addEventListener("input", () => applyMurensoFilter());
+elements.kanchokuLayout.addEventListener("change", async () => {
+  setStatus("Loading murenso mappings for new layout…");
+  try {
+    const result = await invoke("load_kanchoku_mappings", {
+      layoutId: elements.kanchokuLayout.value,
+    });
+    renderMurensoMappings(result);
+    setStatus("Murenso mappings updated");
+  } catch (error) {
+    console.error(error);
+    setStatus("Failed to load murenso mappings");
+  }
+});
 
 loadState();
 

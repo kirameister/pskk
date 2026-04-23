@@ -5,6 +5,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::load_settings_state,
             commands::save_settings_state,
+            commands::load_kanchoku_mappings,
             commands::convert_system_dictionaries,
             commands::convert_user_dictionaries,
             commands::convert_extended_dictionary
