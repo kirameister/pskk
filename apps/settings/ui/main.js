@@ -30,7 +30,9 @@ const elements = {
   extSystemDictionaries: document.querySelector("#ext-system-dictionaries"),
   extUserDictionaries: document.querySelector("#ext-user-dictionaries"),
   murensoList: document.querySelector("#murenso-list"),
-  murensoFilter: document.querySelector("#murenso-filter"),
+  murensoFilterFirst: document.querySelector("#murenso-filter-first"),
+  murensoFilterSecond: document.querySelector("#murenso-filter-second"),
+  murensoFilterKanji: document.querySelector("#murenso-filter-kanji"),
   rawConfig: document.querySelector("#raw-config"),
   reload: document.querySelector("#reload"),
   save: document.querySelector("#save"),
@@ -92,7 +94,19 @@ elements.reloadMurenso.addEventListener("click", () => {
   if (!currentState) return;
   renderMurensoMappings(currentState.murenso_mappings || []);
 });
-elements.murensoFilter.addEventListener("input", () => applyMurensoFilter());
+elements.murensoFilterFirst.addEventListener("input", (e) => {
+  if (e.target.value.length > 1) {
+    e.target.value = e.target.value.slice(-1);
+  }
+  applyMurensoFilter();
+});
+elements.murensoFilterSecond.addEventListener("input", (e) => {
+  if (e.target.value.length > 1) {
+    e.target.value = e.target.value.slice(-1);
+  }
+  applyMurensoFilter();
+});
+elements.murensoFilterKanji.addEventListener("input", () => applyMurensoFilter());
 
 loadState();
 
@@ -537,13 +551,21 @@ function createMurensoInput(field, value, maxLength, readOnly = false) {
 }
 
 function applyMurensoFilter() {
-  const filter = elements.murensoFilter.value.trim().toLowerCase();
+  const filterFirst = elements.murensoFilterFirst.value.trim().toLowerCase();
+  const filterSecond = elements.murensoFilterSecond.value.trim().toLowerCase();
+  const filterKanji = elements.murensoFilterKanji.value.trim().toLowerCase();
+  
   for (const row of elements.murensoList.querySelectorAll(".murenso-row")) {
-    const text = Array.from(row.querySelectorAll("input"))
-      .map((input) => input.value)
-      .join(" ")
-      .toLowerCase();
-    row.classList.toggle("hidden", Boolean(filter) && !text.includes(filter));
+    const inputs = row.querySelectorAll("input");
+    const firstKey = inputs[0]?.value.toLowerCase() || "";
+    const secondKey = inputs[1]?.value.toLowerCase() || "";
+    const kanji = inputs[2]?.value.toLowerCase() || "";
+    
+    const matchesFirst = !filterFirst || firstKey.includes(filterFirst);
+    const matchesSecond = !filterSecond || secondKey.includes(filterSecond);
+    const matchesKanji = !filterKanji || kanji.includes(filterKanji);
+    
+    row.classList.toggle("hidden", !(matchesFirst && matchesSecond && matchesKanji));
   }
 }
 
