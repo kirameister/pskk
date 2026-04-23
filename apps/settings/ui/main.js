@@ -33,7 +33,6 @@ const elements = {
   murensoFilterFirst: document.querySelector("#murenso-filter-first"),
   murensoFilterSecond: document.querySelector("#murenso-filter-second"),
   murensoFilterKanji: document.querySelector("#murenso-filter-kanji"),
-  rawConfig: document.querySelector("#raw-config"),
   reload: document.querySelector("#reload"),
   save: document.querySelector("#save"),
   addKeybinding: document.querySelector("#add-keybinding"),
@@ -236,7 +235,6 @@ function renderState(state) {
   renderExtDictionaries(elements.extSystemDictionaries, state.ext_system_dictionaries);
   renderExtDictionaries(elements.extUserDictionaries, state.ext_user_dictionaries);
   renderMurensoMappings(state.murenso_mappings);
-  elements.rawConfig.textContent = JSON.stringify(state.config, null, 2);
 }
 
 function renderSelect(element, items, selectedId) {
