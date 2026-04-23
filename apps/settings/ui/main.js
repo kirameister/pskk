@@ -38,7 +38,6 @@ const elements = {
   convertSystemDicts: document.querySelector("#convert-system-dicts"),
   convertUserDicts: document.querySelector("#convert-user-dicts"),
   convertExtDicts: document.querySelector("#convert-ext-dicts"),
-  addMurenso: document.querySelector("#add-murenso"),
   reloadMurenso: document.querySelector("#reload-murenso"),
 };
 
@@ -89,10 +88,6 @@ elements.addKeybinding.addEventListener("click", () => {
 elements.convertSystemDicts.addEventListener("click", () => convertSystemDictionaries());
 elements.convertUserDicts.addEventListener("click", () => convertUserDictionaries());
 elements.convertExtDicts.addEventListener("click", () => convertExtendedDictionary());
-elements.addMurenso.addEventListener("click", () => {
-  elements.murensoList.appendChild(renderMurensoRow({ first_key: "", second_key: "", kanji: "" }));
-  applyMurensoFilter();
-});
 elements.reloadMurenso.addEventListener("click", () => {
   if (!currentState) return;
   renderMurensoMappings(currentState.murenso_mappings || []);
@@ -507,42 +502,37 @@ function renderMurensoRow(mapping) {
   const row = document.createElement("div");
   row.className = "murenso-row";
 
-  row.appendChild(createMurensoInput("first_key", mapping.first_key || "", 1));
-  row.appendChild(createMurensoInput("second_key", mapping.second_key || "", 1));
-  row.appendChild(createMurensoInput("kanji", mapping.kanji || "", 8));
+  row.appendChild(createMurensoInput("first_key", mapping.first_key || "", 1, true));
+  row.appendChild(createMurensoInput("second_key", mapping.second_key || "", 1, true));
+  row.appendChild(createMurensoInput("kanji", mapping.kanji || "", 8, true));
 
-  const removeButton = document.createElement("button");
-  removeButton.textContent = "Remove";
-  removeButton.className = "ghost";
-  removeButton.addEventListener("click", () => {
-    row.remove();
-    if (!elements.murensoList.children.length) {
-      elements.murensoList.appendChild(
-        renderMurensoRow({ first_key: "", second_key: "", kanji: "" }),
-      );
-    }
-  });
-  row.appendChild(removeButton);
   return row;
 }
 
-function createMurensoInput(field, value, maxLength) {
+function createMurensoInput(field, value, maxLength, readOnly = false) {
   const input = document.createElement("input");
   input.type = "text";
   input.value = value;
   input.dataset.field = field;
   if (maxLength) input.maxLength = maxLength;
+  if (readOnly) {
+    input.readOnly = true;
+    input.style.cursor = "default";
+    input.style.backgroundColor = "var(--bg)";
+  }
   if (field !== "kanji") {
     input.placeholder = "1 key";
   } else {
     input.placeholder = "漢字";
   }
-  input.addEventListener("input", () => {
-    if (field !== "kanji" && input.value.length > 1) {
-      input.value = input.value.slice(0, 1);
-    }
-    applyMurensoFilter();
-  });
+  if (!readOnly) {
+    input.addEventListener("input", () => {
+      if (field !== "kanji" && input.value.length > 1) {
+        input.value = input.value.slice(0, 1);
+      }
+      applyMurensoFilter();
+    });
+  }
   return input;
 }
 

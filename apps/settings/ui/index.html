@@ -16,7 +16,7 @@
         <nav class="panel-nav">
           <button class="nav-item active" data-panel="general">General</button>
           <button class="nav-item" data-panel="dictionaries">Dictionaries</button>
-          <button class="nav-item" data-panel="murenso">Murenso</button>
+          <button class="nav-item" data-panel="murenso">無連想配列</button>
           <button class="nav-item" data-panel="raw">Raw JSON</button>
         </nav>
         <div class="sidebar-note">
@@ -138,22 +138,20 @@
 
         <section class="panel" id="panel-murenso">
           <div class="section-header">
-            <h2>Murenso</h2>
-            <p>Edit the two-key murenso mappings directly. Changes are saved with the main settings save action.</p>
+            <h2>無連想配列</h2>
+            <p>View the two-key murenso mappings from the current kanchoku layout. This is read-only for reference.</p>
           </div>
           <div class="subsection-head">
             <h3>Mappings</h3>
             <div class="inline-actions">
               <input id="murenso-filter" type="text" placeholder="Filter by key or kanji" />
               <button id="reload-murenso" class="ghost">Reload</button>
-              <button id="add-murenso" class="ghost">Add Row</button>
             </div>
           </div>
           <div class="murenso-header">
             <span>First Key</span>
             <span>Second Key</span>
             <span>Kanji</span>
-            <span></span>
           </div>
           <div id="murenso-list" class="murenso-list"></div>
         </section>
