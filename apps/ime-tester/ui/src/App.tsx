@@ -84,6 +84,11 @@ function App() {
       return;
     }
 
+    // Only process keydown events, skip keyup to prevent preedit clearing
+    if (!isPressed) {
+      return;
+    }
+
     const keyChar = e.key.length === 1 ? e.key : null;
     const keyName = e.key;
     const modifiers = {
@@ -100,7 +105,7 @@ function App() {
         modifiers,
       });
 
-      if (isPressed && keyChar) {
+      if (keyChar) {
         addLog(`Key pressed: "${keyChar}" (consumed: ${output.consumed})`);
       }
 
