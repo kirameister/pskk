@@ -24,10 +24,10 @@ interface EngineOutput {
   consumed: boolean;
 }
 
-type InputMode = "Alphanumeric" | "Hiragana";
+type InputMode = "A" | "あ";
 
 function App() {
-  const [mode, setMode] = useState<InputMode>("Alphanumeric");
+  const [mode, setMode] = useState<InputMode>("A");
   const [committedText, setCommittedText] = useState("");
   const [preeditSegments, setPreeditSegments] = useState<PreeditSegment[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -79,7 +79,7 @@ function App() {
     // Handle mode toggle shortcut (Ctrl+Space)
     if (e.ctrlKey && e.key === ' ' && isPressed) {
       e.preventDefault();
-      const newMode = mode === "Alphanumeric" ? "Hiragana" : "Alphanumeric";
+      const newMode = mode === "A" ? "あ" : "A";
       handleModeChange(newMode);
       return;
     }
@@ -171,14 +171,14 @@ function App() {
         <h1>PSKK IME Tester</h1>
         <div className="mode-switcher">
           <button
-            className={`mode-button ${mode === "Alphanumeric" ? "active" : ""}`}
-            onClick={() => handleModeChange("Alphanumeric")}
+            className={`mode-button ${mode === "A" ? "active" : ""}`}
+            onClick={() => handleModeChange("A")}
           >
             A
           </button>
           <button
-            className={`mode-button ${mode === "Hiragana" ? "active" : ""}`}
-            onClick={() => handleModeChange("Hiragana")}
+            className={`mode-button ${mode === "あ" ? "active" : ""}`}
+            onClick={() => handleModeChange("あ")}
           >
             あ
           </button>
