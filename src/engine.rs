@@ -108,6 +108,10 @@ pub struct PSKKEngine {
     conversion_yomi: String,
     
     converted: bool,
+    
+    // Mode switching keys from config
+    enable_hiragana_keys: Vec<String>,
+    disable_hiragana_keys: Vec<String>,
 }
 
 impl PSKKEngine {
@@ -115,12 +119,28 @@ impl PSKKEngine {
         simul_processor: SimultaneousInputProcessor,
         kanchoku_processor: KanchokuProcessor,
         henkan_processor: HenkanProcessor,
+        config: &serde_json::Value,
     ) -> Self {
+        // Load mode switching keys from config
+        let enable_hiragana_keys = config
+            .get("enable_hiragana_key")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_else(|| vec!["Convert".to_string()]);
+            
+        let disable_hiragana_keys = config
+            .get("disable_hiragana_key")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_else(|| vec!["NonConvert".to_string()]);
+        
         Self {
             mode: InputMode::Alphanumeric,
             simul_processor,
             kanchoku_processor,
             henkan_processor,
+            enable_hiragana_keys,
+            disable_hiragana_keys,
             preedit_string: String::new(),
             preedit_hiragana: String::new(),
             preedit_ascii: String::new(),
@@ -170,6 +190,19 @@ impl PSKKEngine {
         has_ctrl: bool,
         has_alt: bool,
     ) -> EngineOutput {
+        // Check for mode switching keys first (before mode check)
+        if is_pressed {
+            // Check for enable hiragana keys (Convert, etc.)
+            if self.enable_hiragana_keys.iter().any(|k| k == key_name) {
+                return self.set_mode(InputMode::Hiragana);
+            }
+            
+            // Check for disable hiragana keys (NonConvert, etc.)
+            if self.disable_hiragana_keys.iter().any(|k| k == key_name) {
+                return self.set_mode(InputMode::Alphanumeric);
+            }
+        }
+        
         if self.mode == InputMode::Alphanumeric {
             return EngineOutput::passthrough();
         }
