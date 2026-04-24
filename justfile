@@ -10,6 +10,16 @@ test:
 build:
   cargo build --release
 
+# gRPC Server
+server-build:
+  cargo build --release --bin pskk-server
+
+server-run:
+  cargo run --bin pskk-server
+
+server-dev:
+  cargo run --bin pskk-server
+
 # Settings app
 settings-ui-install:
   cd apps/settings/ui && npm install

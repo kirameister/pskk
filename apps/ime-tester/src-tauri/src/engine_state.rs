@@ -29,7 +29,36 @@ pub struct EngineState {
 
 impl EngineState {
     pub fn new() -> Self {
-        let layout = Self::default_layout();
+        use pskk::settings::load_current_kanchoku_mappings;
+        use pskk::util::get_config_data;
+        
+        // Try to load config, fall back to default layout on error
+        let layout = match get_config_data() {
+            Ok((config, _warnings)) => {
+                match load_current_kanchoku_mappings(&config) {
+                    Ok(mappings) => {
+                        // Convert MurensoMapping to RawLayoutEntry format
+                        // RawLayoutEntry = (input, output, pending, simul_limit_ms)
+                        // MurensoMapping has first_key, second_key, kanji
+                        mappings.into_iter()
+                            .map(|m| {
+                                let input = format!("{}{}", m.first_key, m.second_key);
+                                (input, m.kanji, String::new(), None)
+                            })
+                            .collect()
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to load kanchoku layout: {}, using default romaji", e);
+                        Self::default_layout()
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to load config: {}, using default romaji", e);
+                Self::default_layout()
+            }
+        };
+        
         let simul = SimultaneousInputProcessor::new(Some(layout));
         let kanchoku = KanchokuProcessor::new(None);
         let henkan = HenkanProcessor::new();
@@ -41,7 +70,7 @@ impl EngineState {
         }
     }
 
-    pub fn with_dictionary(mut self, dictionary: Dictionary) -> Self {
+    pub fn with_dictionary(self, dictionary: Dictionary) -> Self {
         let mut engine = self.engine.lock().unwrap();
         let layout = Self::default_layout();
         let simul = SimultaneousInputProcessor::new(Some(layout));

@@ -121,6 +121,7 @@ function App() {
   }, [handleEngineOutput, mode, handleModeChange, addLog]);
   
   useEffect(() => {
+    addLog("IME Tester initialized - loading config from ~/.config/pskk/config.json");
     loadMode();
     
     // Add window-level keyboard event listeners
@@ -139,7 +140,7 @@ function App() {
       window.removeEventListener('keydown', handleWindowKeyDown);
       window.removeEventListener('keyup', handleWindowKeyUp);
     };
-  }, [handleKeyEvent]);
+  }, [handleKeyEvent, addLog]);
 
   const loadMode = async () => {
     try {

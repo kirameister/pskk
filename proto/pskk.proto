@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package pskk;
+
+// PSKK IME Service
+// Provides Japanese input method engine functionality over gRPC
+service PSKKService {
+  // Process a keyboard event
+  rpc ProcessKey(KeyEvent) returns (EngineOutput);
+  
+  // Set input mode (Alphanumeric or Hiragana)
+  rpc SetMode(SetModeRequest) returns (EngineOutput);
+  
+  // Get current input mode
+  rpc GetMode(Empty) returns (ModeResponse);
+  
+  // Handle focus out event
+  rpc FocusOut(Empty) returns (EngineOutput);
+  
+  // Reset engine state
+  rpc Reset(Empty) returns (Empty);
+}
+
+// Empty message for requests/responses with no data
+message Empty {}
+
+// Keyboard event from the client
+message KeyEvent {
+  // Single character if printable, null otherwise
+  optional string key_char = 1;
+  
+  // Key name (e.g., "a", "Space", "Enter", "Escape")
+  string key_name = 2;
+  
+  // True for keydown, false for keyup
+  bool is_pressed = 3;
+  
+  // Modifier keys state
+  KeyModifiers modifiers = 4;
+}
+
+// Modifier keys state
+message KeyModifiers {
+  bool shift = 1;
+  bool ctrl = 2;
+  bool alt = 3;
+}
+
+// Request to change input mode
+message SetModeRequest {
+  InputMode mode = 1;
+}
+
+// Input mode enum
+enum InputMode {
+  ALPHANUMERIC = 0;  // Direct input (A)
+  HIRAGANA = 1;      // Hiragana input (あ)
+}
+
+// Response containing current mode
+message ModeResponse {
+  InputMode mode = 1;
+}
+
+// Engine output - everything the client needs to update UI
+message EngineOutput {
+  // Text to commit to the application (if any)
+  optional string commit_string = 1;
+  
+  // Preedit (composition) segments
+  repeated PreeditSegment preedit_segments = 2;
+  
+  // Cursor position within preedit (0-based)
+  uint32 preedit_cursor_pos = 3;
+  
+  // Candidate list for conversion
+  repeated Candidate candidates = 4;
+  
+  // Current candidate cursor position (0-based)
+  uint32 candidate_cursor_pos = 5;
+  
+  // Whether to show candidates window
+  bool show_candidates = 6;
+  
+  // Whether the key event was consumed by the engine
+  bool consumed = 7;
+}
+
+// A segment of preedit text
+message PreeditSegment {
+  // The text content
+  string text = 1;
+  
+  // Whether this segment is selected (for conversion)
+  bool is_selected = 2;
+}
+
+// A conversion candidate
+message Candidate {
+  // The candidate text (kanji/kana)
+  string surface = 1;
+  
+  // Reading (hiragana)
+  string reading = 2;
+}

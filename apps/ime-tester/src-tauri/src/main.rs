@@ -35,7 +35,7 @@ fn focus_out(state: State<EngineState>) -> EngineOutput {
 }
 
 #[tauri::command]
-fn load_sample_dictionary(state: State<EngineState>) -> Result<String, String> {
+fn load_sample_dictionary(_state: State<EngineState>) -> Result<String, String> {
     let mut dict: Dictionary = HashMap::new();
     
     let mut henkan_candidates = HashMap::new();
