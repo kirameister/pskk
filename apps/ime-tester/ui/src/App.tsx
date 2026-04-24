@@ -101,6 +101,9 @@ function App() {
       alt: e.altKey,
     };
 
+    // Debug: Log all key presses
+    console.log(`Key event: key="${e.key}" code="${e.code}" isPressed=${isPressed}`);
+
     try {
       const output = await invoke<EngineOutput>("process_key", {
         keyChar,
