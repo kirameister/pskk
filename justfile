@@ -48,7 +48,7 @@ ime-tester-dev:
   cd apps/ime-tester && cargo tauri dev
 
 ime-tester-build:
-  cd apps/ime-tester/src-tauri && cargo tauri build
+  cd apps/ime-tester && cargo tauri build
 
 # Install all dependencies
 install-deps:

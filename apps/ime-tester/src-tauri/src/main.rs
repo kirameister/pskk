@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod grpc_client_state;
+mod server_manager;
 
 use grpc_client_state::{GrpcClientState, KeyModifiers};
 use pskk::grpc::proto::{EngineOutput, InputMode};
