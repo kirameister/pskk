@@ -35,6 +35,8 @@ function App() {
   const [candidateCursor, setCandidateCursor] = useState(0);
   const [dictionaryLoaded, setDictionaryLoaded] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
+  const [connected, setConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   
   const addLog = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -65,7 +67,9 @@ function App() {
   const handleModeChange = useCallback(async (newMode: InputMode) => {
     addLog(`Changing mode to: ${newMode}`);
     try {
-      const output = await invoke<EngineOutput>("set_mode", { mode: newMode });
+      // Convert to protobuf enum: 0 = Alphanumeric, 1 = Hiragana
+      const modeValue = newMode === "A" ? 0 : 1;
+      const output = await invoke<EngineOutput>("set_mode", { mode: modeValue });
       addLog(`Mode changed successfully to: ${newMode}`);
       setMode(newMode);
       handleEngineOutput(output, addLog);
@@ -120,9 +124,31 @@ function App() {
     }
   }, [handleEngineOutput, mode, handleModeChange, addLog]);
   
+  const connectToServer = useCallback(async () => {
+    if (connecting || connected) return;
+    
+    setConnecting(true);
+    addLog("Connecting to PSKK server at 127.0.0.1:50051...");
+    
+    try {
+      const result = await invoke<string>("connect_to_server");
+      addLog(result);
+      setConnected(true);
+      setConnecting(false);
+      
+      // Load mode after connection
+      await loadMode();
+    } catch (error) {
+      addLog(`Connection failed: ${error}`);
+      addLog("Please start the server with: just server-dev");
+      setConnected(false);
+      setConnecting(false);
+    }
+  }, [connecting, connected, addLog]);
+
   useEffect(() => {
-    addLog("IME Tester initialized - loading config from ~/.config/pskk/config.json");
-    loadMode();
+    addLog("IME Tester initialized");
+    connectToServer();
     
     // Add window-level keyboard event listeners
     const handleWindowKeyDown = async (e: KeyboardEvent) => {
@@ -140,13 +166,15 @@ function App() {
       window.removeEventListener('keydown', handleWindowKeyDown);
       window.removeEventListener('keyup', handleWindowKeyUp);
     };
-  }, [handleKeyEvent, addLog]);
+  }, [handleKeyEvent, addLog, connectToServer]);
 
   const loadMode = async () => {
     try {
-      const currentMode = await invoke<InputMode>("get_mode");
-      setMode(currentMode);
+      const currentMode = await invoke<number>("get_mode");
+      // Convert from protobuf enum: 0 = Alphanumeric, 1 = Hiragana
+      setMode(currentMode === 0 ? "A" : "あ");
     } catch (error) {
+      addLog(`Failed to get mode: ${error}`);
       console.error("Failed to get mode:", error);
     }
   };
@@ -174,17 +202,24 @@ function App() {
   return (
     <div className="app">
       <div className="header">
-        <h1>PSKK IME Tester</h1>
+        <div className="header-left">
+          <h1>PSKK IME Tester</h1>
+          <span className={`connection-status ${connected ? "connected" : "disconnected"}`}>
+            {connecting ? "Connecting..." : connected ? "● Connected" : "● Disconnected"}
+          </span>
+        </div>
         <div className="mode-switcher">
           <button
             className={`mode-button ${mode === "A" ? "active" : ""}`}
             onClick={() => handleModeChange("A")}
+            disabled={!connected}
           >
             A
           </button>
           <button
             className={`mode-button ${mode === "あ" ? "active" : ""}`}
             onClick={() => handleModeChange("あ")}
+            disabled={!connected}
           >
             あ
           </button>

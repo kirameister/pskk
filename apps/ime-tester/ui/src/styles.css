@@ -36,9 +36,36 @@ body {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .header h1 {
   font-size: 20px;
   font-weight: 600;
+  margin: 0;
+}
+
+.connection-status {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 12px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.connection-status.connected {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.connection-status.disconnected {
+  color: #dc2626;
+  background: #fee2e2;
 }
 
 .mode-switcher {
@@ -70,6 +97,12 @@ body {
 .mode-button.active:hover {
   background: #f0f0f0;
   border-color: #999;
+}
+
+.mode-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: #f5f5f5;
 }
 
 .content-wrapper {

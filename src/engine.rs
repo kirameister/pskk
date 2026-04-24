@@ -596,7 +596,7 @@ impl PSKKEngine {
         self.preedit_pending.clear();
     }
 
-    fn reset_state(&mut self) {
+    pub fn reset_state(&mut self) {
         self.reset_preedit();
         self.marker_state = MarkerState::Idle;
         self.marker_first_key = None;
