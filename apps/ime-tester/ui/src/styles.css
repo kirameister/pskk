@@ -91,7 +91,7 @@ body {
   letter-spacing: 0.5px;
 }
 
-.input-area {
+.output-display {
   width: 100%;
   min-height: 120px;
   padding: 12px;
@@ -99,13 +99,16 @@ body {
   border-radius: 6px;
   font-size: 16px;
   font-family: inherit;
-  resize: vertical;
-  outline: none;
-  transition: border-color 0.2s;
+  background: #f9f9f9;
+  color: #333;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
-.input-area:focus {
-  border-color: #4a90e2;
+.output-empty {
+  color: #999;
+  font-style: italic;
 }
 
 .preedit-display {
@@ -245,6 +248,12 @@ body {
 
 .action-button.secondary:hover {
   background: #5a6268;
+}
+
+.action-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .help-text {

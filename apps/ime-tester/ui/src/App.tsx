@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 interface PreeditSegment {
@@ -35,10 +35,25 @@ function App() {
   const [candidateCursor, setCandidateCursor] = useState(0);
   const [dictionaryLoaded, setDictionaryLoaded] = useState(false);
   
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
   useEffect(() => {
     loadMode();
+    
+    // Add window-level keyboard event listeners
+    const handleWindowKeyDown = async (e: KeyboardEvent) => {
+      await handleKeyEvent(e, true);
+    };
+    
+    const handleWindowKeyUp = async (e: KeyboardEvent) => {
+      await handleKeyEvent(e, false);
+    };
+    
+    window.addEventListener('keydown', handleWindowKeyDown);
+    window.addEventListener('keyup', handleWindowKeyUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleWindowKeyDown);
+      window.removeEventListener('keyup', handleWindowKeyUp);
+    };
   }, []);
 
   const loadMode = async () => {
@@ -71,7 +86,7 @@ function App() {
     setCandidateCursor(output.candidate_cursor_pos);
   };
 
-  const handleKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyEvent = async (e: KeyboardEvent, isPressed: boolean) => {
     const keyChar = e.key.length === 1 ? e.key : null;
     const keyName = e.key;
     const modifiers = {
@@ -84,34 +99,7 @@ function App() {
       const output = await invoke<EngineOutput>("process_key", {
         keyChar,
         keyName,
-        isPressed: true,
-        modifiers,
-      });
-
-      if (output.consumed) {
-        e.preventDefault();
-      }
-
-      handleEngineOutput(output);
-    } catch (error) {
-      console.error("Failed to process key:", error);
-    }
-  };
-
-  const handleKeyUp = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const keyChar = e.key.length === 1 ? e.key : null;
-    const keyName = e.key;
-    const modifiers = {
-      shift: e.shiftKey,
-      ctrl: e.ctrlKey,
-      alt: e.altKey,
-    };
-
-    try {
-      const output = await invoke<EngineOutput>("process_key", {
-        keyChar,
-        keyName,
-        isPressed: false,
+        isPressed,
         modifiers,
       });
 
@@ -130,9 +118,6 @@ function App() {
     setPreeditSegments([]);
     setCandidates([]);
     setShowCandidates(false);
-    if (textareaRef.current) {
-      textareaRef.current.focus();
-    }
   };
 
   const handleLoadDictionary = async () => {
@@ -170,25 +155,6 @@ function App() {
 
       <div className="main-content">
         <div className="section">
-          <div className="section-title">Input Area</div>
-          <textarea
-            ref={textareaRef}
-            className="input-area"
-            value={committedText}
-            onChange={(e) => setCommittedText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onKeyUp={handleKeyUp}
-            placeholder="Type here... (Switch to あ mode to test IME)"
-            autoFocus
-          />
-          <div className="help-text">
-            <strong>Quick Guide:</strong>
-            Switch to あ mode, type romaji (e.g., "ai"), press Space to convert, use
-            arrows to navigate candidates, Enter to confirm, Escape to cancel.
-          </div>
-        </div>
-
-        <div className="section">
           <div className="section-title">Preedit Display</div>
           <div className="preedit-display">
             {preeditSegments.length > 0 ? (
@@ -205,6 +171,13 @@ function App() {
             ) : (
               <span className="preedit-empty">No preedit</span>
             )}
+          </div>
+        </div>
+
+        <div className="section">
+          <div className="section-title">Committed Output</div>
+          <div className="output-display">
+            {committedText || <span className="output-empty">No output yet</span>}
           </div>
         </div>
 
