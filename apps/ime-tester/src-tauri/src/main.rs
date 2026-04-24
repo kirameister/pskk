@@ -5,7 +5,7 @@ mod server_manager;
 
 use grpc_client_state::{GrpcClientState, KeyModifiers};
 use pskk::grpc::proto::{EngineOutput, InputMode};
-use tauri::State;
+use tauri::{Manager, State};
 
 #[tauri::command]
 async fn process_key(
@@ -68,6 +68,15 @@ fn main() {
             focus_out,
             load_sample_dictionary,
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                // Shutdown server when window closes
+                let state = window.state::<GrpcClientState>();
+                tauri::async_runtime::block_on(async {
+                    state.shutdown().await;
+                });
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

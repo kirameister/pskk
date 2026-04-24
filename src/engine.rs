@@ -192,13 +192,18 @@ impl PSKKEngine {
     ) -> EngineOutput {
         // Check for mode switching keys first (before mode check)
         if is_pressed {
+            eprintln!("DEBUG: Checking key '{}' against enable_keys: {:?}, disable_keys: {:?}", 
+                key_name, self.enable_hiragana_keys, self.disable_hiragana_keys);
+            
             // Check for enable hiragana keys (Convert, etc.)
             if self.enable_hiragana_keys.iter().any(|k| k == key_name) {
+                eprintln!("DEBUG: Matched enable key! Switching to Hiragana");
                 return self.set_mode(InputMode::Hiragana);
             }
             
             // Check for disable hiragana keys (NonConvert, etc.)
             if self.disable_hiragana_keys.iter().any(|k| k == key_name) {
+                eprintln!("DEBUG: Matched disable key! Switching to Alphanumeric");
                 return self.set_mode(InputMode::Alphanumeric);
             }
         }
