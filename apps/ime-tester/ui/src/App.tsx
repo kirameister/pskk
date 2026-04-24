@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 interface PreeditSegment {
@@ -34,6 +34,86 @@ function App() {
   const [showCandidates, setShowCandidates] = useState(false);
   const [candidateCursor, setCandidateCursor] = useState(0);
   const [dictionaryLoaded, setDictionaryLoaded] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
+  
+  const addLog = useCallback((message: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    setLogs((prev) => [...prev, `[${timestamp}] ${message}`]);
+  }, []);
+  
+  const handleEngineOutput = useCallback((output: EngineOutput, addLog: (msg: string) => void) => {
+    if (output.commit_string) {
+      setCommittedText((prev) => prev + output.commit_string);
+      addLog(`Committed: "${output.commit_string}"`);
+    }
+
+    setPreeditSegments(output.preedit_segments);
+    setCandidates(output.candidates);
+    setShowCandidates(output.show_candidates);
+    setCandidateCursor(output.candidate_cursor_pos);
+    
+    if (output.preedit_segments.length > 0) {
+      const preeditText = output.preedit_segments.map(s => s.text).join('');
+      addLog(`Preedit: "${preeditText}"`);
+    }
+    
+    if (output.show_candidates && output.candidates.length > 0) {
+      addLog(`Candidates: ${output.candidates.length} options`);
+    }
+  }, []);
+
+  const handleModeChange = useCallback(async (newMode: InputMode) => {
+    addLog(`Changing mode to: ${newMode}`);
+    try {
+      const output = await invoke<EngineOutput>("set_mode", { mode: newMode });
+      addLog(`Mode changed successfully to: ${newMode}`);
+      setMode(newMode);
+      handleEngineOutput(output, addLog);
+    } catch (error) {
+      addLog(`Failed to set mode: ${error}`);
+      console.error("Failed to set mode:", error);
+    }
+  }, [handleEngineOutput, addLog]);
+
+  const handleKeyEvent = useCallback(async (e: KeyboardEvent, isPressed: boolean) => {
+    // Handle mode toggle shortcut (Ctrl+Space)
+    if (e.ctrlKey && e.key === ' ' && isPressed) {
+      e.preventDefault();
+      const newMode = mode === "Alphanumeric" ? "Hiragana" : "Alphanumeric";
+      handleModeChange(newMode);
+      return;
+    }
+
+    const keyChar = e.key.length === 1 ? e.key : null;
+    const keyName = e.key;
+    const modifiers = {
+      shift: e.shiftKey,
+      ctrl: e.ctrlKey,
+      alt: e.altKey,
+    };
+
+    try {
+      const output = await invoke<EngineOutput>("process_key", {
+        keyChar,
+        keyName,
+        isPressed,
+        modifiers,
+      });
+
+      if (isPressed && keyChar) {
+        addLog(`Key pressed: "${keyChar}" (consumed: ${output.consumed})`);
+      }
+
+      if (output.consumed) {
+        e.preventDefault();
+      }
+
+      handleEngineOutput(output, addLog);
+    } catch (error) {
+      addLog(`Key processing error: ${error}`);
+      console.error("Failed to process key:", error);
+    }
+  }, [handleEngineOutput, mode, handleModeChange, addLog]);
   
   useEffect(() => {
     loadMode();
@@ -54,7 +134,7 @@ function App() {
       window.removeEventListener('keydown', handleWindowKeyDown);
       window.removeEventListener('keyup', handleWindowKeyUp);
     };
-  }, []);
+  }, [handleKeyEvent]);
 
   const loadMode = async () => {
     try {
@@ -62,54 +142,6 @@ function App() {
       setMode(currentMode);
     } catch (error) {
       console.error("Failed to get mode:", error);
-    }
-  };
-
-  const handleModeChange = async (newMode: InputMode) => {
-    try {
-      const output = await invoke<EngineOutput>("set_mode", { mode: newMode });
-      setMode(newMode);
-      handleEngineOutput(output);
-    } catch (error) {
-      console.error("Failed to set mode:", error);
-    }
-  };
-
-  const handleEngineOutput = (output: EngineOutput) => {
-    if (output.commit_string) {
-      setCommittedText((prev) => prev + output.commit_string);
-    }
-
-    setPreeditSegments(output.preedit_segments);
-    setCandidates(output.candidates);
-    setShowCandidates(output.show_candidates);
-    setCandidateCursor(output.candidate_cursor_pos);
-  };
-
-  const handleKeyEvent = async (e: KeyboardEvent, isPressed: boolean) => {
-    const keyChar = e.key.length === 1 ? e.key : null;
-    const keyName = e.key;
-    const modifiers = {
-      shift: e.shiftKey,
-      ctrl: e.ctrlKey,
-      alt: e.altKey,
-    };
-
-    try {
-      const output = await invoke<EngineOutput>("process_key", {
-        keyChar,
-        keyName,
-        isPressed,
-        modifiers,
-      });
-
-      if (output.consumed) {
-        e.preventDefault();
-      }
-
-      handleEngineOutput(output);
-    } catch (error) {
-      console.error("Failed to process key:", error);
     }
   };
 
@@ -153,7 +185,24 @@ function App() {
         </div>
       </div>
 
-      <div className="main-content">
+      <div className="content-wrapper">
+        <aside className="log-pane">
+          <div className="log-header">
+            <span>Event Log</span>
+            <button className="clear-log-button" onClick={() => setLogs([])}>Clear</button>
+          </div>
+          <div className="log-content">
+            {logs.length === 0 ? (
+              <div className="log-empty">No events logged yet</div>
+            ) : (
+              logs.map((log, i) => (
+                <div key={i} className="log-entry">{log}</div>
+              ))
+            )}
+          </div>
+        </aside>
+
+        <div className="main-content">
         <div className="section">
           <div className="section-title">Preedit Display</div>
           <div className="preedit-display">
@@ -247,6 +296,7 @@ function App() {
               {dictionaryLoaded ? "Dictionary Loaded" : "Load Sample Dictionary"}
             </button>
           </div>
+        </div>
         </div>
       </div>
     </div>
