@@ -105,6 +105,11 @@ function App() {
     console.log(`Key event: key="${e.key}" code="${e.code}" isPressed=${isPressed}`);
 
     try {
+      if (typeof invoke !== 'function') {
+        console.error('Tauri invoke not available');
+        return;
+      }
+      
       const output = await invoke<EngineOutput>("process_key", {
         keyChar,
         keyName,
