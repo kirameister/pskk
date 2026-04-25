@@ -80,8 +80,10 @@ function App() {
   }, [handleEngineOutput, addLog]);
 
   const handleKeyEvent = useCallback(async (e: KeyboardEvent, isPressed: boolean) => {
-    // Handle mode toggle shortcut (Ctrl+Space)
-    if (e.ctrlKey && e.key === ' ' && isPressed) {
+    console.log(`[LAYER 1] handleKeyEvent called: key="${e.key}" code="${e.code}" isPressed=${isPressed}`);
+    
+    // Handle Ctrl+J for mode toggle
+    if (e.ctrlKey && e.key === "j") {
       e.preventDefault();
       const newMode = mode === "A" ? "あ" : "A";
       handleModeChange(newMode);
@@ -90,6 +92,7 @@ function App() {
 
     // Only process keydown events, skip keyup to prevent preedit clearing
     if (!isPressed) {
+      console.log(`[LAYER 1] Skipping keyup event`);
       return;
     }
 
@@ -101,8 +104,7 @@ function App() {
       alt: e.altKey,
     };
 
-    // Debug: Log all key presses
-    console.log(`Key event: key="${e.key}" code="${e.code}" isPressed=${isPressed}`);
+    console.log(`[LAYER 2] Preparing to invoke: keyName="${keyName}" keyChar=${keyChar}`);
 
     try {
       if (typeof invoke !== 'function') {
@@ -116,6 +118,8 @@ function App() {
         isPressed,
         modifiers,
       });
+
+      console.log(`[LAYER 3] Backend returned:`, output);
 
       if (keyChar) {
         addLog(`Key pressed: "${keyChar}" (consumed: ${output.consumed})`);
