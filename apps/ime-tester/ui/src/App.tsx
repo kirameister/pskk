@@ -157,24 +157,7 @@ function App() {
   useEffect(() => {
     addLog("IME Tester initialized");
     connectToServer();
-    
-    // Add window-level keyboard event listeners
-    const handleWindowKeyDown = async (e: KeyboardEvent) => {
-      await handleKeyEvent(e, true);
-    };
-    
-    const handleWindowKeyUp = async (e: KeyboardEvent) => {
-      await handleKeyEvent(e, false);
-    };
-    
-    window.addEventListener('keydown', handleWindowKeyDown);
-    window.addEventListener('keyup', handleWindowKeyUp);
-    
-    return () => {
-      window.removeEventListener('keydown', handleWindowKeyDown);
-      window.removeEventListener('keyup', handleWindowKeyUp);
-    };
-  }, [handleKeyEvent, addLog, connectToServer]);
+  }, [addLog, connectToServer]);
 
   const loadMode = async () => {
     try {
@@ -209,6 +192,21 @@ function App() {
 
   return (
     <div className="app">
+      {/* Invisible input to capture keyboard events */}
+      <input
+        type="text"
+        autoFocus
+        style={{
+          position: 'absolute',
+          opacity: 0,
+          width: 0,
+          height: 0,
+          pointerEvents: 'none',
+        }}
+        onKeyDown={(e) => handleKeyEvent(e.nativeEvent, true)}
+        onKeyUp={(e) => handleKeyEvent(e.nativeEvent, false)}
+      />
+      
       <div className="header">
         <div className="header-left">
           <h1>PSKK IME Tester</h1>
