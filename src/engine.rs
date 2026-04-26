@@ -115,6 +115,19 @@ pub struct PSKKEngine {
 }
 
 impl PSKKEngine {
+    fn mode_switch_key_matches(configured: &str, incoming: &str) -> bool {
+        if configured == incoming {
+            return true;
+        }
+        matches!(
+            (configured, incoming),
+            ("Convert", "Henkan")
+                | ("Henkan", "Convert")
+                | ("NonConvert", "Muhenkan")
+                | ("Muhenkan", "NonConvert")
+        )
+    }
+
     pub fn new(
         simul_processor: SimultaneousInputProcessor,
         kanchoku_processor: KanchokuProcessor,
@@ -126,13 +139,13 @@ impl PSKKEngine {
             .get("enable_hiragana_key")
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-            .unwrap_or_else(|| vec!["Convert".to_string()]);
+            .unwrap_or_else(|| vec!["Henkan".to_string(), "Convert".to_string()]);
             
         let disable_hiragana_keys = config
             .get("disable_hiragana_key")
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-            .unwrap_or_else(|| vec!["NonConvert".to_string()]);
+            .unwrap_or_else(|| vec!["Muhenkan".to_string(), "NonConvert".to_string()]);
         
         eprintln!("PSKKEngine initialized with mode switching keys:");
         eprintln!("  enable_hiragana_key: {:?}", enable_hiragana_keys);
@@ -201,13 +214,21 @@ impl PSKKEngine {
             eprintln!("  Checking against disable_keys: {:?}", self.disable_hiragana_keys);
             
             // Check for enable hiragana keys (Convert, etc.)
-            if self.enable_hiragana_keys.iter().any(|k| k == key_name) {
+            if self
+                .enable_hiragana_keys
+                .iter()
+                .any(|k| Self::mode_switch_key_matches(k, key_name))
+            {
                 eprintln!("  ✓ MATCHED enable key! Switching to Hiragana");
                 return self.set_mode(InputMode::Hiragana);
             }
             
             // Check for disable hiragana keys (NonConvert, etc.)
-            if self.disable_hiragana_keys.iter().any(|k| k == key_name) {
+            if self
+                .disable_hiragana_keys
+                .iter()
+                .any(|k| Self::mode_switch_key_matches(k, key_name))
+            {
                 eprintln!("  ✓ MATCHED disable key! Switching to Alphanumeric");
                 return self.set_mode(InputMode::Alphanumeric);
             }
@@ -694,7 +715,7 @@ mod tests {
         
         let henkan = HenkanProcessor::new().with_dictionary(dict);
         
-        PSKKEngine::new(simul, kanchoku, henkan)
+        PSKKEngine::new(simul, kanchoku, henkan, &serde_json::json!({}))
     }
 
     #[test]
@@ -809,5 +830,23 @@ mod tests {
         assert!(!output.consumed, "Ctrl+C should pass through to application");
         assert!(output.commit_string.is_some(), "Should commit preedit before passing through");
         assert!(engine.preedit_string.is_empty(), "Preedit should be cleared after commit");
+    }
+
+    #[test]
+    fn mode_switch_accepts_henkan_for_convert_alias() {
+        let mut engine = create_test_engine();
+        assert_eq!(engine.get_mode(), InputMode::Alphanumeric);
+
+        let _output = engine.process_key_event(None, "Henkan", true, false, false, false);
+        assert_eq!(engine.get_mode(), InputMode::Hiragana);
+    }
+
+    #[test]
+    fn mode_switch_accepts_muhenkan_for_nonconvert_alias() {
+        let mut engine = create_test_engine();
+        engine.set_mode(InputMode::Hiragana);
+
+        let _output = engine.process_key_event(None, "Muhenkan", true, false, false, false);
+        assert_eq!(engine.get_mode(), InputMode::Alphanumeric);
     }
 }
