@@ -163,6 +163,12 @@ function App() {
     connectToServer();
   }, [addLog, connectToServer]);
 
+  useEffect(() => {
+    if (connected) {
+      loadConfig();
+    }
+  }, [connected]);
+
   const loadMode = async () => {
     try {
       const currentMode = await invoke<number>("get_mode");
@@ -171,6 +177,23 @@ function App() {
     } catch (error) {
       addLog(`Failed to get mode: ${error}`);
       console.error("Failed to get mode:", error);
+    }
+  };
+
+  const loadConfig = async () => {
+    try {
+      const configJson = await invoke<string>("get_loaded_config");
+      addLog("Loaded Config:");
+      
+      // Split config into chunks for readable log display
+      const chunkSize = 500;
+      for (let i = 0; i < configJson.length; i += chunkSize) {
+        const chunk = configJson.slice(i, i + chunkSize);
+        addLog(chunk);
+      }
+    } catch (error) {
+      addLog(`Failed to load config: ${error}`);
+      console.error("Failed to load config:", error);
     }
   };
 

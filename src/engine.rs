@@ -109,6 +109,9 @@ pub struct PSKKEngine {
     
     converted: bool,
     
+    // Full configuration
+    config: serde_json::Value,
+    
     // Mode switching keys from config
     enable_hiragana_keys: Vec<String>,
     disable_hiragana_keys: Vec<String>,
@@ -156,6 +159,7 @@ impl PSKKEngine {
             simul_processor,
             kanchoku_processor,
             henkan_processor,
+            config: config.clone(),
             enable_hiragana_keys,
             disable_hiragana_keys,
             preedit_string: String::new(),
@@ -179,6 +183,10 @@ impl PSKKEngine {
 
     pub fn get_mode(&self) -> InputMode {
         self.mode
+    }
+
+    pub fn get_config(&self) -> &serde_json::Value {
+        &self.config
     }
 
     pub fn set_mode(&mut self, mode: InputMode) -> EngineOutput {

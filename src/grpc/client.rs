@@ -1,7 +1,7 @@
 use tonic::transport::Channel;
 
 use crate::grpc::proto::pskk_service_client::PskkServiceClient;
-use crate::grpc::proto::{Empty, KeyEvent, KeyModifiers, SetModeRequest};
+use crate::grpc::proto::{ConfigResponse, Empty, KeyEvent, KeyModifiers, SetModeRequest};
 
 /// PSKK gRPC Client
 pub struct PSKKClient {
@@ -85,5 +85,15 @@ impl PSKKClient {
             .await
             .map_err(|e| e.to_string())?;
         Ok(())
+    }
+
+    /// Get the current configuration
+    pub async fn get_config(&mut self) -> Result<String, String> {
+        let request = tonic::Request::new(Empty {});
+
+        let response = self.client.get_config(request)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(response.into_inner().config_json)
     }
 }

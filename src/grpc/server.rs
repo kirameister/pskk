@@ -7,7 +7,7 @@ use crate::grpc::conversion::{
     mode_response_from_rust,
 };
 use crate::grpc::proto::pskk_service_server::{PskkService, PskkServiceServer};
-use crate::grpc::proto::{Empty, EngineOutput, KeyEvent, ModeResponse, SetModeRequest};
+use crate::grpc::proto::{ConfigResponse, Empty, EngineOutput, KeyEvent, ModeResponse, SetModeRequest};
 use crate::henkan::HenkanProcessor;
 use crate::kanchoku::KanchokuProcessor;
 use crate::settings::load_current_kanchoku_mappings;
@@ -151,6 +151,19 @@ impl PskkService for PSKKServiceImpl {
         engine.reset_state();
 
         Ok(Response::new(Empty {}))
+    }
+
+    async fn get_config(&self, _request: Request<Empty>) -> Result<Response<ConfigResponse>, Status> {
+        let engine = self
+            .engine
+            .lock()
+            .map_err(|e| Status::internal(format!("Failed to lock engine: {}", e)))?;
+
+        let config = engine.get_config();
+        let config_json = serde_json::to_string_pretty(config)
+            .map_err(|e| Status::internal(format!("Failed to serialize config: {}", e)))?;
+
+        Ok(Response::new(ConfigResponse { config_json }))
     }
 }
 

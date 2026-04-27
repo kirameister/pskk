@@ -144,4 +144,18 @@ impl GrpcClientState {
             .await
             .map_err(|e| format!("gRPC error: {}", e))
     }
+
+    /// Get the current configuration
+    pub async fn get_config(&self) -> Result<String, String> {
+        let mut client_lock = self.client.lock().await;
+        
+        let client = client_lock
+            .as_mut()
+            .ok_or_else(|| "Not connected to server".to_string())?;
+
+        client
+            .get_config()
+            .await
+            .map_err(|e| format!("gRPC error: {}", e))
+    }
 }

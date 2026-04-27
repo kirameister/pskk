@@ -19,6 +19,9 @@ service PSKKService {
   
   // Reset engine state
   rpc Reset(Empty) returns (Empty);
+  
+  // Get the current configuration
+  rpc GetConfig(Empty) returns (ConfigResponse);
 }
 
 // Empty message for requests/responses with no data
@@ -60,6 +63,12 @@ enum InputMode {
 // Response containing current mode
 message ModeResponse {
   InputMode mode = 1;
+}
+
+// Response containing the configuration
+message ConfigResponse {
+  // Pretty-printed JSON configuration
+  string config_json = 1;
 }
 
 // Engine output - everything the client needs to update UI

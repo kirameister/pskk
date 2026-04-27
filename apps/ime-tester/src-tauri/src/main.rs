@@ -54,6 +54,11 @@ async fn load_sample_dictionary(_state: State<'_, GrpcClientState>) -> Result<St
     Ok("Dictionary is managed by the server".to_string())
 }
 
+#[tauri::command]
+async fn get_loaded_config(state: State<'_, GrpcClientState>) -> Result<String, String> {
+    state.get_config().await
+}
+
 fn main() {
     let client_state = GrpcClientState::new();
     
@@ -67,6 +72,7 @@ fn main() {
             get_mode,
             focus_out,
             load_sample_dictionary,
+            get_loaded_config,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
