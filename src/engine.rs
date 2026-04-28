@@ -1,6 +1,8 @@
 use crate::henkan::{Candidate, HenkanProcessor};
 use crate::kanchoku::KanchokuProcessor;
 use crate::simultaneous_processor::SimultaneousInputProcessor;
+use crate::util::get_config_data;
+use crate::grpc::proto::{InputMode as ProtoInputMode, KeyModifiers as ProtoKeyModifiers};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -135,31 +137,34 @@ impl PSKKEngine {
         simul_processor: SimultaneousInputProcessor,
         kanchoku_processor: KanchokuProcessor,
         henkan_processor: HenkanProcessor,
-        config: &serde_json::Value,
-    ) -> Self {
+    ) -> Result<Self, String> {
+        // Load config internally
+        let (config, _warnings) = get_config_data()
+            .map_err(|e| format!("Failed to load config: {}", e))?;
+
         // Load mode switching keys from config
         let enable_hiragana_keys = config
             .get("enable_hiragana_key")
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
             .unwrap_or_else(|| vec!["Henkan".to_string(), "Convert".to_string()]);
-            
+
         let disable_hiragana_keys = config
             .get("disable_hiragana_key")
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
             .unwrap_or_else(|| vec!["Muhenkan".to_string(), "NonConvert".to_string()]);
-        
+
         eprintln!("PSKKEngine initialized with mode switching keys:");
         eprintln!("  enable_hiragana_key: {:?}", enable_hiragana_keys);
         eprintln!("  disable_hiragana_key: {:?}", disable_hiragana_keys);
-        
-        Self {
+
+        Ok(Self {
             mode: InputMode::Alphanumeric,
             simul_processor,
             kanchoku_processor,
             henkan_processor,
-            config: config.clone(),
+            config,
             enable_hiragana_keys,
             disable_hiragana_keys,
             preedit_string: String::new(),
@@ -178,31 +183,66 @@ impl PSKKEngine {
             in_conversion: false,
             conversion_yomi: String::new(),
             converted: false,
-        }
+        })
     }
 
-    pub fn get_mode(&self) -> InputMode {
-        self.mode
+    pub fn get_mode(&self) -> ProtoInputMode {
+        match self.mode {
+            InputMode::Alphanumeric => ProtoInputMode::Alphanumeric,
+            InputMode::Hiragana => ProtoInputMode::Hiragana,
+        }
     }
 
     pub fn get_config(&self) -> &serde_json::Value {
         &self.config
     }
 
-    pub fn set_mode(&mut self, mode: InputMode) -> EngineOutput {
+    pub fn reload_config(&mut self) -> Result<(), String> {
+        let (config, _warnings) = get_config_data()
+            .map_err(|e| format!("Failed to reload config: {}", e))?;
+
+        // Re-extract mode switching keys from new config
+        let enable_hiragana_keys = config
+            .get("enable_hiragana_key")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_else(|| vec!["Henkan".to_string(), "Convert".to_string()]);
+
+        let disable_hiragana_keys = config
+            .get("disable_hiragana_key")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_else(|| vec!["Muhenkan".to_string(), "NonConvert".to_string()]);
+
+        self.config = config;
+        self.enable_hiragana_keys = enable_hiragana_keys;
+        self.disable_hiragana_keys = disable_hiragana_keys;
+
+        eprintln!("Config reloaded. New mode switching keys:");
+        eprintln!("  enable_hiragana_key: {:?}", self.enable_hiragana_keys);
+        eprintln!("  disable_hiragana_key: {:?}", self.disable_hiragana_keys);
+
+        Ok(())
+    }
+
+    pub fn set_mode(&mut self, mode: ProtoInputMode) -> EngineOutput {
+        let mode = match mode {
+            ProtoInputMode::Alphanumeric => InputMode::Alphanumeric,
+            ProtoInputMode::Hiragana => InputMode::Hiragana,
+        };
         if self.mode == mode {
             return EngineOutput::empty();
         }
 
         let mut output = EngineOutput::empty();
-        
+
         if !self.preedit_string.is_empty() {
             output.commit_string = Some(self.preedit_string.clone());
         }
-        
+
         self.mode = mode;
         self.reset_state();
-        
+
         output
     }
 
@@ -211,10 +251,12 @@ impl PSKKEngine {
         key_char: Option<char>,
         key_name: &str,
         is_pressed: bool,
-        has_shift: bool,
-        has_ctrl: bool,
-        has_alt: bool,
+        modifiers: Option<ProtoKeyModifiers>,
     ) -> EngineOutput {
+        let (has_shift, has_ctrl, has_alt) = match modifiers {
+            Some(m) => (m.shift, m.ctrl, m.alt),
+            None => (false, false, false),
+        };
         // Check for mode switching keys first (before mode check)
         if is_pressed {
             eprintln!("KEY PRESSED: '{}' (char: {:?})", key_name, key_char);
@@ -228,9 +270,9 @@ impl PSKKEngine {
                 .any(|k| Self::mode_switch_key_matches(k, key_name))
             {
                 eprintln!("  ✓ MATCHED enable key! Switching to Hiragana");
-                return self.set_mode(InputMode::Hiragana);
+                return self.set_mode(ProtoInputMode::Hiragana);
             }
-            
+
             // Check for disable hiragana keys (NonConvert, etc.)
             if self
                 .disable_hiragana_keys
@@ -238,7 +280,7 @@ impl PSKKEngine {
                 .any(|k| Self::mode_switch_key_matches(k, key_name))
             {
                 eprintln!("  ✓ MATCHED disable key! Switching to Alphanumeric");
-                return self.set_mode(InputMode::Alphanumeric);
+                return self.set_mode(ProtoInputMode::Alphanumeric);
             }
             
             eprintln!("  ✗ No match");
@@ -713,37 +755,70 @@ mod tests {
             ("ka".to_string(), "か".to_string(), "".to_string(), None),
         ];
         let simul = SimultaneousInputProcessor::new(Some(layout));
-        
+
         let kanchoku = KanchokuProcessor::new(None);
-        
+
         let mut dict = HashMap::new();
         let mut ai_candidates = HashMap::new();
         ai_candidates.insert("愛".to_string(), 100);
         dict.insert("あい".to_string(), ai_candidates);
-        
+
         let henkan = HenkanProcessor::new().with_dictionary(dict);
-        
-        PSKKEngine::new(simul, kanchoku, henkan, &serde_json::json!({}))
+
+        // For tests, create engine with default config directly
+        let config = serde_json::json!({
+            "enable_hiragana_key": ["Henkan", "Convert"],
+            "disable_hiragana_key": ["Muhenkan", "NonConvert"],
+        });
+
+        let enable_hiragana_keys = vec!["Henkan".to_string(), "Convert".to_string()];
+        let disable_hiragana_keys = vec!["Muhenkan".to_string(), "NonConvert".to_string()];
+
+        PSKKEngine {
+            mode: InputMode::Alphanumeric,
+            simul_processor: simul,
+            kanchoku_processor: kanchoku,
+            henkan_processor: henkan,
+            config,
+            enable_hiragana_keys,
+            disable_hiragana_keys,
+            preedit_string: String::new(),
+            preedit_hiragana: String::new(),
+            preedit_ascii: String::new(),
+            preedit_pending: String::new(),
+            marker_state: MarkerState::Idle,
+            marker_first_key: None,
+            marker_keys_held: std::collections::HashSet::new(),
+            marker_had_input: false,
+            preedit_before_marker: String::new(),
+            in_forced_preedit: false,
+            pure_kanchoku_held: false,
+            pure_kanchoku_first_key: None,
+            bunsetsu_active: false,
+            in_conversion: false,
+            conversion_yomi: String::new(),
+            converted: false,
+        }
     }
 
     #[test]
     fn alphanumeric_mode_passes_through() {
         let mut engine = create_test_engine();
-        assert_eq!(engine.get_mode(), InputMode::Alphanumeric);
-        
-        let output = engine.process_key_event(Some('a'), "a", true, false, false, false);
+        assert_eq!(engine.get_mode(), ProtoInputMode::Alphanumeric);
+
+        let output = engine.process_key_event(Some('a'), "a", true, None);
         assert!(!output.consumed);
     }
 
     #[test]
     fn mode_switching_commits_preedit() {
         let mut engine = create_test_engine();
-        engine.set_mode(InputMode::Hiragana);
-        
-        engine.process_key_event(Some('a'), "a", true, false, false, false);
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        engine.process_key_event(Some('a'), "a", true, None);
         assert!(!engine.preedit_string.is_empty());
-        
-        let output = engine.set_mode(InputMode::Alphanumeric);
+
+        let output = engine.set_mode(ProtoInputMode::Alphanumeric);
         assert!(output.commit_string.is_some());
         assert!(engine.preedit_string.is_empty());
     }
@@ -751,13 +826,13 @@ mod tests {
     #[test]
     fn character_input_builds_preedit() {
         let mut engine = create_test_engine();
-        engine.set_mode(InputMode::Hiragana);
-        
-        let output = engine.process_key_event(Some('a'), "a", true, false, false, false);
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        let output = engine.process_key_event(Some('a'), "a", true, None);
         assert!(output.consumed);
         assert_eq!(engine.preedit_string, "あ");
-        
-        let output = engine.process_key_event(Some('i'), "i", true, false, false, false);
+
+        let output = engine.process_key_event(Some('i'), "i", true, None);
         assert!(output.consumed);
         assert_eq!(engine.preedit_string, "あい");
     }
@@ -765,13 +840,13 @@ mod tests {
     #[test]
     fn backspace_removes_character() {
         let mut engine = create_test_engine();
-        engine.set_mode(InputMode::Hiragana);
-        
-        engine.process_key_event(Some('a'), "a", true, false, false, false);
-        engine.process_key_event(Some('i'), "i", true, false, false, false);
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        engine.process_key_event(Some('a'), "a", true, None);
+        engine.process_key_event(Some('i'), "i", true, None);
         assert_eq!(engine.preedit_string, "あい");
-        
-        let output = engine.process_key_event(None, "BackSpace", true, false, false, false);
+
+        let output = engine.process_key_event(None, "BackSpace", true, None);
         assert!(output.consumed);
         assert_eq!(engine.preedit_string, "あ");
     }
@@ -779,12 +854,12 @@ mod tests {
     #[test]
     fn space_triggers_conversion() {
         let mut engine = create_test_engine();
-        engine.set_mode(InputMode::Hiragana);
-        
-        engine.process_key_event(Some('a'), "a", true, false, false, false);
-        engine.process_key_event(Some('i'), "i", true, false, false, false);
-        
-        let output = engine.process_key_event(Some(' '), "space", true, false, false, false);
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        engine.process_key_event(Some('a'), "a", true, None);
+        engine.process_key_event(Some('i'), "i", true, None);
+
+        let output = engine.process_key_event(Some(' '), "space", true, None);
         assert!(output.consumed);
         assert!(output.show_candidates);
         assert!(!output.candidates.is_empty());
@@ -794,15 +869,15 @@ mod tests {
     #[test]
     fn enter_confirms_conversion() {
         let mut engine = create_test_engine();
-        engine.set_mode(InputMode::Hiragana);
-        
-        engine.process_key_event(Some('a'), "a", true, false, false, false);
-        engine.process_key_event(Some('i'), "i", true, false, false, false);
-        engine.process_key_event(Some(' '), "space", true, false, false, false);
-        
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        engine.process_key_event(Some('a'), "a", true, None);
+        engine.process_key_event(Some('i'), "i", true, None);
+        engine.process_key_event(Some(' '), "space", true, None);
+
         assert!(engine.in_conversion);
-        
-        let output = engine.process_key_event(None, "Return", true, false, false, false);
+
+        let output = engine.process_key_event(None, "Return", true, None);
         assert!(output.consumed);
         assert_eq!(output.commit_string, Some("愛".to_string()));
         assert!(!engine.in_conversion);
@@ -812,15 +887,15 @@ mod tests {
     #[test]
     fn escape_cancels_conversion() {
         let mut engine = create_test_engine();
-        engine.set_mode(InputMode::Hiragana);
-        
-        engine.process_key_event(Some('a'), "a", true, false, false, false);
-        engine.process_key_event(Some('i'), "i", true, false, false, false);
-        engine.process_key_event(Some(' '), "space", true, false, false, false);
-        
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        engine.process_key_event(Some('a'), "a", true, None);
+        engine.process_key_event(Some('i'), "i", true, None);
+        engine.process_key_event(Some(' '), "space", true, None);
+
         assert!(engine.in_conversion);
-        
-        let output = engine.process_key_event(None, "Escape", true, false, false, false);
+
+        let output = engine.process_key_event(None, "Escape", true, None);
         assert!(output.consumed);
         assert!(!engine.in_conversion);
         assert_eq!(engine.preedit_string, "あい");
@@ -829,12 +904,13 @@ mod tests {
     #[test]
     fn ctrl_key_commits_and_passes_through() {
         let mut engine = create_test_engine();
-        engine.set_mode(InputMode::Hiragana);
-        
-        engine.process_key_event(Some('a'), "a", true, false, false, false);
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        engine.process_key_event(Some('a'), "a", true, None);
         assert!(!engine.preedit_string.is_empty());
-        
-        let output = engine.process_key_event(Some('c'), "c", true, false, true, false);
+
+        let modifiers = ProtoKeyModifiers { shift: false, ctrl: true, alt: false };
+        let output = engine.process_key_event(Some('c'), "c", true, Some(modifiers));
         assert!(!output.consumed, "Ctrl+C should pass through to application");
         assert!(output.commit_string.is_some(), "Should commit preedit before passing through");
         assert!(engine.preedit_string.is_empty(), "Preedit should be cleared after commit");
@@ -843,18 +919,18 @@ mod tests {
     #[test]
     fn mode_switch_accepts_henkan_for_convert_alias() {
         let mut engine = create_test_engine();
-        assert_eq!(engine.get_mode(), InputMode::Alphanumeric);
+        assert_eq!(engine.get_mode(), ProtoInputMode::Alphanumeric);
 
-        let _output = engine.process_key_event(None, "Henkan", true, false, false, false);
-        assert_eq!(engine.get_mode(), InputMode::Hiragana);
+        let _output = engine.process_key_event(None, "Henkan", true, None);
+        assert_eq!(engine.get_mode(), ProtoInputMode::Hiragana);
     }
 
     #[test]
     fn mode_switch_accepts_muhenkan_for_nonconvert_alias() {
         let mut engine = create_test_engine();
-        engine.set_mode(InputMode::Hiragana);
+        engine.set_mode(ProtoInputMode::Hiragana);
 
-        let _output = engine.process_key_event(None, "Muhenkan", true, false, false, false);
-        assert_eq!(engine.get_mode(), InputMode::Alphanumeric);
+        let _output = engine.process_key_event(None, "Muhenkan", true, None);
+        assert_eq!(engine.get_mode(), ProtoInputMode::Alphanumeric);
     }
 }

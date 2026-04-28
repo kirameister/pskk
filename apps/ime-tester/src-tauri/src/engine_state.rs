@@ -1,4 +1,5 @@
 use pskk::engine::{EngineOutput, InputMode, PSKKEngine, PreeditSegment};
+use pskk::grpc::proto::{InputMode as ProtoInputMode, KeyModifiers as ProtoKeyModifiers};
 use pskk::henkan::{Candidate, HenkanProcessor};
 use pskk::kanchoku::KanchokuProcessor;
 use pskk::simultaneous_processor::SimultaneousInputProcessor;
@@ -29,42 +30,15 @@ pub struct EngineState {
 
 impl EngineState {
     pub fn new() -> Self {
-        use pskk::settings::load_current_kanchoku_mappings;
-        use pskk::util::get_config_data;
-        
-        // Try to load config, fall back to default layout on error
-        let layout = match get_config_data() {
-            Ok((config, _warnings)) => {
-                match load_current_kanchoku_mappings(&config) {
-                    Ok(mappings) => {
-                        // Convert MurensoMapping to RawLayoutEntry format
-                        // RawLayoutEntry = (input, output, pending, simul_limit_ms)
-                        // MurensoMapping has first_key, second_key, kanji
-                        mappings.into_iter()
-                            .map(|m| {
-                                let input = format!("{}{}", m.first_key, m.second_key);
-                                (input, m.kanji, String::new(), None)
-                            })
-                            .collect()
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to load kanchoku layout: {}, using default romaji", e);
-                        Self::default_layout()
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("Failed to load config: {}, using default romaji", e);
-                Self::default_layout()
-            }
-        };
-        
+        let layout = Self::default_layout();
+
         let simul = SimultaneousInputProcessor::new(Some(layout));
         let kanchoku = KanchokuProcessor::new(None);
         let henkan = HenkanProcessor::new();
-        
-        let engine = PSKKEngine::new(simul, kanchoku, henkan);
-        
+
+        let engine = PSKKEngine::new(simul, kanchoku, henkan)
+            .expect("Failed to create engine");
+
         Self {
             engine: Mutex::new(engine),
         }
@@ -76,8 +50,9 @@ impl EngineState {
         let simul = SimultaneousInputProcessor::new(Some(layout));
         let kanchoku = KanchokuProcessor::new(None);
         let henkan = HenkanProcessor::new().with_dictionary(dictionary);
-        
-        *engine = PSKKEngine::new(simul, kanchoku, henkan);
+
+        *engine = PSKKEngine::new(simul, kanchoku, henkan)
+            .expect("Failed to create engine with dictionary");
         drop(engine);
         self
     }
@@ -166,24 +141,35 @@ impl EngineState {
         modifiers: KeyModifiers,
     ) -> EngineOutput {
         let mut engine = self.engine.lock().unwrap();
+        let proto_modifiers = ProtoKeyModifiers {
+            shift: modifiers.shift,
+            ctrl: modifiers.ctrl,
+            alt: modifiers.alt,
+        };
         engine.process_key_event(
             key_char,
             &key_name,
             is_pressed,
-            modifiers.shift,
-            modifiers.ctrl,
-            modifiers.alt,
+            Some(proto_modifiers),
         )
     }
 
     pub fn set_mode(&self, mode: InputMode) -> EngineOutput {
         let mut engine = self.engine.lock().unwrap();
-        engine.set_mode(mode)
+        let proto_mode = match mode {
+            InputMode::Alphanumeric => ProtoInputMode::Alphanumeric,
+            InputMode::Hiragana => ProtoInputMode::Hiragana,
+        };
+        engine.set_mode(proto_mode)
     }
 
     pub fn get_mode(&self) -> InputMode {
         let engine = self.engine.lock().unwrap();
-        engine.get_mode()
+        let proto_mode = engine.get_mode();
+        match proto_mode {
+            ProtoInputMode::Alphanumeric => InputMode::Alphanumeric,
+            ProtoInputMode::Hiragana => InputMode::Hiragana,
+        }
     }
 
     pub fn focus_out(&self) -> EngineOutput {

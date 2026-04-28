@@ -22,6 +22,9 @@ service PSKKService {
   
   // Get the current configuration
   rpc GetConfig(Empty) returns (ConfigResponse);
+  
+  // Reload configuration from disk
+  rpc ReloadConfig(Empty) returns (Empty);
 }
 
 // Empty message for requests/responses with no data

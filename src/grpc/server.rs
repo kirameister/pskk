@@ -2,17 +2,12 @@ use std::sync::{Arc, Mutex};
 use tonic::{transport::Server, Request, Response, Status};
 
 use crate::engine::PSKKEngine;
-use crate::grpc::conversion::{
-    engine_output_to_proto, input_mode_from_proto, key_modifiers_from_proto,
-    mode_response_from_rust,
-};
+use crate::grpc::conversion::engine_output_to_proto;
 use crate::grpc::proto::pskk_service_server::{PskkService, PskkServiceServer};
 use crate::grpc::proto::{ConfigResponse, Empty, EngineOutput, KeyEvent, ModeResponse, SetModeRequest};
 use crate::henkan::HenkanProcessor;
 use crate::kanchoku::KanchokuProcessor;
-use crate::settings::load_current_kanchoku_mappings;
 use crate::simultaneous_processor::SimultaneousInputProcessor;
-use crate::util::get_config_data;
 
 /// PSKK gRPC Service Implementation
 pub struct PSKKServiceImpl {
@@ -20,40 +15,18 @@ pub struct PSKKServiceImpl {
 }
 
 impl PSKKServiceImpl {
-    pub fn new() -> Self {
-        // Load config and create engine
-        let (config, layout) = match get_config_data() {
-            Ok((config, _warnings)) => {
-                let layout = match load_current_kanchoku_mappings(&config) {
-                    Ok(mappings) => mappings
-                        .into_iter()
-                        .map(|m| {
-                            let input = format!("{}{}", m.first_key, m.second_key);
-                            (input, m.kanji, String::new(), None)
-                        })
-                        .collect(),
-                    Err(e) => {
-                        eprintln!("Failed to load kanchoku layout: {}, using default", e);
-                        Self::default_layout()
-                    }
-                };
-
-                (config, layout)
-            }
-            Err(e) => {
-                eprintln!("Failed to load config: {}, using defaults", e);
-                (serde_json::json!({}), Self::default_layout())
-            }
-        };
+    pub fn new() -> Result<Self, String> {
+        // Create layout - use default for now since config is loaded by engine
+        let layout = Self::default_layout();
 
         let simul = SimultaneousInputProcessor::new(Some(layout));
         let kanchoku = KanchokuProcessor::new(None);
         let henkan = HenkanProcessor::new();
-        let engine = PSKKEngine::new(simul, kanchoku, henkan, &config);
+        let engine = PSKKEngine::new(simul, kanchoku, henkan)?;
 
-        Self {
+        Ok(Self {
             engine: Arc::new(Mutex::new(engine)),
-        }
+        })
     }
 
     fn default_layout() -> Vec<(String, String, String, Option<u64>)> {
@@ -81,7 +54,6 @@ impl PskkService for PSKKServiceImpl {
         let key_event = request.into_inner();
 
         let key_char = key_event.key_char.and_then(|s| s.chars().next());
-        let (shift, ctrl, alt) = key_modifiers_from_proto(key_event.modifiers);
 
         let mut engine = self
             .engine
@@ -92,9 +64,7 @@ impl PskkService for PSKKServiceImpl {
             key_char,
             &key_event.key_name,
             key_event.is_pressed,
-            shift,
-            ctrl,
-            alt,
+            key_event.modifiers,
         );
 
         Ok(Response::new(engine_output_to_proto(output)))
@@ -105,10 +75,8 @@ impl PskkService for PSKKServiceImpl {
         request: Request<SetModeRequest>,
     ) -> Result<Response<EngineOutput>, Status> {
         let req = request.into_inner();
-        let mode = input_mode_from_proto(
-            crate::grpc::proto::InputMode::try_from(req.mode)
-                .map_err(|_| Status::invalid_argument("Invalid input mode"))?,
-        );
+        let mode = crate::grpc::proto::InputMode::try_from(req.mode)
+            .map_err(|_| Status::invalid_argument("Invalid input mode"))?;
 
         let mut engine = self
             .engine
@@ -128,7 +96,7 @@ impl PskkService for PSKKServiceImpl {
 
         let mode = engine.get_mode();
 
-        Ok(Response::new(mode_response_from_rust(mode)))
+        Ok(Response::new(ModeResponse { mode: mode as i32 }))
     }
 
     async fn focus_out(&self, _request: Request<Empty>) -> Result<Response<EngineOutput>, Status> {
@@ -165,11 +133,24 @@ impl PskkService for PSKKServiceImpl {
 
         Ok(Response::new(ConfigResponse { config_json }))
     }
+
+    async fn reload_config(&self, _request: Request<Empty>) -> Result<Response<Empty>, Status> {
+        let mut engine = self
+            .engine
+            .lock()
+            .map_err(|e| Status::internal(format!("Failed to lock engine: {}", e)))?;
+
+        engine.reload_config()
+            .map_err(|e| Status::internal(format!("Failed to reload config: {}", e)))?;
+
+        Ok(Response::new(Empty {}))
+    }
 }
 
 /// Run the gRPC server
 pub async fn run_server(addr: std::net::SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
-    let service = PSKKServiceImpl::new();
+    let service = PSKKServiceImpl::new()
+        .map_err(|e| format!("Failed to create service: {}", e))?;
 
     Server::builder()
         .add_service(PskkServiceServer::new(service))
