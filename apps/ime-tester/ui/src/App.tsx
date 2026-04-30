@@ -79,6 +79,43 @@ function App() {
     }
   }, [handleEngineOutput, addLog]);
 
+  // Normalize key name to platform-independent format (same logic as settings app)
+  const normalizeKeyName = useCallback((e: KeyboardEvent): string => {
+    const modifiers: string[] = [];
+    if (e.ctrlKey) modifiers.push("Control");
+    if (e.altKey) modifiers.push("Alt");
+    if (e.shiftKey) modifiers.push("Shift");
+    if (e.metaKey) modifiers.push("Meta");
+
+    let key = e.key;
+
+    // Normalize special keys to readable names
+    const keyNormalizations: { [key: string]: string } = {
+      " ": "Space",
+      "Enter": "Enter",
+      "Tab": "Tab",
+      "Escape": "Escape",
+      "Backspace": "Backspace",
+      "Delete": "Delete",
+      "ArrowUp": "ArrowUp",
+      "ArrowDown": "ArrowDown",
+      "ArrowLeft": "ArrowLeft",
+      "ArrowRight": "ArrowRight",
+    };
+
+    if (keyNormalizations[key]) {
+      key = keyNormalizations[key];
+    }
+
+    // Build the full key string (e.g., "Control+Shift+K")
+    const keyParts = [...modifiers];
+    if (key && key !== "Control" && key !== "Alt" && key !== "Shift" && key !== "Meta") {
+      keyParts.push(key);
+    }
+
+    return keyParts.join("+");
+  }, []);
+
   const handleKeyEvent = useCallback(async (e: KeyboardEvent, isPressed: boolean) => {
     console.log(`[LAYER 1] handleKeyEvent called: key="${e.key}" code="${e.code}" isPressed=${isPressed}`);
     
@@ -97,7 +134,7 @@ function App() {
     }
 
     const keyChar = e.key.length === 1 ? e.key : null;
-    const keyName = e.key;
+    const keyName = normalizeKeyName(e);
     const modifiers = {
       shift: e.shiftKey,
       ctrl: e.ctrlKey,
