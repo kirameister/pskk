@@ -710,12 +710,17 @@ fn initialize_user_config_files() -> Result<Vec<String>, UtilError> {
 }
 
 pub fn get_config_data() -> Result<(Value, Vec<String>), UtilError> {
-    let config_path = get_user_config_dir().join("config.json");
+    let user_config_dir = get_user_config_dir();
     let mut warnings = Vec::new();
     let default_config = get_default_config_data()?;
 
+    // Ensure the config directory exists
+    if !user_config_dir.exists() {
+        fs::create_dir_all(&user_config_dir)?;
+    }
+
+    let config_path = user_config_dir.join("config.json");
     if !config_path.exists() {
-        fs::create_dir_all(get_user_config_dir())?;
         write_json_value(&config_path, &default_config)?;
         
         let msg = format!(
