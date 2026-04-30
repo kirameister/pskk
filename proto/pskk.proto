@@ -78,24 +78,27 @@ message ConfigResponse {
 message EngineOutput {
   // Text to commit to the application (if any)
   optional string commit_string = 1;
-  
+
   // Preedit (composition) segments
   repeated PreeditSegment preedit_segments = 2;
-  
+
   // Cursor position within preedit (0-based)
   uint32 preedit_cursor_pos = 3;
-  
+
   // Candidate list for conversion
   repeated Candidate candidates = 4;
-  
+
   // Current candidate cursor position (0-based)
   uint32 candidate_cursor_pos = 5;
-  
+
   // Whether to show candidates window
   bool show_candidates = 6;
-  
+
   // Whether the key event was consumed by the engine
   bool consumed = 7;
+
+  // Current input mode
+  InputMode current_mode = 8;
 }
 
 // A segment of preedit text

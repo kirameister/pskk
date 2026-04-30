@@ -22,6 +22,7 @@ interface EngineOutput {
   candidate_cursor_pos: number;
   show_candidates: boolean;
   consumed: boolean;
+  current_mode: number; // 0 = ALPHANUMERIC, 1 = HIRAGANA
 }
 
 type InputMode = "A" | "あ";
@@ -53,12 +54,16 @@ function App() {
     setCandidates(output.candidates);
     setShowCandidates(output.show_candidates);
     setCandidateCursor(output.candidate_cursor_pos);
-    
+
+    // Sync mode from engine output (0 = ALPHANUMERIC, 1 = HIRAGANA)
+    const newMode: InputMode = output.current_mode === 0 ? "A" : "あ";
+    setMode(newMode);
+
     if (output.preedit_segments.length > 0) {
       const preeditText = output.preedit_segments.map(s => s.text).join('');
       addLog(`Preedit: "${preeditText}"`);
     }
-    
+
     if (output.show_candidates && output.candidates.length > 0) {
       addLog(`Candidates: ${output.candidates.length} options`);
     }

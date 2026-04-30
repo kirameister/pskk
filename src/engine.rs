@@ -45,10 +45,11 @@ pub struct EngineOutput {
     pub candidate_cursor_pos: usize,
     pub show_candidates: bool,
     pub consumed: bool,
+    pub current_mode: ProtoInputMode,
 }
 
 impl EngineOutput {
-    pub fn empty() -> Self {
+    pub fn empty(mode: InputMode) -> Self {
         Self {
             commit_string: None,
             preedit_segments: Vec::new(),
@@ -57,28 +58,32 @@ impl EngineOutput {
             candidate_cursor_pos: 0,
             show_candidates: false,
             consumed: false,
+            current_mode: match mode {
+                InputMode::Alphanumeric => ProtoInputMode::Alphanumeric,
+                InputMode::Hiragana => ProtoInputMode::Hiragana,
+            },
         }
     }
 
-    pub fn consumed() -> Self {
+    pub fn consumed(mode: InputMode) -> Self {
         Self {
             consumed: true,
-            ..Self::empty()
+            ..Self::empty(mode)
         }
     }
 
-    pub fn passthrough() -> Self {
+    pub fn passthrough(mode: InputMode) -> Self {
         Self {
             consumed: false,
-            ..Self::empty()
+            ..Self::empty(mode)
         }
     }
 
-    pub fn commit(text: String) -> Self {
+    pub fn commit(text: String, mode: InputMode) -> Self {
         Self {
             commit_string: Some(text),
             consumed: true,
-            ..Self::empty()
+            ..Self::empty(mode)
         }
     }
 }
@@ -190,10 +195,10 @@ impl PSKKEngine {
             ProtoInputMode::Hiragana => InputMode::Hiragana,
         };
         if self.mode == mode {
-            return EngineOutput::empty();
+            return EngineOutput::empty(self.mode);
         }
 
-        let mut output = EngineOutput::empty();
+        let mut output = EngineOutput::empty(self.mode);
 
         if !self.preedit_string.is_empty() {
             output.commit_string = Some(self.preedit_string.clone());
@@ -260,7 +265,7 @@ impl PSKKEngine {
         }
         
         if self.mode == InputMode::Alphanumeric {
-            return EngineOutput::passthrough();
+            return EngineOutput::passthrough(self.mode);
         }
 
         self.process_hiragana_mode_key(key_char, key_name, is_pressed, has_shift, has_ctrl, has_alt)
@@ -279,11 +284,11 @@ impl PSKKEngine {
             if !self.preedit_string.is_empty() {
                 let commit = self.preedit_string.clone();
                 self.reset_state();
-                let mut output = EngineOutput::commit(commit);
+                let mut output = EngineOutput::commit(commit, self.mode);
                 output.consumed = false;
                 return output;
             }
-            return EngineOutput::passthrough();
+            return EngineOutput::passthrough(self.mode);
         }
 
         if is_pressed {
@@ -310,7 +315,7 @@ impl PSKKEngine {
             }
         }
 
-        EngineOutput::passthrough()
+        EngineOutput::passthrough(self.mode)
     }
 
     fn handle_enter(&mut self) -> EngineOutput {
@@ -322,26 +327,26 @@ impl PSKKEngine {
             let commit = self.preedit_string.clone();
             self.in_forced_preedit = false;
             self.reset_preedit();
-            return EngineOutput::commit(commit);
+            return EngineOutput::commit(commit, self.mode);
         }
         
         if self.bunsetsu_active && !self.preedit_string.is_empty() {
             let commit = self.preedit_string.clone();
             self.bunsetsu_active = false;
             self.reset_preedit();
-            return EngineOutput::commit(commit);
+            return EngineOutput::commit(commit, self.mode);
         }
         
         if !self.preedit_string.is_empty() {
             let commit = self.preedit_string.clone();
             self.reset_preedit();
             
-            let mut output = EngineOutput::commit(commit);
+            let mut output = EngineOutput::commit(commit, self.mode);
             output.consumed = false;
             return output;
         }
         
-        EngineOutput::passthrough()
+        EngineOutput::passthrough(self.mode)
     }
 
     fn handle_escape(&mut self) -> EngineOutput {
@@ -354,7 +359,7 @@ impl PSKKEngine {
             return self.build_preedit_output();
         }
         
-        EngineOutput::passthrough()
+        EngineOutput::passthrough(self.mode)
     }
 
     fn handle_backspace(&mut self) -> EngineOutput {
@@ -373,7 +378,7 @@ impl PSKKEngine {
             return self.build_preedit_output();
         }
         
-        EngineOutput::passthrough()
+        EngineOutput::passthrough(self.mode)
     }
 
     fn handle_space_press(&mut self, key_char: Option<char>) -> EngineOutput {
@@ -392,13 +397,13 @@ impl PSKKEngine {
                     self.marker_keys_held.insert(c.to_string());
                 }
                 
-                EngineOutput::consumed()
+                EngineOutput::consumed(self.mode)
             }
             MarkerState::FirstReleased => {
                 self.marker_state = MarkerState::Idle;
                 self.handle_marker_release_decision()
             }
-            _ => EngineOutput::consumed(),
+            _ => EngineOutput::consumed(self.mode),
         }
     }
 
@@ -411,12 +416,12 @@ impl PSKKEngine {
                         return self.trigger_conversion();
                     } else if self.preedit_string.is_empty() {
                         self.marker_state = MarkerState::Idle;
-                        return EngineOutput::commit(" ".to_string());
+                        return EngineOutput::commit(" ".to_string(), self.mode);
                     }
                 }
                 
                 self.marker_state = MarkerState::FirstReleased;
-                EngineOutput::consumed()
+                EngineOutput::consumed(self.mode)
             }
             MarkerState::KanchokuSecondPressed => {
                 self.marker_state = MarkerState::Idle;
@@ -424,7 +429,7 @@ impl PSKKEngine {
             }
             _ => {
                 self.marker_state = MarkerState::Idle;
-                EngineOutput::consumed()
+                EngineOutput::consumed(self.mode)
             }
         }
     }
@@ -457,7 +462,7 @@ impl PSKKEngine {
         
         self.marker_first_key = None;
         self.marker_had_input = false;
-        EngineOutput::consumed()
+        EngineOutput::consumed(self.mode)
     }
 
     fn try_kanchoku_lookup(&mut self, first_char: char) -> Option<String> {
@@ -498,12 +503,12 @@ impl PSKKEngine {
             self.marker_had_input = true;
             self.marker_keys_held.insert(c.to_string());
             self.marker_state = MarkerState::KanchokuSecondPressed;
-            return EngineOutput::consumed();
+            return EngineOutput::consumed(self.mode);
         }
         
         if self.marker_state == MarkerState::KanchokuSecondPressed {
             self.marker_keys_held.insert(c.to_string());
-            return EngineOutput::consumed();
+            return EngineOutput::consumed(self.mode);
         }
         
         if self.converted {
@@ -511,7 +516,7 @@ impl PSKKEngine {
             self.reset_preedit();
             self.converted = false;
             
-            let mut output = EngineOutput::commit(commit);
+            let mut output = EngineOutput::commit(commit, self.mode);
             output.consumed = false;
             return output;
         }
@@ -535,7 +540,7 @@ impl PSKKEngine {
 
     fn trigger_conversion(&mut self) -> EngineOutput {
         if self.preedit_string.is_empty() {
-            return EngineOutput::passthrough();
+            return EngineOutput::passthrough(self.mode);
         }
         
         self.conversion_yomi = self.preedit_hiragana.clone();
@@ -543,7 +548,7 @@ impl PSKKEngine {
         
         let candidates = self.henkan_processor.convert(&self.conversion_yomi);
         
-        let mut output = EngineOutput::empty();
+        let mut output = EngineOutput::empty(self.mode);
         output.consumed = true;
         output.show_candidates = true;
         output.candidates = candidates.to_vec();
@@ -560,7 +565,7 @@ impl PSKKEngine {
 
     fn confirm_conversion(&mut self) -> EngineOutput {
         if !self.in_conversion {
-            return EngineOutput::passthrough();
+            return EngineOutput::passthrough(self.mode);
         }
         
         let commit = self.preedit_string.clone();
@@ -570,12 +575,12 @@ impl PSKKEngine {
         self.conversion_yomi.clear();
         self.reset_preedit();
         
-        EngineOutput::commit(commit)
+        EngineOutput::commit(commit, self.mode)
     }
 
     fn cancel_conversion(&mut self) -> EngineOutput {
         if !self.in_conversion {
-            return EngineOutput::passthrough();
+            return EngineOutput::passthrough(self.mode);
         }
         
         self.preedit_string = self.conversion_yomi.clone();
@@ -586,7 +591,7 @@ impl PSKKEngine {
 
     fn handle_down_arrow(&mut self) -> EngineOutput {
         if !self.in_conversion {
-            return EngineOutput::passthrough();
+            return EngineOutput::passthrough(self.mode);
         }
         
         if self.henkan_processor.is_bunsetsu_mode() {
@@ -604,7 +609,7 @@ impl PSKKEngine {
 
     fn handle_up_arrow(&mut self) -> EngineOutput {
         if !self.in_conversion {
-            return EngineOutput::passthrough();
+            return EngineOutput::passthrough(self.mode);
         }
         
         if self.henkan_processor.is_bunsetsu_mode() {
@@ -622,7 +627,7 @@ impl PSKKEngine {
 
     fn handle_right_arrow(&mut self) -> EngineOutput {
         if !self.in_conversion || !self.henkan_processor.is_bunsetsu_mode() {
-            return EngineOutput::passthrough();
+            return EngineOutput::passthrough(self.mode);
         }
         
         self.henkan_processor.next_bunsetsu();
@@ -631,7 +636,7 @@ impl PSKKEngine {
 
     fn handle_left_arrow(&mut self) -> EngineOutput {
         if !self.in_conversion || !self.henkan_processor.is_bunsetsu_mode() {
-            return EngineOutput::passthrough();
+            return EngineOutput::passthrough(self.mode);
         }
         
         self.henkan_processor.previous_bunsetsu();
@@ -639,7 +644,7 @@ impl PSKKEngine {
     }
 
     fn build_preedit_output(&self) -> EngineOutput {
-        let mut output = EngineOutput::empty();
+        let mut output = EngineOutput::empty(self.mode);
         output.consumed = true;
         output.preedit_segments = self.build_preedit_segments();
         output.preedit_cursor_pos = self.preedit_string.chars().count();
@@ -647,7 +652,7 @@ impl PSKKEngine {
     }
 
     fn build_conversion_output(&self) -> EngineOutput {
-        let mut output = EngineOutput::empty();
+        let mut output = EngineOutput::empty(self.mode);
         output.consumed = true;
         output.show_candidates = true;
         output.candidates = self.henkan_processor.get_candidates().to_vec();
@@ -705,7 +710,7 @@ impl PSKKEngine {
     }
 
     pub fn focus_out(&mut self) -> EngineOutput {
-        let mut output = EngineOutput::empty();
+        let mut output = EngineOutput::empty(self.mode);
         
         if !self.preedit_string.is_empty() {
             output.commit_string = Some(self.preedit_string.clone());

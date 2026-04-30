@@ -27,5 +27,6 @@ pub fn engine_output_to_proto(output: RustEngineOutput) -> EngineOutput {
         candidate_cursor_pos: output.candidate_cursor_pos as u32,
         show_candidates: output.show_candidates,
         consumed: output.consumed,
+        current_mode: output.current_mode as i32,
     }
 }
