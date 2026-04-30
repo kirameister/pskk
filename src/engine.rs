@@ -113,10 +113,6 @@ pub struct PSKKEngine {
     
     // Full configuration
     config: serde_json::Value,
-    
-    // Mode switching keys from config
-    enable_hiragana_keys: Vec<String>,
-    disable_hiragana_keys: Vec<String>,
 }
 
 impl PSKKEngine {
@@ -142,31 +138,12 @@ impl PSKKEngine {
         let (config, _warnings) = get_config_data()
             .map_err(|e| format!("Failed to load config: {}", e))?;
 
-        // Load mode switching keys from config
-        let enable_hiragana_keys = config
-            .get("enable_hiragana_key")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-            .unwrap_or_else(|| vec!["Henkan".to_string(), "Convert".to_string()]);
-
-        let disable_hiragana_keys = config
-            .get("disable_hiragana_key")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-            .unwrap_or_else(|| vec!["Muhenkan".to_string(), "NonConvert".to_string()]);
-
-        eprintln!("PSKKEngine initialized with mode switching keys:");
-        eprintln!("  enable_hiragana_key: {:?}", enable_hiragana_keys);
-        eprintln!("  disable_hiragana_key: {:?}", disable_hiragana_keys);
-
         Ok(Self {
             mode: InputMode::Alphanumeric,
             simul_processor,
             kanchoku_processor,
             henkan_processor,
             config,
-            enable_hiragana_keys,
-            disable_hiragana_keys,
             preedit_string: String::new(),
             preedit_hiragana: String::new(),
             preedit_ascii: String::new(),
@@ -201,26 +178,8 @@ impl PSKKEngine {
         let (config, _warnings) = get_config_data()
             .map_err(|e| format!("Failed to reload config: {}", e))?;
 
-        // Re-extract mode switching keys from new config
-        let enable_hiragana_keys = config
-            .get("enable_hiragana_key")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-            .unwrap_or_else(|| vec!["Henkan".to_string(), "Convert".to_string()]);
-
-        let disable_hiragana_keys = config
-            .get("disable_hiragana_key")
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-            .unwrap_or_else(|| vec!["Muhenkan".to_string(), "NonConvert".to_string()]);
-
         self.config = config;
-        self.enable_hiragana_keys = enable_hiragana_keys;
-        self.disable_hiragana_keys = disable_hiragana_keys;
-
-        eprintln!("Config reloaded. New mode switching keys:");
-        eprintln!("  enable_hiragana_key: {:?}", self.enable_hiragana_keys);
-        eprintln!("  disable_hiragana_key: {:?}", self.disable_hiragana_keys);
+        eprintln!("Config reloaded.");
 
         Ok(())
     }
@@ -260,12 +219,27 @@ impl PSKKEngine {
         // Check for mode switching keys first (before mode check)
         if is_pressed {
             eprintln!("KEY PRESSED: '{}' (char: {:?})", key_name, key_char);
-            eprintln!("  Checking against enable_keys: {:?}", self.enable_hiragana_keys);
-            eprintln!("  Checking against disable_keys: {:?}", self.disable_hiragana_keys);
-            
+
+            // Extract mode switching keys from config
+            let enable_hiragana_keys = self
+                .config
+                .get("enable_hiragana_key")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
+                .unwrap_or_else(|| vec!["Henkan", "Convert"]);
+
+            let disable_hiragana_keys = self
+                .config
+                .get("disable_hiragana_key")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
+                .unwrap_or_else(|| vec!["Muhenkan", "NonConvert"]);
+
+            eprintln!("  Checking against enable_keys: {:?}", enable_hiragana_keys);
+            eprintln!("  Checking against disable_keys: {:?}", disable_hiragana_keys);
+
             // Check for enable hiragana keys (Convert, etc.)
-            if self
-                .enable_hiragana_keys
+            if enable_hiragana_keys
                 .iter()
                 .any(|k| Self::mode_switch_key_matches(k, key_name))
             {
@@ -274,15 +248,14 @@ impl PSKKEngine {
             }
 
             // Check for disable hiragana keys (NonConvert, etc.)
-            if self
-                .disable_hiragana_keys
+            if disable_hiragana_keys
                 .iter()
                 .any(|k| Self::mode_switch_key_matches(k, key_name))
             {
                 eprintln!("  ✓ MATCHED disable key! Switching to Alphanumeric");
                 return self.set_mode(ProtoInputMode::Alphanumeric);
             }
-            
+
             eprintln!("  ✗ No match");
         }
         
@@ -771,17 +744,12 @@ mod tests {
             "disable_hiragana_key": ["Muhenkan", "NonConvert"],
         });
 
-        let enable_hiragana_keys = vec!["Henkan".to_string(), "Convert".to_string()];
-        let disable_hiragana_keys = vec!["Muhenkan".to_string(), "NonConvert".to_string()];
-
         PSKKEngine {
             mode: InputMode::Alphanumeric,
             simul_processor: simul,
             kanchoku_processor: kanchoku,
             henkan_processor: henkan,
             config,
-            enable_hiragana_keys,
-            disable_hiragana_keys,
             preedit_string: String::new(),
             preedit_hiragana: String::new(),
             preedit_ascii: String::new(),
