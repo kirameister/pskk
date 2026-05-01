@@ -45,11 +45,14 @@ function App() {
   }, []);
   
   const handleEngineOutput = useCallback((output: EngineOutput, addLog: (msg: string) => void) => {
+    console.log("[handleEngineOutput] Received output:", output);
+
     if (output.commit_string) {
       setCommittedText((prev) => prev + output.commit_string);
       addLog(`Committed: "${output.commit_string}"`);
     }
 
+    console.log("[handleEngineOutput] Setting preedit segments:", output.preedit_segments);
     setPreeditSegments(output.preedit_segments);
     setCandidates(output.candidates);
     setShowCandidates(output.show_candidates);
