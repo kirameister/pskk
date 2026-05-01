@@ -567,14 +567,19 @@ impl PSKKEngine {
             &c.to_string(),
             true,
         );
-        
+
+        eprintln!("Simul processor output: output={:?}, pending={:?}, preedit_pending='{}', char='{}'",
+                 output, pending, self.preedit_pending, c);
+
         if let Some(out) = output {
             self.preedit_hiragana.push_str(&out);
             self.preedit_ascii.push(c);
+            eprintln!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
         }
-        
+
         self.preedit_pending = pending.unwrap_or_default();
         self.preedit_string = self.preedit_hiragana.clone();
+        eprintln!("Final preedit_string: '{}'", self.preedit_string);
         
         self.build_preedit_output()
     }
