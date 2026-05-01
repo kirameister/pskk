@@ -264,7 +264,7 @@ impl PSKKEngine {
         };
         // Check for mode switching keys first (before mode check)
         if is_pressed {
-            eprintln!("KEY PRESSED: '{}' (char: {:?})", key_name, key_char);
+            // eprintln!("KEY PRESSED: '{}' (char: {:?})", key_name, key_char);
 
             // Extract mode switching keys from config
             let enable_hiragana_keys = self
@@ -289,7 +289,7 @@ impl PSKKEngine {
                 .iter()
                 .any(|k| Self::mode_switch_key_matches(k, key_name))
             {
-                eprintln!("  ✓ MATCHED enable key! Switching to Hiragana");
+                // eprintln!("  ✓ MATCHED enable key! Switching to Hiragana");
                 return self.set_mode(ProtoInputMode::Hiragana);
             }
 
@@ -298,7 +298,7 @@ impl PSKKEngine {
                 .iter()
                 .any(|k| Self::mode_switch_key_matches(k, key_name))
             {
-                eprintln!("  ✓ MATCHED disable key! Switching to Alphanumeric");
+                // eprintln!("  ✓ MATCHED disable key! Switching to Alphanumeric");
                 return self.set_mode(ProtoInputMode::Alphanumeric);
             }
 
@@ -568,8 +568,8 @@ impl PSKKEngine {
             true,
         );
 
-        eprintln!("Simul processor output: output={:?}, pending={:?}, preedit_pending='{}', char='{}'",
-                 output, pending, self.preedit_pending, c);
+        // eprintln!("Simul processor output: output={:?}, pending={:?}, preedit_pending='{}', char='{}'",
+//              output, pending, self.preedit_pending, c);
 
         // For simultaneous input layouts, if output is empty but pending is not,
         // show the pending string in the preedit
@@ -577,7 +577,7 @@ impl PSKKEngine {
             if !out.is_empty() {
                 self.preedit_hiragana.push_str(out);
                 self.preedit_ascii.push(c);
-                eprintln!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
+                // eprintln!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
             }
         }
 
@@ -586,8 +586,8 @@ impl PSKKEngine {
         // For simultaneous input layouts, show both preedit_hiragana and preedit_pending
         // in the preedit display
         self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
-        eprintln!("Final preedit_string: '{}' (hiragana='{}' + pending='{}')",
-                 self.preedit_string, self.preedit_hiragana, self.preedit_pending);
+        // eprintln!("Final preedit_string: '{}' (hiragana='{}' + pending='{}')",
+        //          self.preedit_string, self.preedit_hiragana, self.preedit_pending);
         
         self.build_preedit_output()
     }
