@@ -16,10 +16,8 @@ pub struct PSKKServiceImpl {
 
 impl PSKKServiceImpl {
     pub fn new() -> Result<Self, String> {
-        // Create layout - use default for now since config is loaded by engine
-        let layout = Self::default_layout();
-
-        let simul = SimultaneousInputProcessor::new(Some(layout));
+        // Layout will be loaded by the engine from config
+        let simul = SimultaneousInputProcessor::new(None);
         let kanchoku = KanchokuProcessor::new(None);
         let henkan = HenkanProcessor::new();
         let engine = PSKKEngine::new(simul, kanchoku, henkan)?;
@@ -27,21 +25,6 @@ impl PSKKServiceImpl {
         Ok(Self {
             engine: Arc::new(Mutex::new(engine)),
         })
-    }
-
-    fn default_layout() -> Vec<(String, String, String, Option<u64>)> {
-        vec![
-            ("a".to_string(), "あ".to_string(), "".to_string(), None),
-            ("i".to_string(), "い".to_string(), "".to_string(), None),
-            ("u".to_string(), "う".to_string(), "".to_string(), None),
-            ("e".to_string(), "え".to_string(), "".to_string(), None),
-            ("o".to_string(), "お".to_string(), "".to_string(), None),
-            ("ka".to_string(), "か".to_string(), "".to_string(), None),
-            ("ki".to_string(), "き".to_string(), "".to_string(), None),
-            ("ku".to_string(), "く".to_string(), "".to_string(), None),
-            ("ke".to_string(), "け".to_string(), "".to_string(), None),
-            ("ko".to_string(), "こ".to_string(), "".to_string(), None),
-        ]
     }
 }
 

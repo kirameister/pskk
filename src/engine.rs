@@ -1,8 +1,8 @@
+use crate::grpc::proto::{InputMode as ProtoInputMode, KeyModifiers as ProtoKeyModifiers};
 use crate::henkan::{Candidate, HenkanProcessor};
 use crate::kanchoku::KanchokuProcessor;
 use crate::simultaneous_processor::SimultaneousInputProcessor;
-use crate::util::get_config_data;
-use crate::grpc::proto::{InputMode as ProtoInputMode, KeyModifiers as ProtoKeyModifiers};
+use crate::util::{get_config_data, get_layout_data};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -142,6 +142,39 @@ impl PSKKEngine {
         // Load config internally
         let (config, _warnings) = get_config_data()
             .map_err(|e| format!("Failed to load config: {}", e))?;
+
+        // Load layout from config if not already provided
+        let simul_processor = if simul_processor.layout_data.is_some() {
+            simul_processor
+        } else {
+            // Load layout from config
+            let layout_data = get_layout_data(&config)
+                .map_err(|e| format!("Failed to load layout: {}", e))?;
+
+            // Parse layout JSON into RawLayoutEntry format
+            let layout_entries: Vec<(String, String, String, Option<u64>)> = layout_data
+                .as_array()
+                .ok_or_else(|| "Layout data is not an array".to_string())?
+                .iter()
+                .map(|entry| {
+                    let arr = entry.as_array().ok_or_else(|| "Layout entry is not an array".to_string())?;
+                    if arr.len() < 3 {
+                        return Err("Layout entry must have at least 3 elements".to_string());
+                    }
+                    let input = arr[0].as_str().ok_or_else(|| "Input is not a string".to_string())?.to_string();
+                    let output = arr[1].as_str().ok_or_else(|| "Output is not a string".to_string())?.to_string();
+                    let pending = arr[2].as_str().ok_or_else(|| "Pending is not a string".to_string())?.to_string();
+                    let simul_limit_ms = if arr.len() > 3 {
+                        arr[3].as_u64()
+                    } else {
+                        None
+                    };
+                    Ok((input, output, pending, simul_limit_ms))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+
+            SimultaneousInputProcessor::new(Some(layout_entries))
+        };
 
         Ok(Self {
             mode: InputMode::Alphanumeric,
