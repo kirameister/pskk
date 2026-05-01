@@ -573,9 +573,9 @@ impl PSKKEngine {
 
         // For simultaneous input layouts, if output is empty but pending is not,
         // show the pending string in the preedit
-        if let Some(out) = output {
+        if let Some(ref out) = output {
             if !out.is_empty() {
-                self.preedit_hiragana.push_str(&out);
+                self.preedit_hiragana.push_str(out);
                 self.preedit_ascii.push(c);
                 eprintln!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
             }
@@ -583,12 +583,14 @@ impl PSKKEngine {
 
         self.preedit_pending = pending.unwrap_or_default();
 
-        // If preedit_hiragana is empty but we have pending, show pending in preedit
-        if self.preedit_hiragana.is_empty() && !self.preedit_pending.is_empty() {
-            self.preedit_string = self.preedit_pending.clone();
-        } else {
-            self.preedit_string = self.preedit_hiragana.clone();
+        // For simultaneous input layouts, accumulate pending strings in preedit_hiragana
+        // when output is empty
+        if output.as_ref().map_or(true, |s| s.is_empty()) && !self.preedit_pending.is_empty() {
+            self.preedit_hiragana.push_str(&self.preedit_pending);
+            eprintln!("Accumulated pending into preedit_hiragana: '{}'", self.preedit_hiragana);
         }
+
+        self.preedit_string = self.preedit_hiragana.clone();
         eprintln!("Final preedit_string: '{}'", self.preedit_string);
         
         self.build_preedit_output()
