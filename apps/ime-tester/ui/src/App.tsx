@@ -282,36 +282,14 @@ function App() {
         onKeyDown={(e) => handleKeyEvent(e.nativeEvent, true)}
         onKeyUp={(e) => handleKeyEvent(e.nativeEvent, false)}
       />
-      
-      <div className="header">
-        <div className="header-left">
-          <h1>PSKK IME Tester</h1>
-          <span className={`connection-status ${connected ? "connected" : "disconnected"}`}>
-            {connecting ? "Connecting..." : connected ? "● Connected" : "● Disconnected"}
-          </span>
-        </div>
-        <div className="mode-switcher">
-          <button
-            className={`mode-button ${mode === "A" ? "active" : ""}`}
-            onClick={() => handleModeChange("A")}
-            disabled={!connected}
-          >
-            A
-          </button>
-          <button
-            className={`mode-button ${mode === "あ" ? "active" : ""}`}
-            onClick={() => handleModeChange("あ")}
-            disabled={!connected}
-          >
-            あ
-          </button>
-        </div>
-      </div>
 
       <div className="content-wrapper">
         <aside className="log-pane">
           <div className="log-header">
             <span>Event Log</span>
+            <span className={`connection-status ${connected ? "connected" : "disconnected"}`}>
+              {connecting ? "Connecting..." : connected ? "● Connected" : "● Disconnected"}
+            </span>
             <button className="clear-log-button" onClick={() => setLogs([])}>Clear</button>
           </div>
           <div className="log-content">
@@ -327,7 +305,25 @@ function App() {
 
         <div className="main-content">
         <div className="section">
-          <div className="section-title">Preedit Display</div>
+          <div className="section-title-row">
+            <div className="section-title">Preedit Display</div>
+            <div className="mode-switcher">
+              <button
+                className={`mode-button ${mode === "A" ? "active" : ""}`}
+                onClick={() => handleModeChange("A")}
+                disabled={!connected}
+              >
+                A
+              </button>
+              <button
+                className={`mode-button ${mode === "あ" ? "active" : ""}`}
+                onClick={() => handleModeChange("あ")}
+                disabled={!connected}
+              >
+                あ
+              </button>
+            </div>
+          </div>
           <div className="preedit-display">
             {preeditSegments.length > 0 ? (
               preeditSegments.map((segment, i) => (
