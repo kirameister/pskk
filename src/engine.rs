@@ -145,6 +145,7 @@ impl PSKKEngine {
 
         // Load layout from config if not already provided
         let simul_processor = if simul_processor.layout_data.is_some() {
+            eprintln!("Using provided layout data with {} entries", simul_processor.layout_data.as_ref().unwrap().len());
             simul_processor
         } else {
             // Load layout from config
@@ -173,6 +174,7 @@ impl PSKKEngine {
                 })
                 .collect::<Result<Vec<_>, String>>()?;
 
+            eprintln!("Loaded {} layout entries from config", layout_entries.len());
             SimultaneousInputProcessor::new(Some(layout_entries))
         };
 
