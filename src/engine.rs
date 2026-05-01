@@ -207,6 +207,12 @@ impl PSKKEngine {
         self.mode = mode;
         self.reset_state();
 
+        // Update output to reflect the new mode
+        output.current_mode = match mode {
+            InputMode::Alphanumeric => ProtoInputMode::Alphanumeric,
+            InputMode::Hiragana => ProtoInputMode::Hiragana,
+        };
+
         output
     }
 
