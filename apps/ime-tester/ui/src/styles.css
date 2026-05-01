@@ -74,12 +74,12 @@ body {
 }
 
 .mode-button {
-  padding: 8px 16px;
+  padding: 4px 12px;
   border: 2px solid #ddd;
   background: white;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 500;
   transition: all 0.2s;
 }
@@ -128,10 +128,15 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
   font-weight: 600;
   font-size: 14px;
   color: #666;
+}
+
+.log-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .clear-log-button {

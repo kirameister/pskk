@@ -286,10 +286,12 @@ function App() {
       <div className="content-wrapper">
         <aside className="log-pane">
           <div className="log-header">
-            <span>Event Log</span>
-            <span className={`connection-status ${connected ? "connected" : "disconnected"}`}>
-              {connecting ? "Connecting..." : connected ? "● Connected" : "● Disconnected"}
-            </span>
+            <div className="log-header-left">
+              <span>Event Log</span>
+              <span className={`connection-status ${connected ? "connected" : "disconnected"}`}>
+                {connecting ? "Connecting..." : connected ? "● Connected" : "● Disconnected"}
+              </span>
+            </div>
             <button className="clear-log-button" onClick={() => setLogs([])}>Clear</button>
           </div>
           <div className="log-content">
