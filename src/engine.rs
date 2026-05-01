@@ -281,8 +281,8 @@ impl PSKKEngine {
                 .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
                 .unwrap_or_else(|| vec!["Muhenkan", "NonConvert"]);
 
-            eprintln!("  Checking against enable_keys: {:?}", enable_hiragana_keys);
-            eprintln!("  Checking against disable_keys: {:?}", disable_hiragana_keys);
+            // eprintln!("  Checking against enable_keys: {:?}", enable_hiragana_keys);
+            // eprintln!("  Checking against disable_keys: {:?}", disable_hiragana_keys);
 
             // Check for enable hiragana keys (Convert, etc.)
             if enable_hiragana_keys
@@ -302,7 +302,7 @@ impl PSKKEngine {
                 return self.set_mode(ProtoInputMode::Alphanumeric);
             }
 
-            eprintln!("  ✗ No match");
+            // eprintln!("  ✗ No match");
         }
         
         if self.mode == InputMode::Alphanumeric {
