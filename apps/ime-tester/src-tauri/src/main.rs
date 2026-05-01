@@ -59,6 +59,11 @@ async fn get_loaded_config(state: State<'_, GrpcClientState>) -> Result<String, 
     state.get_config().await
 }
 
+#[tauri::command]
+async fn close_window(window: tauri::Window) {
+    window.close().unwrap_or_else(|e| eprintln!("Failed to close window: {}", e));
+}
+
 fn main() {
     let client_state = GrpcClientState::new();
     
@@ -73,6 +78,7 @@ fn main() {
             focus_out,
             load_sample_dictionary,
             get_loaded_config,
+            close_window,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

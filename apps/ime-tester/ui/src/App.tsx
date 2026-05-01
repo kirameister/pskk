@@ -127,6 +127,15 @@ function App() {
   const handleKeyEvent = useCallback(async (e: KeyboardEvent, isPressed: boolean) => {
     addLog(`Key event: key="${e.key}" code="${e.code}" isPressed=${isPressed}`);
 
+    // Handle ESC key to exit in direct-input mode (A button)
+    if (e.key === "Escape" && isPressed && mode === "A") {
+      addLog("ESC pressed in direct-input mode, exiting...");
+      if (typeof invoke === 'function') {
+        await invoke("close_window");
+      }
+      return;
+    }
+
     // Handle Ctrl+J for mode toggle
     if (e.ctrlKey && e.key === "j") {
       e.preventDefault();
