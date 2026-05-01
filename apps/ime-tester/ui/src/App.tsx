@@ -45,14 +45,14 @@ function App() {
   }, []);
   
   const handleEngineOutput = useCallback((output: EngineOutput, addLog: (msg: string) => void) => {
-    console.log("[handleEngineOutput] Received output:", output);
+    addLog(`Processing output: commit_string=${output.commit_string ? 'yes' : 'no'}, preedit_segments=${output.preedit_segments.length}`);
 
     if (output.commit_string) {
       setCommittedText((prev) => prev + output.commit_string);
       addLog(`Committed: "${output.commit_string}"`);
     }
 
-    console.log("[handleEngineOutput] Setting preedit segments:", output.preedit_segments);
+    addLog(`Setting preedit segments: ${output.preedit_segments.length} segments`);
     setPreeditSegments(output.preedit_segments);
     setCandidates(output.candidates);
     setShowCandidates(output.show_candidates);
@@ -125,8 +125,8 @@ function App() {
   }, []);
 
   const handleKeyEvent = useCallback(async (e: KeyboardEvent, isPressed: boolean) => {
-    console.log(`[LAYER 1] handleKeyEvent called: key="${e.key}" code="${e.code}" isPressed=${isPressed}`);
-    
+    addLog(`Key event: key="${e.key}" code="${e.code}" isPressed=${isPressed}`);
+
     // Handle Ctrl+J for mode toggle
     if (e.ctrlKey && e.key === "j") {
       e.preventDefault();
@@ -137,7 +137,7 @@ function App() {
 
     // Only process keydown events, skip keyup to prevent preedit clearing
     if (!isPressed) {
-      console.log(`[LAYER 1] Skipping keyup event`);
+      addLog(`Skipping keyup event`);
       return;
     }
 
@@ -149,7 +149,7 @@ function App() {
       alt: e.altKey,
     };
 
-    console.log(`[LAYER 2] Preparing to invoke: keyName="${keyName}" keyChar=${keyChar}`);
+    addLog(`Invoking backend: keyName="${keyName}" keyChar=${keyChar}`);
 
     try {
       if (typeof invoke !== 'function') {
@@ -164,7 +164,7 @@ function App() {
         modifiers,
       });
 
-      console.log(`[LAYER 3] Backend returned:`, output);
+      addLog(`Backend returned: consumed=${output.consumed}, preedit_segments=${output.preedit_segments.length}`);
 
       if (keyChar) {
         addLog(`Key pressed: "${keyChar}" (consumed: ${output.consumed})`);
@@ -263,7 +263,11 @@ function App() {
   const preeditText = preeditSegments.map((seg) => seg.text).join("");
 
   return (
-    <div className="app">
+    <div className="app" onClick={() => {
+      // Refocus the invisible input when clicking anywhere in the app
+      const input = document.querySelector('input[type="text"]') as HTMLInputElement;
+      if (input) input.focus();
+    }}>
       {/* Invisible input to capture keyboard events */}
       <input
         type="text"
