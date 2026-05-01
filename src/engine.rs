@@ -571,14 +571,24 @@ impl PSKKEngine {
         eprintln!("Simul processor output: output={:?}, pending={:?}, preedit_pending='{}', char='{}'",
                  output, pending, self.preedit_pending, c);
 
+        // For simultaneous input layouts, if output is empty but pending is not,
+        // show the pending string in the preedit
         if let Some(out) = output {
-            self.preedit_hiragana.push_str(&out);
-            self.preedit_ascii.push(c);
-            eprintln!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
+            if !out.is_empty() {
+                self.preedit_hiragana.push_str(&out);
+                self.preedit_ascii.push(c);
+                eprintln!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
+            }
         }
 
         self.preedit_pending = pending.unwrap_or_default();
-        self.preedit_string = self.preedit_hiragana.clone();
+
+        // If preedit_hiragana is empty but we have pending, show pending in preedit
+        if self.preedit_hiragana.is_empty() && !self.preedit_pending.is_empty() {
+            self.preedit_string = self.preedit_pending.clone();
+        } else {
+            self.preedit_string = self.preedit_hiragana.clone();
+        }
         eprintln!("Final preedit_string: '{}'", self.preedit_string);
         
         self.build_preedit_output()
