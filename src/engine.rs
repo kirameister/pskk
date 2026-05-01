@@ -583,15 +583,11 @@ impl PSKKEngine {
 
         self.preedit_pending = pending.unwrap_or_default();
 
-        // For simultaneous input layouts, accumulate pending strings in preedit_hiragana
-        // when output is empty
-        if output.as_ref().map_or(true, |s| s.is_empty()) && !self.preedit_pending.is_empty() {
-            self.preedit_hiragana.push_str(&self.preedit_pending);
-            eprintln!("Accumulated pending into preedit_hiragana: '{}'", self.preedit_hiragana);
-        }
-
-        self.preedit_string = self.preedit_hiragana.clone();
-        eprintln!("Final preedit_string: '{}'", self.preedit_string);
+        // For simultaneous input layouts, show both preedit_hiragana and preedit_pending
+        // in the preedit display
+        self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
+        eprintln!("Final preedit_string: '{}' (hiragana='{}' + pending='{}')",
+                 self.preedit_string, self.preedit_hiragana, self.preedit_pending);
         
         self.build_preedit_output()
     }
