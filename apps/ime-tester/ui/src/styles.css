@@ -161,13 +161,13 @@ body {
 }
 
 .log-order-button.selected {
-  background: #007bff;
-  color: white;
-  border-color: #007bff;
+  background: #f0f0f0;
+  border-color: #999;
+  font-weight: 600;
 }
 
 .log-order-button.selected:hover {
-  background: #0056b3;
+  background: #e0e0e0;
 }
 
 .clear-log-button {
