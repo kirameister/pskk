@@ -372,9 +372,6 @@ function App() {
         <div className="section">
           <div className="section-title">Engine State</div>
           <div className="state-grid">
-            <span className="state-label">Mode:</span>
-            <span className="state-value">{mode}</span>
-
             <span className="state-label">Preedit:</span>
             <span className="state-value">{preeditText || "(empty)"}</span>
 
