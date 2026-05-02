@@ -139,6 +139,37 @@ body {
   gap: 12px;
 }
 
+.log-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.log-order-button {
+  padding: 4px 8px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+  color: #666;
+}
+
+.log-order-button:hover {
+  background: #e0e0e0;
+}
+
+.log-order-button.selected {
+  background: #007bff;
+  color: white;
+  border-color: #007bff;
+}
+
+.log-order-button.selected:hover {
+  background: #0056b3;
+}
+
 .clear-log-button {
   padding: 4px 8px;
   background: #f5f5f5;

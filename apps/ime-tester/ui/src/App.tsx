@@ -37,6 +37,7 @@ function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [logOrderNewestFirst, setLogOrderNewestFirst] = useState(true);
   
   const addLog = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -281,13 +282,29 @@ function App() {
                 {connecting ? "Connecting..." : connected ? "● Connected" : "● Disconnected"}
               </span>
             </div>
-            <button className="clear-log-button" onClick={() => setLogs([])}>Clear</button>
+            <div className="log-header-right">
+              <button
+                className={`log-order-button ${logOrderNewestFirst ? "selected" : ""}`}
+                onClick={() => setLogOrderNewestFirst(true)}
+                title="Newest log at top"
+              >
+                △
+              </button>
+              <button
+                className={`log-order-button ${!logOrderNewestFirst ? "selected" : ""}`}
+                onClick={() => setLogOrderNewestFirst(false)}
+                title="Oldest log at top"
+              >
+                ▽
+              </button>
+              <button className="clear-log-button" onClick={() => setLogs([])}>Clear</button>
+            </div>
           </div>
           <div className="log-content">
             {logs.length === 0 ? (
               <div className="log-empty">No events logged yet</div>
             ) : (
-              logs.map((log, i) => (
+              (logOrderNewestFirst ? [...logs].reverse() : logs).map((log, i) => (
                 <div key={i} className="log-entry">{log}</div>
               ))
             )}
