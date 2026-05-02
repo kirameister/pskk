@@ -250,7 +250,6 @@ function App() {
     }
   };
 
-  const preeditText = preeditSegments.map((seg) => seg.text).join("");
 
   return (
     <div className="app" onClick={() => {
@@ -372,9 +371,6 @@ function App() {
         <div className="section">
           <div className="section-title">Engine State</div>
           <div className="state-grid">
-            <span className="state-label">Preedit:</span>
-            <span className="state-value">{preeditText || "(empty)"}</span>
-
             <span className="state-label">Candidate Count:</span>
             <span className="state-value">{candidates.length}</span>
           </div>
