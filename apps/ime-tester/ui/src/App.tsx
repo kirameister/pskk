@@ -34,7 +34,6 @@ function App() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [showCandidates, setShowCandidates] = useState(false);
   const [candidateCursor, setCandidateCursor] = useState(0);
-  const [dictionaryLoaded, setDictionaryLoaded] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -251,24 +250,6 @@ function App() {
     }
   };
 
-  const handleClear = () => {
-    setCommittedText("");
-    setPreeditSegments([]);
-    setCandidates([]);
-    setShowCandidates(false);
-  };
-
-  const handleLoadDictionary = async () => {
-    try {
-      const result = await invoke<string>("load_sample_dictionary");
-      setDictionaryLoaded(true);
-      alert(result);
-    } catch (error) {
-      console.error("Failed to load dictionary:", error);
-      alert("Failed to load dictionary: " + error);
-    }
-  };
-
   const preeditText = preeditSegments.map((seg) => seg.text).join("");
 
   return (
@@ -397,34 +378,8 @@ function App() {
             <span className="state-label">Preedit:</span>
             <span className="state-value">{preeditText || "(empty)"}</span>
 
-            <span className="state-label">Show Candidates:</span>
-            <span className={`state-value ${showCandidates}`}>
-              {showCandidates.toString()}
-            </span>
-
             <span className="state-label">Candidate Count:</span>
             <span className="state-value">{candidates.length}</span>
-
-            <span className="state-label">Dictionary Loaded:</span>
-            <span className={`state-value ${dictionaryLoaded}`}>
-              {dictionaryLoaded.toString()}
-            </span>
-          </div>
-        </div>
-
-        <div className="section">
-          <div className="section-title">Actions</div>
-          <div className="actions">
-            <button className="action-button" onClick={handleClear}>
-              Clear
-            </button>
-            <button
-              className="action-button secondary"
-              onClick={handleLoadDictionary}
-              disabled={dictionaryLoaded}
-            >
-              {dictionaryLoaded ? "Dictionary Loaded" : "Load Sample Dictionary"}
-            </button>
           </div>
         </div>
         </div>
