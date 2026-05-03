@@ -22,7 +22,7 @@ impl InputMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MarkerState {
     Idle,
     FirstPressed,
@@ -46,6 +46,7 @@ pub struct EngineOutput {
     pub show_candidates: bool,
     pub consumed: bool,
     pub current_mode: ProtoInputMode,
+    pub marker_state: MarkerState,
 }
 
 impl EngineOutput {
@@ -62,6 +63,7 @@ impl EngineOutput {
                 InputMode::Alphanumeric => ProtoInputMode::Alphanumeric,
                 InputMode::Hiragana => ProtoInputMode::Hiragana,
             },
+            marker_state: MarkerState::Idle,
         }
     }
 
@@ -702,6 +704,7 @@ impl PSKKEngine {
         output.consumed = true;
         output.preedit_segments = self.build_preedit_segments();
         output.preedit_cursor_pos = self.preedit_string.chars().count();
+        output.marker_state = self.marker_state;
         output
     }
 
@@ -711,14 +714,15 @@ impl PSKKEngine {
         output.show_candidates = true;
         output.candidates = self.henkan_processor.get_candidates().to_vec();
         output.preedit_segments = self.build_preedit_segments();
-        
+
         if let Some(selected) = self.henkan_processor.get_selected_candidate() {
             output.candidate_cursor_pos = self.henkan_processor.get_candidates()
                 .iter()
                 .position(|c| c.surface == selected.surface)
                 .unwrap_or(0);
         }
-        
+
+        output.marker_state = self.marker_state;
         output
     }
 

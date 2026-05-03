@@ -23,6 +23,7 @@ interface EngineOutput {
   show_candidates: boolean;
   consumed: boolean;
   current_mode: number; // 0 = ALPHANUMERIC, 1 = HIRAGANA
+  marker_state: number; // 0 = IDLE, 1 = FIRST_PRESSED, 2 = FIRST_RELEASED, 3 = KANCHOKU_SECOND_PRESSED
 }
 
 type InputMode = "A" | "あ";
@@ -38,6 +39,7 @@ function App() {
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [logOrderNewestFirst, setLogOrderNewestFirst] = useState(true);
+  const [markerState, setMarkerState] = useState<string>("Idle");
   
   const addLog = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -61,6 +63,15 @@ function App() {
     // Sync mode from engine output (0 = ALPHANUMERIC, 1 = HIRAGANA)
     const newMode: InputMode = output.current_mode === 0 ? "A" : "あ";
     setMode(newMode);
+
+    // Sync marker state from engine output (0 = IDLE, 1 = FIRST_PRESSED, 2 = FIRST_RELEASED, 3 = KANCHOKU_SECOND_PRESSED)
+    const markerStateMap: Record<number, string> = {
+      0: "Idle",
+      1: "FirstPressed",
+      2: "FirstReleased",
+      3: "KanchokuSecondPressed",
+    };
+    setMarkerState(markerStateMap[output.marker_state] ?? "Idle");
 
     if (output.preedit_segments.length > 0) {
       const preeditText = output.preedit_segments.map(s => s.text).join('');
@@ -387,6 +398,10 @@ function App() {
 
         <div className="section">
           <div className="section-title">Engine State</div>
+          <div className="state-grid">
+            <span className="state-label">Marker State:</span>
+            <span className="state-value">{markerState}</span>
+          </div>
           <div className="state-grid">
             <span className="state-label">Candidate Count:</span>
             <span className="state-value">{candidates.length}</span>
