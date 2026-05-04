@@ -19,6 +19,17 @@ echo "Installing PSKK..."
 print_config
 echo ""
 
+# Build the project first
+echo "Building PSKK..."
+if command -v just &> /dev/null; then
+    just build-all
+else
+    echo "Error: 'just' is required but not installed."
+    echo "Please install just: https://github.com/casey/just"
+    exit 1
+fi
+echo ""
+
 # Create directory structure
 echo "Creating directories..."
 mkdir -p "${PSKK_BIN_DIR}"
@@ -73,6 +84,21 @@ if [ -d "data" ]; then
     chmod -R a+rX "${PSKK_DATA_DIR}"
     echo "  ✓ Data files"
 fi
+
+# Download SKK dictionaries (not included in packages due to license)
+echo "Downloading SKK dictionaries to ${PSKK_DATA_DIR}/skk_dict/..."
+mkdir -p "${PSKK_DATA_DIR}/skk_dict"
+for file in SKK-JISYO.L SKK-JISYO.M SKK-JISYO.ML SKK-JISYO.S; do
+    echo "  Downloading $file..."
+    if curl -f -L -o "${PSKK_DATA_DIR}/skk_dict/$file" https://raw.githubusercontent.com/skk-dev/dict/master/$file; then
+        echo "    ✓ $file downloaded"
+    else
+        echo "    ⚠ Failed to download $file (will be skipped)"
+    fi
+done
+# Make dictionaries readable by all users
+chmod -R a+rX "${PSKK_DATA_DIR}/skk_dict"
+echo "  ✓ SKK dictionaries"
 
 # Create symlinks in /usr/local/bin for easy access
 if [[ "${PSKK_PREFIX}" != "${SYSTEM_BIN_DIR}" ]]; then
