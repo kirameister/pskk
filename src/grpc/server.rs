@@ -4,7 +4,7 @@ use tonic::{transport::Server, Request, Response, Status};
 use crate::engine::PSKKEngine;
 use crate::grpc::conversion::engine_output_to_proto;
 use crate::grpc::proto::pskk_service_server::{PskkService, PskkServiceServer};
-use crate::grpc::proto::{ConfigResponse, Empty, EngineOutput, KeyEvent, ModeResponse, SetModeRequest};
+use crate::grpc::proto::{ConfigResponse, DictionarySizeResponse, Empty, EngineOutput, KeyEvent, ModeResponse, SetModeRequest};
 use crate::henkan::HenkanProcessor;
 use crate::kanchoku::KanchokuProcessor;
 use crate::simultaneous_processor::SimultaneousInputProcessor;
@@ -127,6 +127,17 @@ impl PskkService for PSKKServiceImpl {
             .map_err(|e| Status::internal(format!("Failed to reload config: {}", e)))?;
 
         Ok(Response::new(Empty {}))
+    }
+
+    async fn get_dictionary_size(&self, _request: Request<Empty>) -> Result<Response<DictionarySizeResponse>, Status> {
+        let engine = self
+            .engine
+            .lock()
+            .map_err(|e| Status::internal(format!("Failed to lock engine: {}", e)))?;
+
+        let size = engine.get_dictionary_size();
+
+        Ok(Response::new(DictionarySizeResponse { size: size as u32 }))
     }
 }
 

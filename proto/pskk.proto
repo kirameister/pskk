@@ -25,6 +25,9 @@ service PSKKService {
   
   // Reload configuration from disk
   rpc ReloadConfig(Empty) returns (Empty);
+
+  // Get the dictionary size (number of yomi-to-kanji entries)
+  rpc GetDictionarySize(Empty) returns (DictionarySizeResponse);
 }
 
 // Empty message for requests/responses with no data
@@ -80,6 +83,12 @@ message ModeResponse {
 message ConfigResponse {
   // Pretty-printed JSON configuration
   string config_json = 1;
+}
+
+// Response containing the dictionary size
+message DictionarySizeResponse {
+  // Number of yomi-to-kanji entries in the dictionary
+  uint32 size = 1;
 }
 
 // Engine output - everything the client needs to update UI

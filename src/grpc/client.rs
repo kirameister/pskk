@@ -96,4 +96,14 @@ impl PSKKClient {
             .map_err(|e| e.to_string())?;
         Ok(response.into_inner().config_json)
     }
+
+    /// Get the dictionary size (number of yomi-to-kanji entries)
+    pub async fn get_dictionary_size(&mut self) -> Result<usize, String> {
+        let request = tonic::Request::new(Empty {});
+
+        let response = self.client.get_dictionary_size(request)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(response.into_inner().size as usize)
+    }
 }

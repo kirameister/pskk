@@ -212,6 +212,10 @@ impl PSKKEngine {
         }
     }
 
+    pub fn get_dictionary_size(&self) -> usize {
+        self.henkan_processor.get_dictionary_size()
+    }
+
     pub fn get_config(&self) -> &serde_json::Value {
         &self.config
     }

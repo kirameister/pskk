@@ -64,6 +64,11 @@ async fn close_window(window: tauri::Window) {
     window.close().unwrap_or_else(|e| eprintln!("Failed to close window: {}", e));
 }
 
+#[tauri::command]
+async fn get_dictionary_size(state: State<'_, GrpcClientState>) -> Result<usize, String> {
+    state.get_dictionary_size().await
+}
+
 fn main() {
     let client_state = GrpcClientState::new();
     
@@ -79,6 +84,7 @@ fn main() {
             load_sample_dictionary,
             get_loaded_config,
             close_window,
+            get_dictionary_size,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

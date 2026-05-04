@@ -203,18 +203,26 @@ function App() {
   
   const connectToServer = useCallback(async () => {
     if (connecting || connected) return;
-    
+
     setConnecting(true);
     addLog("Connecting to PSKK server at 127.0.0.1:50051...");
-    
+
     try {
       const result = await invoke<string>("connect_to_server");
       addLog(result);
       setConnected(true);
       setConnecting(false);
-      
+
       // Load mode after connection
       await loadMode();
+
+      // Get and log dictionary size
+      try {
+        const dictSize = await invoke<number>("get_dictionary_size");
+        addLog(`Dictionary loaded with ${dictSize} yomi-to-kanji entries`);
+      } catch (error) {
+        addLog(`Failed to get dictionary size: ${error}`);
+      }
     } catch (error) {
       addLog(`Connection failed: ${error}`);
       addLog("Please start the server with: just server-dev");

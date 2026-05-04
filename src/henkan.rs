@@ -235,6 +235,10 @@ impl HenkanProcessor {
         self.selected_bunsetsu_index = 0;
     }
 
+    pub fn get_dictionary_size(&self) -> usize {
+        self.dictionary.lock().unwrap().len()
+    }
+
     fn predict_bunsetsu(&self, input_text: &str, n_best: usize) -> Vec<BunsetsuPrediction> {
         if input_text.is_empty() {
             return Vec::new();

@@ -158,4 +158,18 @@ impl GrpcClientState {
             .await
             .map_err(|e| format!("gRPC error: {}", e))
     }
+
+    /// Get the dictionary size (number of yomi-to-kanji entries)
+    pub async fn get_dictionary_size(&self) -> Result<usize, String> {
+        let mut client_lock = self.client.lock().await;
+        
+        let client = client_lock
+            .as_mut()
+            .ok_or_else(|| "Not connected to server".to_string())?;
+
+        client
+            .get_dictionary_size()
+            .await
+            .map_err(|e| format!("gRPC error: {}", e))
+    }
 }
