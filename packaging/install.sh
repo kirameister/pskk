@@ -107,8 +107,9 @@ if command -v curl &> /dev/null; then
     chmod -R a+rX "${PSKK_DATA_DIR}/skk_dict"
     echo "  ✓ SKK dictionaries"
 else
-    echo "  ⚠ curl not found, skipping SKK dictionary download"
-    echo "  Please install curl and run the script again, or download dictionaries manually"
+    echo "  ✗ curl not found, cannot download SKK dictionaries"
+    echo "  Please install curl and run the script again"
+    exit 1
 fi
 
 # Create symlinks in /usr/local/bin for easy access
