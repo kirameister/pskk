@@ -94,18 +94,33 @@ fi
 # Download SKK dictionaries (not included in packages due to license)
 echo "Downloading SKK dictionaries to ${PSKK_DATA_DIR}/skk_dict/..."
 if command -v curl &> /dev/null; then
-    mkdir -p "${PSKK_DATA_DIR}/skk_dict"
-    for file in SKK-JISYO.L SKK-JISYO.M SKK-JISYO.ML SKK-JISYO.S; do
-        echo "  Downloading $file..."
-        if curl -f -L -o "${PSKK_DATA_DIR}/skk_dict/$file" https://raw.githubusercontent.com/skk-dev/dict/master/$file; then
-            echo "    ✓ $file downloaded"
-        else
-            echo "    ⚠ Failed to download $file (will be skipped)"
-        fi
-    done
-    # Make dictionaries readable by all users
-    chmod -R a+rX "${PSKK_DATA_DIR}/skk_dict"
-    echo "  ✓ SKK dictionaries"
+    if command -v iconv &> /dev/null; then
+        mkdir -p "${PSKK_DATA_DIR}/skk_dict"
+        for file in SKK-JISYO.L SKK-JISYO.M SKK-JISYO.ML SKK-JISYO.S; do
+            echo "  Downloading $file..."
+            if curl -f -L -o "${PSKK_DATA_DIR}/skk_dict/$file" https://raw.githubusercontent.com/skk-dev/dict/master/$file; then
+                echo "    ✓ $file downloaded"
+                # Convert from EUC-JP to UTF-8
+                echo "    Converting $file from EUC-JP to UTF-8..."
+                if iconv -f EUC-JP -t UTF-8 "${PSKK_DATA_DIR}/skk_dict/$file" > "${PSKK_DATA_DIR}/skk_dict/$file.utf8"; then
+                    mv "${PSKK_DATA_DIR}/skk_dict/$file.utf8" "${PSKK_DATA_DIR}/skk_dict/$file"
+                    echo "    ✓ $file converted to UTF-8"
+                else
+                    echo "    ⚠ Failed to convert $file (keeping original encoding)"
+                    rm -f "${PSKK_DATA_DIR}/skk_dict/$file.utf8"
+                fi
+            else
+                echo "    ⚠ Failed to download $file (will be skipped)"
+            fi
+        done
+        # Make dictionaries readable by all users
+        chmod -R a+rX "${PSKK_DATA_DIR}/skk_dict"
+        echo "  ✓ SKK dictionaries"
+    else
+        echo "  ✗ iconv not found, cannot convert SKK dictionaries to UTF-8"
+        echo "  Please install iconv and run the script again"
+        exit 1
+    fi
 else
     echo "  ✗ curl not found, cannot download SKK dictionaries"
     echo "  Please install curl and run the script again"
