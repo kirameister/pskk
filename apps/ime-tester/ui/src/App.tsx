@@ -50,10 +50,12 @@ function App() {
     setLogs((prev) => [...prev, `[${timestamp}] ${message}`]);
   }, []);
 
-  const handleLogMouseDown = useCallback((index: number) => {
-    setIsDragging(true);
-    setDragStartIndex(index);
-    setSelectedLogIndices(new Set([index]));
+  const handleLogMouseDown = useCallback((index: number, event: React.MouseEvent) => {
+    if (event.button === 0) { // Only left-click triggers selection
+      setIsDragging(true);
+      setDragStartIndex(index);
+      setSelectedLogIndices(new Set([index]));
+    }
   }, []);
 
   const handleLogMouseEnter = useCallback((index: number) => {
@@ -371,7 +373,7 @@ function App() {
                 <div
                   key={i}
                   className={`log-entry ${selectedLogIndices.has(i) ? 'selected' : ''}`}
-                  onMouseDown={() => handleLogMouseDown(i)}
+                  onMouseDown={(e) => handleLogMouseDown(i, e)}
                   onMouseEnter={() => handleLogMouseEnter(i)}
                   onMouseUp={handleLogMouseUp}
                   onContextMenu={handleLogRightClick}
