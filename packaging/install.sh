@@ -19,16 +19,22 @@ echo "Installing PSKK..."
 print_config
 echo ""
 
-# Build the project first
-echo "Building PSKK..."
-if command -v just &> /dev/null; then
-    just build-all
+# Build the project first (skip if running with sudo, assume pre-built)
+if [[ $EUID -eq 0 ]]; then
+    echo "Running as root, skipping build step..."
+    echo "Please ensure binaries are pre-built with: just build-all"
+    echo ""
 else
-    echo "Error: 'just' is required but not installed."
-    echo "Please install just: https://github.com/casey/just"
-    exit 1
+    echo "Building PSKK..."
+    if command -v just &> /dev/null; then
+        just build-all
+    else
+        echo "Error: 'just' is required but not installed."
+        echo "Please install just: https://github.com/casey/just"
+        exit 1
+    fi
+    echo ""
 fi
-echo ""
 
 # Create directory structure
 echo "Creating directories..."
@@ -87,18 +93,23 @@ fi
 
 # Download SKK dictionaries (not included in packages due to license)
 echo "Downloading SKK dictionaries to ${PSKK_DATA_DIR}/skk_dict/..."
-mkdir -p "${PSKK_DATA_DIR}/skk_dict"
-for file in SKK-JISYO.L SKK-JISYO.M SKK-JISYO.ML SKK-JISYO.S; do
-    echo "  Downloading $file..."
-    if curl -f -L -o "${PSKK_DATA_DIR}/skk_dict/$file" https://raw.githubusercontent.com/skk-dev/dict/master/$file; then
-        echo "    ✓ $file downloaded"
-    else
-        echo "    ⚠ Failed to download $file (will be skipped)"
-    fi
-done
-# Make dictionaries readable by all users
-chmod -R a+rX "${PSKK_DATA_DIR}/skk_dict"
-echo "  ✓ SKK dictionaries"
+if command -v curl &> /dev/null; then
+    mkdir -p "${PSKK_DATA_DIR}/skk_dict"
+    for file in SKK-JISYO.L SKK-JISYO.M SKK-JISYO.ML SKK-JISYO.S; do
+        echo "  Downloading $file..."
+        if curl -f -L -o "${PSKK_DATA_DIR}/skk_dict/$file" https://raw.githubusercontent.com/skk-dev/dict/master/$file; then
+            echo "    ✓ $file downloaded"
+        else
+            echo "    ⚠ Failed to download $file (will be skipped)"
+        fi
+    done
+    # Make dictionaries readable by all users
+    chmod -R a+rX "${PSKK_DATA_DIR}/skk_dict"
+    echo "  ✓ SKK dictionaries"
+else
+    echo "  ⚠ curl not found, skipping SKK dictionary download"
+    echo "  Please install curl and run the script again, or download dictionaries manually"
+fi
 
 # Create symlinks in /usr/local/bin for easy access
 if [[ "${PSKK_PREFIX}" != "${SYSTEM_BIN_DIR}" ]]; then
