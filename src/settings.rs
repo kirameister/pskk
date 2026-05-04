@@ -362,10 +362,12 @@ pub fn save_kanchoku_layout_mappings(
     let resolved_path = path
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            let filename = config
+            let layout_id = config
                 .get("kanchoku_layout")
                 .and_then(Value::as_str)
                 .unwrap_or("aki_code.json");
+            // Extract just the filename part if layout_id is in "system:filename.json" or "user:filename.json" format
+            let filename = layout_id.split(':').last().unwrap_or(layout_id);
             get_user_config_dir().join(filename)
         });
     let layout = build_kanchoku_layout(mappings);
