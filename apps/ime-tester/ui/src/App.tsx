@@ -40,10 +40,54 @@ function App() {
   const [connecting, setConnecting] = useState(false);
   const [logOrderNewestFirst, setLogOrderNewestFirst] = useState(true);
   const [markerState, setMarkerState] = useState<string>("Idle");
-  
+  const [selectedLogIndices, setSelectedLogIndices] = useState<Set<number>>(new Set());
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartIndex, setDragStartIndex] = useState<number | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
   const addLog = useCallback((message: string) => {
     const timestamp = new Date().toLocaleTimeString();
     setLogs((prev) => [...prev, `[${timestamp}] ${message}`]);
+  }, []);
+
+  const handleLogMouseDown = useCallback((index: number) => {
+    setIsDragging(true);
+    setDragStartIndex(index);
+    setSelectedLogIndices(new Set([index]));
+  }, []);
+
+  const handleLogMouseEnter = useCallback((index: number) => {
+    if (isDragging && dragStartIndex !== null) {
+      const start = Math.min(dragStartIndex, index);
+      const end = Math.max(dragStartIndex, index);
+      const newSet = new Set<number>();
+      for (let i = start; i <= end; i++) {
+        newSet.add(i);
+      }
+      setSelectedLogIndices(newSet);
+    }
+  }, [isDragging, dragStartIndex]);
+
+  const handleLogMouseUp = useCallback(() => {
+    setIsDragging(false);
+    setDragStartIndex(null);
+  }, []);
+
+  const handleLogRightClick = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    setContextMenu({ x: event.clientX, y: event.clientY });
+  }, []);
+
+  const copySelectedLogs = useCallback(() => {
+    const selectedLogs = (logOrderNewestFirst ? [...logs].reverse() : logs)
+      .filter((_, index) => selectedLogIndices.has(index));
+    const textToCopy = selectedLogs.join('\n');
+    navigator.clipboard.writeText(textToCopy);
+    setContextMenu(null);
+  }, [logs, selectedLogIndices, logOrderNewestFirst]);
+
+  const clearLogSelection = useCallback(() => {
+    setSelectedLogIndices(new Set());
   }, []);
   
   const handleEngineOutput = useCallback((output: EngineOutput, addLog: (msg: string) => void) => {
@@ -324,10 +368,33 @@ function App() {
               <div className="log-empty">No events logged yet</div>
             ) : (
               (logOrderNewestFirst ? [...logs].reverse() : logs).map((log, i) => (
-                <div key={i} className="log-entry">{log}</div>
+                <div
+                  key={i}
+                  className={`log-entry ${selectedLogIndices.has(i) ? 'selected' : ''}`}
+                  onMouseDown={() => handleLogMouseDown(i)}
+                  onMouseEnter={() => handleLogMouseEnter(i)}
+                  onMouseUp={handleLogMouseUp}
+                  onContextMenu={handleLogRightClick}
+                >
+                  {log}
+                </div>
               ))
             )}
           </div>
+          {contextMenu && (
+            <div
+              className="context-menu"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+              onClick={() => setContextMenu(null)}
+            >
+              <div className="context-menu-item" onClick={copySelectedLogs}>
+                Copy Selected Logs
+              </div>
+              <div className="context-menu-item" onClick={clearLogSelection}>
+                Clear Selection
+              </div>
+            </div>
+          )}
         </aside>
 
         <div className="main-content">
