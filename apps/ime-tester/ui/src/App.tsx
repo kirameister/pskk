@@ -201,11 +201,8 @@ function App() {
       return;
     }
 
-    // Only process keydown events, skip keyup to prevent preedit clearing
-    if (!isPressed) {
-      addLog(`Skipping keyup event`);
-      return;
-    }
+    // Process both keydown and keyup events for marker key state machine
+    // The space key release is needed to trigger bunsetsu mode decision
 
     const keyChar = e.key.length === 1 ? e.key : null;
     const keyName = normalizeKeyName(e);
