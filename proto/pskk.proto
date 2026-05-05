@@ -69,9 +69,10 @@ enum InputMode {
 // Marker state enum - tracks space key state for kanchoku input
 enum MarkerState {
   IDLE = 0;                    // Normal state
-  FIRST_PRESSED = 1;           // Space key held down
-  FIRST_RELEASED = 2;          // Space key released
-  KANCHOKU_SECOND_PRESSED = 3; // Second key pressed in kanchoku mode
+  MARKER_HELD = 1;             // Marker key held, waiting for first key
+  FIRST_PRESSED = 2;           // First key pressed, waiting for release
+  FIRST_RELEASED = 3;          // First key released
+  KANCHOKU_SECOND_PRESSED = 4; // Second key pressed in kanchoku mode
 }
 
 // Response containing current mode

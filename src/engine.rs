@@ -25,6 +25,7 @@ impl InputMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MarkerState {
     Idle,
+    MarkerHeld,
     FirstPressed,
     FirstReleased,
     KanchokuSecondPressed,
@@ -434,16 +435,16 @@ impl PSKKEngine {
                 if !self.preedit_string.is_empty() && !self.in_conversion {
                     return self.trigger_conversion();
                 }
-                
-                self.marker_state = MarkerState::FirstPressed;
+
+                self.marker_state = MarkerState::MarkerHeld;
                 self.preedit_before_marker = self.preedit_string.clone();
                 self.marker_had_input = false;
                 self.marker_keys_held.clear();
-                
+
                 if let Some(c) = key_char {
                     self.marker_keys_held.insert(c.to_string());
                 }
-                
+
                 EngineOutput::consumed(self.mode)
             }
             MarkerState::FirstReleased => {
@@ -455,7 +456,25 @@ impl PSKKEngine {
     }
 
     fn handle_space_release(&mut self) -> EngineOutput {
-        match self.marker_state {
+        let result = match self.marker_state {
+            MarkerState::MarkerHeld => {
+                if self.marker_had_input {
+                    // Keys were pressed during this space hold, not a tap
+                    // Just release cleanly
+                    EngineOutput::consumed(self.mode)
+                } else if self.in_conversion {
+                    // CONVERTING state: cycle to next candidate
+                    self.handle_down_arrow()
+                } else if self.bunsetsu_active || self.in_forced_preedit {
+                    // BUNSETSU or FORCED_PREEDIT state: trigger conversion
+                    self.trigger_conversion()
+                } else {
+                    // IDLE state: commit preedit + output space
+                    let _commit = self.preedit_string.clone();
+                    self.reset_preedit();
+                    EngineOutput::commit(" ".to_string(), self.mode)
+                }
+            }
             MarkerState::FirstPressed => {
                 if !self.marker_had_input {
                     if !self.preedit_string.is_empty() && !self.in_conversion {
@@ -466,7 +485,7 @@ impl PSKKEngine {
                         return EngineOutput::commit(" ".to_string(), self.mode);
                     }
                 }
-                
+
                 self.marker_state = MarkerState::FirstReleased;
                 EngineOutput::consumed(self.mode)
             }
@@ -478,7 +497,12 @@ impl PSKKEngine {
                 self.marker_state = MarkerState::Idle;
                 EngineOutput::consumed(self.mode)
             }
-        }
+        };
+
+        self.marker_state = MarkerState::Idle;
+        self.marker_first_key = None;
+        self.marker_keys_held.clear();
+        result
     }
 
     fn handle_marker_release_decision(&mut self) -> EngineOutput {
@@ -545,29 +569,34 @@ impl PSKKEngine {
     }
 
     fn handle_character_input(&mut self, c: char, _has_shift: bool) -> EngineOutput {
-        if self.marker_state == MarkerState::FirstPressed {
+        if self.marker_state == MarkerState::MarkerHeld {
             self.marker_first_key = Some(c);
-            self.marker_had_input = true;
             self.marker_keys_held.insert(c.to_string());
-            self.marker_state = MarkerState::KanchokuSecondPressed;
+            self.marker_had_input = true;
+            self.marker_state = MarkerState::FirstPressed;
+            // Fall through to process character input normally
+        }
+
+        if self.marker_state == MarkerState::FirstPressed {
+            self.marker_keys_held.insert(c.to_string());
             return EngineOutput::consumed(self.mode);
         }
-        
+
         if self.marker_state == MarkerState::KanchokuSecondPressed {
             self.marker_keys_held.insert(c.to_string());
             return EngineOutput::consumed(self.mode);
         }
-        
+
         if self.converted {
             let commit = self.preedit_string.clone();
             self.reset_preedit();
             self.converted = false;
-            
+
             let mut output = EngineOutput::commit(commit, self.mode);
             output.consumed = false;
             return output;
         }
-        
+
         let (output, pending) = self.simul_processor.get_layout_output(
             &self.preedit_pending,
             &c.to_string(),
@@ -594,7 +623,7 @@ impl PSKKEngine {
         self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
         eprintln!("Final preedit_string: '{}' (hiragana='{}' + pending='{}')",
                   self.preedit_string, self.preedit_hiragana, self.preedit_pending);
-        
+
         self.build_preedit_output()
     }
 
