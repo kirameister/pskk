@@ -709,6 +709,8 @@ impl PSKKEngine {
         output.preedit_segments = self.build_preedit_segments();
         output.preedit_cursor_pos = self.preedit_string.chars().count();
         output.marker_state = self.marker_state;
+        eprintln!("Built preedit output: segments.len()={}, preedit_string='{}', cursor_pos={}",
+                  output.preedit_segments.len(), self.preedit_string, output.preedit_cursor_pos);
         output
     }
 
