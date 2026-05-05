@@ -569,6 +569,7 @@ impl PSKKEngine {
     }
 
     fn handle_character_input(&mut self, c: char, _has_shift: bool) -> EngineOutput {
+        // Track marker state but don't block character processing
         if self.marker_state == MarkerState::MarkerHeld {
             self.marker_first_key = Some(c);
             self.marker_keys_held.insert(c.to_string());
@@ -579,7 +580,7 @@ impl PSKKEngine {
 
         if self.marker_state == MarkerState::FirstPressed {
             self.marker_keys_held.insert(c.to_string());
-            return EngineOutput::consumed(self.mode);
+            // Fall through to process character input normally
         }
 
         if self.marker_state == MarkerState::KanchokuSecondPressed {
