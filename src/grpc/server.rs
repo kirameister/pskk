@@ -4,10 +4,13 @@ use tonic::{transport::Server, Request, Response, Status};
 use crate::engine::PSKKEngine;
 use crate::grpc::conversion::engine_output_to_proto;
 use crate::grpc::proto::pskk_service_server::{PskkService, PskkServiceServer};
-use crate::grpc::proto::{ConfigResponse, DictionarySizeResponse, Empty, EngineOutput, KeyEvent, ModeResponse, SetModeRequest};
+use crate::grpc::proto::{
+    ConfigResponse, DictionarySizeResponse, Empty, EngineOutput, KeyEvent, ModeResponse, SetModeRequest,
+};
 use crate::henkan::HenkanProcessor;
 use crate::kanchoku::KanchokuProcessor;
 use crate::simultaneous_processor::SimultaneousInputProcessor;
+use crate::util::{get_dictionary_files, load_and_merge_dictionary_files};
 
 /// PSKK gRPC Service Implementation
 pub struct PSKKServiceImpl {
@@ -19,7 +22,13 @@ impl PSKKServiceImpl {
         // Layout will be loaded by the engine from config
         let simul = SimultaneousInputProcessor::new(None);
         let kanchoku = KanchokuProcessor::new(None);
-        let henkan = HenkanProcessor::new();
+
+        // Load dictionary from JSON files
+        let dictionary_files = get_dictionary_files(None);
+        let dictionary = load_and_merge_dictionary_files(&dictionary_files)
+            .map_err(|e| format!("Failed to load dictionary: {}", e))?;
+
+        let henkan = HenkanProcessor::new().with_dictionary(dictionary);
         let engine = PSKKEngine::new(simul, kanchoku, henkan)?;
 
         Ok(Self {
