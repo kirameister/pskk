@@ -23,7 +23,7 @@ interface EngineOutput {
   show_candidates: boolean;
   consumed: boolean;
   current_mode: number; // 0 = ALPHANUMERIC, 1 = HIRAGANA
-  marker_state: number; // 0 = IDLE, 1 = FIRST_PRESSED, 2 = FIRST_RELEASED, 3 = KANCHOKU_SECOND_PRESSED
+  marker_state: number; // 0 = IDLE, 1 = MARKER_HELD, 2 = FIRST_PRESSED, 3 = FIRST_RELEASED, 4 = KANCHOKU_SECOND_PRESSED
 }
 
 type InputMode = "A" | "あ";
@@ -110,12 +110,13 @@ function App() {
     const newMode: InputMode = output.current_mode === 0 ? "A" : "あ";
     setMode(newMode);
 
-    // Sync marker state from engine output (0 = IDLE, 1 = FIRST_PRESSED, 2 = FIRST_RELEASED, 3 = KANCHOKU_SECOND_PRESSED)
+    // Sync marker state from engine output (0 = IDLE, 1 = MARKER_HELD, 2 = FIRST_PRESSED, 3 = FIRST_RELEASED, 4 = KANCHOKU_SECOND_PRESSED)
     const markerStateMap: Record<number, string> = {
       0: "Idle",
-      1: "FirstPressed",
-      2: "FirstReleased",
-      3: "KanchokuSecondPressed",
+      1: "MarkerHeld",
+      2: "FirstPressed",
+      3: "FirstReleased",
+      4: "KanchokuSecondPressed",
     };
     setMarkerState(markerStateMap[output.marker_state] ?? "Idle");
 
