@@ -445,13 +445,19 @@ impl PSKKEngine {
                     self.marker_keys_held.insert(c.to_string());
                 }
 
-                EngineOutput::consumed(self.mode)
+                let mut output = EngineOutput::consumed(self.mode);
+                output.marker_state = self.marker_state;
+                output
             }
             MarkerState::FirstReleased => {
                 self.marker_state = MarkerState::Idle;
                 self.handle_marker_release_decision()
             }
-            _ => EngineOutput::consumed(self.mode),
+            _ => {
+                let mut output = EngineOutput::consumed(self.mode);
+                output.marker_state = self.marker_state;
+                output
+            }
         }
     }
 
@@ -461,7 +467,9 @@ impl PSKKEngine {
                 if self.marker_had_input {
                     // Keys were pressed during this space hold, not a tap
                     // Just release cleanly
-                    EngineOutput::consumed(self.mode)
+                    let mut output = EngineOutput::consumed(self.mode);
+                    output.marker_state = self.marker_state;
+                    output
                 } else if self.in_conversion {
                     // CONVERTING state: cycle to next candidate
                     self.handle_down_arrow()
@@ -487,7 +495,9 @@ impl PSKKEngine {
                 }
 
                 self.marker_state = MarkerState::FirstReleased;
-                EngineOutput::consumed(self.mode)
+                let mut output = EngineOutput::consumed(self.mode);
+                output.marker_state = self.marker_state;
+                output
             }
             MarkerState::KanchokuSecondPressed => {
                 self.marker_state = MarkerState::Idle;
@@ -495,7 +505,9 @@ impl PSKKEngine {
             }
             _ => {
                 self.marker_state = MarkerState::Idle;
-                EngineOutput::consumed(self.mode)
+                let mut output = EngineOutput::consumed(self.mode);
+                output.marker_state = self.marker_state;
+                output
             }
         };
 
