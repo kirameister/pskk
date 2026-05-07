@@ -434,7 +434,7 @@ impl PSKKEngine {
         EngineOutput::passthrough(self.mode)
     }
 
-    fn handle_space_press(&mut self, key_char: Option<char>) -> EngineOutput {
+    fn handle_space_press(&mut self, _key_char: Option<char>) -> EngineOutput {
         match self.marker_state {
             MarkerState::Idle => {
                 if !self.preedit_string.is_empty() && !self.in_conversion {
@@ -445,10 +445,7 @@ impl PSKKEngine {
                 self.preedit_before_marker = self.preedit_string.clone();
                 self.marker_had_input = false;
                 self.marker_keys_held.clear();
-
-                if let Some(c) = key_char {
-                    self.marker_keys_held.insert(c.to_string());
-                }
+                self.marker_first_key = None;
 
                 let mut output = EngineOutput::consumed(self.mode);
                 output.marker_state = self.marker_state;
@@ -467,65 +464,66 @@ impl PSKKEngine {
     }
 
     fn handle_space_release(&mut self) -> EngineOutput {
-        let result = match self.marker_state {
+        match self.marker_state {
             MarkerState::MarkerHeld => {
                 if self.marker_had_input {
                     // Keys were pressed during this space hold, not a tap
                     // Just release cleanly
+                    self.marker_state = MarkerState::Idle;
+                    self.marker_first_key = None;
+                    self.marker_keys_held.clear();
                     let mut output = EngineOutput::consumed(self.mode);
                     output.marker_state = self.marker_state;
                     output
                 } else if self.in_conversion {
                     // CONVERTING state: cycle to next candidate
+                    self.marker_state = MarkerState::Idle;
+                    self.marker_first_key = None;
+                    self.marker_keys_held.clear();
                     self.handle_down_arrow()
                 } else if self.bunsetsu_active || self.in_forced_preedit {
                     // BUNSETSU or FORCED_PREEDIT state: trigger conversion
+                    self.marker_state = MarkerState::Idle;
+                    self.marker_first_key = None;
+                    self.marker_keys_held.clear();
                     self.trigger_conversion()
                 } else {
                     // IDLE state: commit preedit + output space
                     let _commit = self.preedit_string.clone();
                     self.reset_preedit();
+                    self.marker_state = MarkerState::Idle;
+                    self.marker_first_key = None;
+                    self.marker_keys_held.clear();
                     EngineOutput::commit(" ".to_string(), self.mode)
                 }
             }
-            MarkerState::FirstPressed => {
-                if !self.marker_had_input {
-                    if !self.preedit_string.is_empty() && !self.in_conversion {
-                        self.marker_state = MarkerState::Idle;
-                        return self.trigger_conversion();
-                    } else if self.preedit_string.is_empty() {
-                        self.marker_state = MarkerState::Idle;
-                        return EngineOutput::commit(" ".to_string(), self.mode);
-                    }
-                }
-
-                self.marker_state = MarkerState::FirstReleased;
-                let mut output = EngineOutput::consumed(self.mode);
-                output.marker_state = self.marker_state;
-                output
+            MarkerState::FirstPressed | MarkerState::FirstReleased => {
+                // Space released after key was pressed: activate bunsetsu mode
+                self.handle_marker_release_decision()
             }
             MarkerState::KanchokuSecondPressed => {
-                self.marker_state = MarkerState::Idle;
                 self.handle_marker_release_decision()
             }
             _ => {
                 self.marker_state = MarkerState::Idle;
+                self.marker_first_key = None;
+                self.marker_keys_held.clear();
                 let mut output = EngineOutput::consumed(self.mode);
                 output.marker_state = self.marker_state;
                 output
             }
-        };
-
-        self.marker_state = MarkerState::Idle;
-        self.marker_first_key = None;
-        self.marker_keys_held.clear();
-        result
+        }
     }
 
     fn handle_marker_release_decision(&mut self) -> EngineOutput {
+        eprintln!("handle_marker_release_decision: marker_first_key={:?}, marker_keys_held.is_empty()={}, preedit_string='{}'",
+                  self.marker_first_key, self.marker_keys_held.is_empty(), self.preedit_string);
+        
         if self.marker_first_key.is_some() && self.marker_keys_held.is_empty() {
             if let Some(first_char) = self.marker_first_key {
+                eprintln!("Checking kanchoku lookup for first_char='{}'", first_char);
                 if let Some(kanji) = self.try_kanchoku_lookup(first_char) {
+                    eprintln!("Kanchoku found: '{}'", kanji);
                     self.preedit_string = self.preedit_before_marker.clone();
                     self.preedit_string.push_str(&kanji);
                     self.preedit_hiragana = self.preedit_before_marker.clone();
@@ -536,20 +534,26 @@ impl PSKKEngine {
                     return self.build_preedit_output();
                 }
                 
+                eprintln!("No kanchoku, marking bunsetsu boundary with first_char='{}'", first_char);
                 self.mark_bunsetsu_boundary(first_char);
                 self.marker_first_key = None;
+                self.marker_state = MarkerState::Idle;
                 return self.build_preedit_output();
             }
         }
         
         if self.marker_first_key == Some('f') {
+            eprintln!("Entering forced preedit mode");
             self.in_forced_preedit = true;
             self.marker_first_key = None;
+            self.marker_state = MarkerState::Idle;
             return self.build_preedit_output();
         }
         
+        eprintln!("No action taken, returning consumed");
         self.marker_first_key = None;
         self.marker_had_input = false;
+        self.marker_state = MarkerState::Idle;
         EngineOutput::consumed(self.mode)
     }
 
@@ -646,16 +650,24 @@ impl PSKKEngine {
     }
 
     fn handle_character_release(&mut self, c: char) -> EngineOutput {
+        eprintln!("handle_character_release: c='{}', marker_state={:?}, marker_keys_held={:?}",
+                  c, self.marker_state, self.marker_keys_held);
+        
         // Track marker state transitions on key release
         if self.marker_state == MarkerState::FirstPressed {
             let key_str = c.to_string();
+            eprintln!("Removing '{}' from marker_keys_held", key_str);
             self.marker_keys_held.remove(&key_str);
             
             // If all keys are released, transition to FirstReleased
             if self.marker_keys_held.is_empty() {
+                eprintln!("All keys released, transitioning to FirstReleased");
                 self.marker_state = MarkerState::FirstReleased;
             }
         }
+        
+        eprintln!("After release: marker_state={:?}, marker_keys_held={:?}",
+                  self.marker_state, self.marker_keys_held);
         
         // Return current preedit state instead of passthrough to preserve preedit display
         self.build_preedit_output()
