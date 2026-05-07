@@ -1,6 +1,6 @@
-use crate::engine::{EngineOutput as RustEngineOutput, MarkerState};
+use crate::engine::{EngineOutput as RustEngineOutput, MarkerState, EngineState};
 use crate::grpc::proto::{
-    Candidate, EngineOutput, PreeditSegment, MarkerState as ProtoMarkerState,
+    Candidate, EngineOutput, PreeditSegment, MarkerState as ProtoMarkerState, EngineState as ProtoEngineState,
 };
 
 /// Convert Rust EngineOutput to protobuf EngineOutput
@@ -13,6 +13,13 @@ pub fn engine_output_to_proto(output: RustEngineOutput) -> EngineOutput {
         MarkerState::FirstPressed => ProtoMarkerState::FirstPressed,
         MarkerState::FirstReleased => ProtoMarkerState::FirstReleased,
         MarkerState::KanchokuSecondPressed => ProtoMarkerState::KanchokuSecondPressed,
+    };
+
+    let engine_state = match output.engine_state {
+        EngineState::Normal => ProtoEngineState::Normal,
+        EngineState::Bunsetsu => ProtoEngineState::Bunsetsu,
+        EngineState::ForcedPreedit => ProtoEngineState::ForcedPreedit,
+        EngineState::Converting => ProtoEngineState::Converting,
     };
 
     EngineOutput {
@@ -39,5 +46,6 @@ pub fn engine_output_to_proto(output: RustEngineOutput) -> EngineOutput {
         consumed: output.consumed,
         current_mode: output.current_mode as i32,
         marker_state: marker_state as i32,
+        engine_state: engine_state as i32,
     }
 }

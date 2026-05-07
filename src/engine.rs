@@ -31,6 +31,14 @@ pub enum MarkerState {
     KanchokuSecondPressed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EngineState {
+    Normal,
+    Bunsetsu,
+    ForcedPreedit,
+    Converting,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PreeditSegment {
     pub text: String,
@@ -48,6 +56,7 @@ pub struct EngineOutput {
     pub consumed: bool,
     pub current_mode: ProtoInputMode,
     pub marker_state: MarkerState,
+    pub engine_state: EngineState,
 }
 
 impl EngineOutput {
@@ -65,6 +74,7 @@ impl EngineOutput {
                 InputMode::Hiragana => ProtoInputMode::Hiragana,
             },
             marker_state: MarkerState::Idle,
+            engine_state: EngineState::Normal,
         }
     }
 
@@ -778,12 +788,25 @@ impl PSKKEngine {
         self.build_conversion_output()
     }
 
+    fn get_engine_state(&self) -> EngineState {
+        if self.in_conversion {
+            EngineState::Converting
+        } else if self.in_forced_preedit {
+            EngineState::ForcedPreedit
+        } else if self.bunsetsu_active {
+            EngineState::Bunsetsu
+        } else {
+            EngineState::Normal
+        }
+    }
+
     fn build_preedit_output(&self) -> EngineOutput {
         let mut output = EngineOutput::empty(self.mode);
         output.consumed = true;
         output.preedit_segments = self.build_preedit_segments();
         output.preedit_cursor_pos = self.preedit_string.chars().count();
         output.marker_state = self.marker_state;
+        output.engine_state = self.get_engine_state();
         eprintln!("Built preedit output: segments.len()={}, preedit_string='{}', cursor_pos={}",
                   output.preedit_segments.len(), self.preedit_string, output.preedit_cursor_pos);
         output
@@ -804,6 +827,7 @@ impl PSKKEngine {
         }
 
         output.marker_state = self.marker_state;
+        output.engine_state = self.get_engine_state();
         output
     }
 

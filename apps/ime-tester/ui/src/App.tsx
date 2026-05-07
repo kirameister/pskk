@@ -24,6 +24,7 @@ interface EngineOutput {
   consumed: boolean;
   current_mode: number; // 0 = ALPHANUMERIC, 1 = HIRAGANA
   marker_state: number; // 0 = IDLE, 1 = MARKER_HELD, 2 = FIRST_PRESSED, 3 = FIRST_RELEASED, 4 = KANCHOKU_SECOND_PRESSED
+  engine_state: number; // 0 = NORMAL, 1 = BUNSETSU, 2 = FORCED_PREEDIT, 3 = CONVERTING
 }
 
 type InputMode = "A" | "あ";
@@ -39,6 +40,7 @@ function App() {
   const [connecting, setConnecting] = useState(false);
   const [logOrderNewestFirst, setLogOrderNewestFirst] = useState(true);
   const [markerState, setMarkerState] = useState<string>("Idle");
+  const [engineState, setEngineState] = useState<number>(0); // 0 = NORMAL
   const [selectedLogIndices, setSelectedLogIndices] = useState<Set<number>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const [dragStartIndex, setDragStartIndex] = useState<number | null>(null);
@@ -117,6 +119,9 @@ function App() {
       4: "KanchokuSecondPressed",
     };
     setMarkerState(markerStateMap[output.marker_state] ?? "Idle");
+    
+    // Sync engine state from engine output (0 = NORMAL, 1 = BUNSETSU, 2 = FORCED_PREEDIT, 3 = CONVERTING)
+    setEngineState(output.engine_state);
 
     if (output.preedit_segments.length > 0) {
       const preeditText = output.preedit_segments.map(s => s.text).join('');
@@ -441,7 +446,16 @@ function App() {
           </div>
         </div>
 
-        <div className="section">
+        <div 
+          className="section"
+          style={{
+            backgroundColor: 
+              engineState === 3 ? '#f0f8ff' : // Converting - light blue
+              engineState === 2 ? '#f0fff4' : // Forced Preedit - light green
+              engineState === 1 ? '#fffbf0' : // Bunsetsu - light yellow
+              'white' // Normal - white (same as other sections)
+          }}
+        >
           <div className="state-grid">
             <span className="state-label">Marker State:</span>
             <span className="state-value">{markerState}</span>

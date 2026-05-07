@@ -75,6 +75,14 @@ enum MarkerState {
   KANCHOKU_SECOND_PRESSED = 4; // Second key pressed in kanchoku mode
 }
 
+// Engine state enum - tracks input processing mode
+enum EngineState {
+  NORMAL = 0;          // Normal input mode
+  BUNSETSU = 1;        // Bunsetsu boundary marking mode
+  FORCED_PREEDIT = 2;  // Forced preedit mode
+  CONVERTING = 3;      // Conversion mode (showing candidates)
+}
+
 // Response containing current mode
 message ModeResponse {
   InputMode mode = 1;
@@ -120,6 +128,9 @@ message EngineOutput {
 
   // Current marker state (for kanchoku input)
   MarkerState marker_state = 9;
+
+  // Current engine state (input processing mode)
+  EngineState engine_state = 10;
 }
 
 // A segment of preedit text
