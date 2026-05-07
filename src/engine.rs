@@ -355,6 +355,11 @@ impl PSKKEngine {
             if key_name == "space" || key_name == "Space" {
                 return self.handle_space_release();
             }
+            
+            // Handle character key release for marker state machine
+            if let Some(c) = key_char {
+                return self.handle_character_release(c);
+            }
         }
 
         if let Some(c) = key_char {
@@ -637,6 +642,22 @@ impl PSKKEngine {
         eprintln!("Final preedit_string: '{}' (hiragana='{}' + pending='{}')",
                   self.preedit_string, self.preedit_hiragana, self.preedit_pending);
 
+        self.build_preedit_output()
+    }
+
+    fn handle_character_release(&mut self, c: char) -> EngineOutput {
+        // Track marker state transitions on key release
+        if self.marker_state == MarkerState::FirstPressed {
+            let key_str = c.to_string();
+            self.marker_keys_held.remove(&key_str);
+            
+            // If all keys are released, transition to FirstReleased
+            if self.marker_keys_held.is_empty() {
+                self.marker_state = MarkerState::FirstReleased;
+            }
+        }
+        
+        // Return current preedit state instead of passthrough to preserve preedit display
         self.build_preedit_output()
     }
 
