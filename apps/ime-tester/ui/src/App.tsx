@@ -33,7 +33,6 @@ function App() {
   const [committedText, setCommittedText] = useState("");
   const [preeditSegments, setPreeditSegments] = useState<PreeditSegment[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [showCandidates, setShowCandidates] = useState(false);
   const [candidateCursor, setCandidateCursor] = useState(0);
   const [logs, setLogs] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
@@ -103,7 +102,6 @@ function App() {
     addLog(`Setting preedit segments: ${output.preedit_segments.length} segments`);
     setPreeditSegments(output.preedit_segments);
     setCandidates(output.candidates);
-    setShowCandidates(output.show_candidates);
     setCandidateCursor(output.candidate_cursor_pos);
 
     // Sync mode from engine output (0 = ALPHANUMERIC, 1 = HIRAGANA)
@@ -443,43 +441,47 @@ function App() {
           </div>
         </div>
 
-        {showCandidates && (
-          <div className="section">
-            <div className="section-title">Candidates</div>
-            <div className="candidates-list">
-              {candidates.length > 0 ? (
-                candidates.map((candidate, i) => (
-                  <div
-                    key={i}
-                    className={`candidate-item ${
-                      i === candidateCursor ? "selected" : ""
-                    }`}
-                  >
-                    <div>
-                      <span className="candidate-surface">{candidate.surface}</span>
-                      <span className="candidate-reading">
-                        ({candidate.reading})
-                      </span>
-                    </div>
-                    <span className="candidate-count">[{candidate.count}]</span>
-                  </div>
-                ))
-              ) : (
-                <div className="candidates-empty">No candidates</div>
-              )}
-            </div>
-          </div>
-        )}
-
         <div className="section">
-          <div className="section-title">Engine State</div>
           <div className="state-grid">
             <span className="state-label">Marker State:</span>
             <span className="state-value">{markerState}</span>
           </div>
-          <div className="state-grid">
-            <span className="state-label">Candidate Count:</span>
-            <span className="state-value">{candidates.length}</span>
+          
+          <div className="section-title" style={{ marginTop: '16px' }}>Conversion Candidates</div>
+          <div className="candidates-table">
+            {(() => {
+              // Calculate sliding window: show 5 candidates at a time
+              const maxVisible = 5;
+              const startIdx = Math.max(0, Math.min(
+                candidateCursor - Math.floor(maxVisible / 2),
+                candidates.length - maxVisible
+              ));
+              const endIdx = Math.min(startIdx + maxVisible, candidates.length);
+              const visibleCandidates = candidates.slice(startIdx, endIdx);
+              
+              return visibleCandidates.length > 0 ? (
+                visibleCandidates.map((candidate, i) => {
+                  const actualIdx = startIdx + i;
+                  return (
+                    <div
+                      key={actualIdx}
+                      className={`candidate-row ${
+                        actualIdx === candidateCursor ? "selected" : ""
+                      }`}
+                    >
+                      {candidate.surface}
+                    </div>
+                  );
+                })
+              ) : (
+                // Show 5 empty placeholder rows when no candidates
+                Array.from({ length: maxVisible }).map((_, i) => (
+                  <div key={i} className="candidate-row empty">
+                    &nbsp;
+                  </div>
+                ))
+              );
+            })()}
           </div>
         </div>
         </div>
