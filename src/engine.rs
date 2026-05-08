@@ -680,19 +680,24 @@ impl PSKKEngine {
         self.conversion_yomi = self.preedit_hiragana.clone();
         self.in_conversion = true;
         
-        let candidates = self.henkan_processor.convert(&self.conversion_yomi);
+        eprintln!("Triggering conversion for yomi: '{}'", self.conversion_yomi);
+        let candidates = self.henkan_processor.convert(&self.conversion_yomi).to_vec();
+        let is_bunsetsu = self.henkan_processor.is_bunsetsu_mode();
+        eprintln!("Got {} candidates, is_bunsetsu_mode={}", candidates.len(), is_bunsetsu);
         
         let mut output = EngineOutput::empty(self.mode);
         output.consumed = true;
         output.show_candidates = true;
-        output.candidates = candidates.to_vec();
+        output.candidates = candidates.clone();
         output.candidate_cursor_pos = 0;
         
         if let Some(first) = candidates.first() {
             self.preedit_string = first.surface.clone();
+            eprintln!("Set preedit_string to first candidate: '{}'", self.preedit_string);
         }
         
         output.preedit_segments = self.build_preedit_segments();
+        eprintln!("Built {} preedit segments", output.preedit_segments.len());
         
         output
     }
@@ -821,17 +826,24 @@ impl PSKKEngine {
     }
 
     fn build_preedit_segments(&self) -> Vec<PreeditSegment> {
+        eprintln!("build_preedit_segments: in_conversion={}, is_bunsetsu_mode={}, preedit_string='{}'",
+                  self.in_conversion, self.henkan_processor.is_bunsetsu_mode(), self.preedit_string);
+        
         if self.in_conversion && self.henkan_processor.is_bunsetsu_mode() {
-            self.henkan_processor
+            let segments = self.henkan_processor
                 .get_display_surface_with_selection()
                 .into_iter()
                 .map(|(text, is_selected)| PreeditSegment { text, is_selected })
-                .collect()
+                .collect::<Vec<_>>();
+            eprintln!("Returning {} bunsetsu segments", segments.len());
+            segments
         } else {
-            vec![PreeditSegment {
+            let segment = vec![PreeditSegment {
                 text: self.preedit_string.clone(),
                 is_selected: false,
-            }]
+            }];
+            eprintln!("Returning single segment with text: '{}'", self.preedit_string);
+            segment
         }
     }
 
