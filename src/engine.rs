@@ -604,6 +604,80 @@ impl PSKKEngine {
             self.marker_keys_held.insert(c.to_string());
             self.marker_had_input = true;
             self.marker_state = MarkerState::FirstPressed;
+            
+            // If in CONVERTING state, commit the selected candidate before processing new character
+            if self.in_conversion {
+                eprintln!("Implicit conversion: committing '{}' before new character '{}'", self.preedit_string, c);
+                let commit = self.preedit_string.clone();
+                self.in_conversion = false;
+                self.bunsetsu_active = false;
+                self.conversion_yomi.clear();
+                self.reset_preedit();
+                self.henkan_processor.reset();
+                
+                // Now process the new character and return commit + new preedit
+                let (output, pending) = self.simul_processor.get_layout_output("", &c.to_string(), true);
+                if let Some(ref out) = output {
+                    if !out.is_empty() {
+                        self.preedit_hiragana.push_str(out);
+                        self.preedit_ascii.push(c);
+                    }
+                }
+                self.preedit_pending = pending.unwrap_or_default();
+                self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
+                
+                let mut result = EngineOutput::commit(commit, self.mode);
+                result.preedit_segments = self.build_preedit_segments();
+                result.preedit_cursor_pos = self.preedit_string.chars().count();
+                result.marker_state = self.marker_state;
+                result.engine_state = self.get_engine_state();
+                return result;
+            }
+            
+            // If in BUNSETSU state, perform implicit conversion and commit before processing new character
+            if self.bunsetsu_active {
+                let yomi = self.preedit_string.clone();
+                let commit = if !yomi.is_empty() {
+                    let candidates = self.henkan_processor.convert(&yomi).to_vec();
+                    if let Some(first) = candidates.first() {
+                        eprintln!("Immediate implicit conversion: '{}' → '{}'", yomi, first.surface);
+                        first.surface.clone()
+                    } else {
+                        eprintln!("No candidates, committing yomi: '{}'", yomi);
+                        yomi
+                    }
+                } else {
+                    String::new()
+                };
+                
+                self.bunsetsu_active = false;
+                self.reset_preedit();
+                self.henkan_processor.reset();
+                
+                // Now process the new character and return commit + new preedit
+                let (output, pending) = self.simul_processor.get_layout_output("", &c.to_string(), true);
+                if let Some(ref out) = output {
+                    if !out.is_empty() {
+                        self.preedit_hiragana.push_str(out);
+                        self.preedit_ascii.push(c);
+                    }
+                }
+                self.preedit_pending = pending.unwrap_or_default();
+                self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
+                
+                let mut result = if !commit.is_empty() {
+                    EngineOutput::commit(commit, self.mode)
+                } else {
+                    EngineOutput::empty(self.mode)
+                };
+                result.consumed = true;
+                result.preedit_segments = self.build_preedit_segments();
+                result.preedit_cursor_pos = self.preedit_string.chars().count();
+                result.marker_state = self.marker_state;
+                result.engine_state = self.get_engine_state();
+                return result;
+            }
+            
             // Fall through to process character input normally
         }
 
