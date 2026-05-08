@@ -581,22 +581,11 @@ impl PSKKEngine {
         None
     }
 
-    fn mark_bunsetsu_boundary(&mut self, first_char: char) {
+    fn mark_bunsetsu_boundary(&mut self, _first_char: char) {
+        // Simply activate bunsetsu mode - the first_char was already processed
+        // in handle_character_input, so we don't need to process it again
         self.bunsetsu_active = true;
-        
-        let (output, pending) = self.simul_processor.get_layout_output(
-            &self.preedit_pending,
-            &first_char.to_string(),
-            true,
-        );
-        
-        if let Some(out) = output {
-            self.preedit_hiragana.push_str(&out);
-            self.preedit_ascii.push(first_char);
-        }
-        
-        self.preedit_pending = pending.unwrap_or_default();
-        self.preedit_string = self.preedit_hiragana.clone();
+        eprintln!("Bunsetsu mode activated. Current preedit: '{}'", self.preedit_string);
     }
 
     fn handle_character_input(&mut self, c: char, _has_shift: bool) -> EngineOutput {
