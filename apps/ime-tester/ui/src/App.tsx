@@ -455,6 +455,12 @@ function App() {
               engineState === 1 ? '#fffbf0' : // Bunsetsu - light yellow
               'white' // Normal - white (same as other sections)
           }}
+          title={
+            engineState === 3 ? 'Converting' :
+            engineState === 2 ? 'Forced Preedit' :
+            engineState === 1 ? 'Bunsetsu' :
+            'Normal'
+          }
         >
           <div className="state-grid">
             <span className="state-label">Marker State:</span>
