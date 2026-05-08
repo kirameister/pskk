@@ -474,6 +474,9 @@ impl PSKKEngine {
     }
 
     fn handle_space_release(&mut self) -> EngineOutput {
+        eprintln!("handle_space_release: marker_state={:?}, in_conversion={}, bunsetsu_active={}",
+                  self.marker_state, self.in_conversion, self.bunsetsu_active);
+        
         match self.marker_state {
             MarkerState::MarkerHeld => {
                 if self.marker_had_input {
@@ -515,6 +518,12 @@ impl PSKKEngine {
                 self.handle_marker_release_decision()
             }
             _ => {
+                // Handle space release when in conversion mode (marker_state is Idle)
+                if self.in_conversion {
+                    eprintln!("Space released during conversion, returning conversion output");
+                    return self.build_conversion_output();
+                }
+                
                 self.marker_state = MarkerState::Idle;
                 self.marker_first_key = None;
                 self.marker_keys_held.clear();
