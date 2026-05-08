@@ -677,7 +677,8 @@ impl PSKKEngine {
             return EngineOutput::passthrough(self.mode);
         }
         
-        self.conversion_yomi = self.preedit_hiragana.clone();
+        // Use preedit_string which includes both hiragana and pending
+        self.conversion_yomi = self.preedit_string.clone();
         self.in_conversion = true;
         
         eprintln!("Triggering conversion for yomi: '{}'", self.conversion_yomi);
