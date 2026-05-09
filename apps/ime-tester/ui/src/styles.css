@@ -266,11 +266,33 @@ body {
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  position: relative;
+}
+
+.output-display::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background-color: #333;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
 }
 
 .output-empty {
   color: #999;
   font-style: italic;
+}
+
+/* Hide cursor when showing empty state */
+.output-display:has(.output-empty)::after {
+  display: none;
 }
 
 .preedit-display {
