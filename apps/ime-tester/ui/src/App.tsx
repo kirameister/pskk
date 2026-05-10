@@ -32,6 +32,7 @@ type InputMode = "A" | "あ";
 function App() {
   const [mode, setMode] = useState<InputMode>("A");
   const [committedText, setCommittedText] = useState("");
+  const [committedCursorPos, setCommittedCursorPos] = useState(0);
   const [preeditSegments, setPreeditSegments] = useState<PreeditSegment[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [candidateCursor, setCandidateCursor] = useState(0);
@@ -97,8 +98,13 @@ function App() {
     addLog(`Processing output: commit_string=${output.commit_string ? 'yes' : 'no'}, preedit_segments=${output.preedit_segments.length}`);
 
     if (output.commit_string) {
-      setCommittedText((prev) => prev + output.commit_string);
-      addLog(`Committed: "${output.commit_string}"`);
+      const commitStr = output.commit_string;
+      setCommittedText((prev) => {
+        const newText = prev.slice(0, committedCursorPos) + commitStr + prev.slice(committedCursorPos);
+        return newText;
+      });
+      setCommittedCursorPos((prev) => prev + commitStr.length);
+      addLog(`Committed: "${commitStr}"`);
     }
 
     addLog(`Setting preedit segments: ${output.preedit_segments.length} segments`);
@@ -131,7 +137,7 @@ function App() {
     if (output.show_candidates && output.candidates.length > 0) {
       addLog(`Candidates: ${output.candidates.length} options`);
     }
-  }, []);
+  }, [committedCursorPos]);
 
   const handleModeChange = useCallback(async (newMode: InputMode) => {
     addLog(`Changing mode to: ${newMode}`);
@@ -239,6 +245,74 @@ function App() {
 
       if (output.consumed) {
         e.preventDefault();
+      } else if (isPressed) {
+        // Backend didn't consume the key - handle passthrough keys manually
+        if (e.key === 'Backspace') {
+          if (committedCursorPos > 0) {
+            setCommittedText(prev => prev.slice(0, committedCursorPos - 1) + prev.slice(committedCursorPos));
+            setCommittedCursorPos(prev => prev - 1);
+            addLog('Passthrough: Backspace - deleted character before cursor');
+          }
+          e.preventDefault();
+        } else if (e.key === 'Delete') {
+          if (committedCursorPos < committedText.length) {
+            setCommittedText(prev => prev.slice(0, committedCursorPos) + prev.slice(committedCursorPos + 1));
+            addLog('Passthrough: Delete - deleted character after cursor');
+          }
+          e.preventDefault();
+        } else if (e.key === 'Enter' || e.key === 'Return') {
+          setCommittedText(prev => prev.slice(0, committedCursorPos) + '\n' + prev.slice(committedCursorPos));
+          setCommittedCursorPos(prev => prev + 1);
+          addLog('Passthrough: Enter - inserted newline');
+          e.preventDefault();
+        } else if (e.key === 'ArrowLeft') {
+          setCommittedCursorPos(prev => Math.max(0, prev - 1));
+          e.preventDefault();
+        } else if (e.key === 'ArrowRight') {
+          setCommittedCursorPos(prev => Math.min(committedText.length, prev + 1));
+          e.preventDefault();
+        } else if (e.key === 'ArrowUp') {
+          const lines = committedText.slice(0, committedCursorPos).split('\n');
+          if (lines.length > 1) {
+            const currentLineStart = committedText.slice(0, committedCursorPos).lastIndexOf('\n') + 1;
+            const currentCol = committedCursorPos - currentLineStart;
+            const prevLineStart = committedText.slice(0, currentLineStart - 1).lastIndexOf('\n') + 1;
+            const prevLineEnd = currentLineStart - 1;
+            const prevLineLength = prevLineEnd - prevLineStart;
+            const newPos = prevLineStart + Math.min(currentCol, prevLineLength);
+            setCommittedCursorPos(newPos);
+          } else {
+            setCommittedCursorPos(0);
+          }
+          e.preventDefault();
+        } else if (e.key === 'ArrowDown') {
+          const currentLineStart = committedText.slice(0, committedCursorPos).lastIndexOf('\n') + 1;
+          const currentCol = committedCursorPos - currentLineStart;
+          const nextLineStart = committedText.indexOf('\n', committedCursorPos);
+          if (nextLineStart !== -1) {
+            const nextLineEnd = committedText.indexOf('\n', nextLineStart + 1);
+            const nextLineLength = (nextLineEnd === -1 ? committedText.length : nextLineEnd) - (nextLineStart + 1);
+            const newPos = nextLineStart + 1 + Math.min(currentCol, nextLineLength);
+            setCommittedCursorPos(newPos);
+          } else {
+            setCommittedCursorPos(committedText.length);
+          }
+          e.preventDefault();
+        } else if (e.key === 'Home') {
+          const lineStart = committedText.slice(0, committedCursorPos).lastIndexOf('\n') + 1;
+          setCommittedCursorPos(lineStart);
+          e.preventDefault();
+        } else if (e.key === 'End') {
+          const lineEnd = committedText.indexOf('\n', committedCursorPos);
+          setCommittedCursorPos(lineEnd === -1 ? committedText.length : lineEnd);
+          e.preventDefault();
+        } else if (keyChar && !e.ctrlKey && !e.altKey && !e.metaKey) {
+          // Regular printable character
+          setCommittedText(prev => prev.slice(0, committedCursorPos) + keyChar + prev.slice(committedCursorPos));
+          setCommittedCursorPos(prev => prev + 1);
+          addLog(`Passthrough: Added "${keyChar}" to committed output`);
+          e.preventDefault();
+        }
       }
 
       handleEngineOutput(output, addLog);
@@ -246,7 +320,7 @@ function App() {
       addLog(`Key processing error: ${error}`);
       console.error("Failed to process key:", error);
     }
-  }, [handleEngineOutput, mode, handleModeChange, addLog]);
+  }, [handleEngineOutput, mode, handleModeChange, addLog, committedText, committedCursorPos]);
   
   const connectToServer = useCallback(async () => {
     if (connecting || connected) return;
@@ -442,7 +516,15 @@ function App() {
         <div className="section">
           <div className="section-title">Committed Output</div>
           <div className="output-display">
-            {committedText || <span className="output-empty">No output yet</span>}
+            {committedText.length === 0 ? (
+              <span className="output-empty">No output yet</span>
+            ) : (
+              <>
+                {committedText.slice(0, committedCursorPos)}
+                <span className="cursor-indicator" />
+                {committedText.slice(committedCursorPos)}
+              </>
+            )}
           </div>
         </div>
 

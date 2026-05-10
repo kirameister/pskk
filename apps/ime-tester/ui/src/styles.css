@@ -269,13 +269,13 @@ body {
   position: relative;
 }
 
-.output-display::after {
-  content: '';
+.cursor-indicator {
   display: inline-block;
   width: 2px;
   height: 1.2em;
   background-color: #333;
-  margin-left: 2px;
+  margin-left: 0;
+  margin-right: 0;
   vertical-align: text-bottom;
   animation: blink 1s step-end infinite;
 }
@@ -288,11 +288,6 @@ body {
 .output-empty {
   color: #999;
   font-style: italic;
-}
-
-/* Hide cursor when showing empty state */
-.output-display:has(.output-empty)::after {
-  display: none;
 }
 
 .preedit-display {
