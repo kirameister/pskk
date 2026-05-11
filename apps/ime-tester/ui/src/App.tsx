@@ -243,28 +243,37 @@ function App() {
         addLog(`Key pressed: "${keyChar}" (consumed: ${output.consumed})`);
       }
 
+      // Calculate cursor position after commit (if any)
+      const cursorAfterCommit = output.commit_string 
+        ? committedCursorPos + output.commit_string.length 
+        : committedCursorPos;
+
       // First, process any commit_string from backend (before passthrough handling)
       handleEngineOutput(output, addLog);
 
       // Then handle passthrough keys when backend returns consumed=false
       if (!output.consumed && isPressed) {
         // Backend didn't consume the key - handle passthrough keys manually
+        // Use cursorAfterCommit to account for any text that was just committed
         if (e.key === 'Backspace') {
-          if (committedCursorPos > 0) {
-            setCommittedText(prev => prev.slice(0, committedCursorPos - 1) + prev.slice(committedCursorPos));
-            setCommittedCursorPos(prev => prev - 1);
+          if (cursorAfterCommit > 0) {
+            setCommittedText(prev => prev.slice(0, cursorAfterCommit - 1) + prev.slice(cursorAfterCommit));
+            setCommittedCursorPos(cursorAfterCommit - 1);
             addLog('Passthrough: Backspace - deleted character before cursor');
           }
           e.preventDefault();
         } else if (e.key === 'Delete') {
-          if (committedCursorPos < committedText.length) {
-            setCommittedText(prev => prev.slice(0, committedCursorPos) + prev.slice(committedCursorPos + 1));
-            addLog('Passthrough: Delete - deleted character after cursor');
-          }
+          setCommittedText(prev => {
+            if (cursorAfterCommit < prev.length) {
+              return prev.slice(0, cursorAfterCommit) + prev.slice(cursorAfterCommit + 1);
+            }
+            return prev;
+          });
+          addLog('Passthrough: Delete - deleted character after cursor');
           e.preventDefault();
         } else if (e.key === 'Enter' || e.key === 'Return') {
-          setCommittedText(prev => prev.slice(0, committedCursorPos) + '\n' + prev.slice(committedCursorPos));
-          setCommittedCursorPos(prev => prev + 1);
+          setCommittedText(prev => prev.slice(0, cursorAfterCommit) + '\n' + prev.slice(cursorAfterCommit));
+          setCommittedCursorPos(cursorAfterCommit + 1);
           addLog('Passthrough: Enter - inserted newline');
           e.preventDefault();
         } else if (e.key === 'ArrowLeft') {
@@ -310,8 +319,8 @@ function App() {
           e.preventDefault();
         } else if (keyChar && !e.ctrlKey && !e.altKey && !e.metaKey) {
           // Regular printable character
-          setCommittedText(prev => prev.slice(0, committedCursorPos) + keyChar + prev.slice(committedCursorPos));
-          setCommittedCursorPos(prev => prev + 1);
+          setCommittedText(prev => prev.slice(0, cursorAfterCommit) + keyChar + prev.slice(cursorAfterCommit));
+          setCommittedCursorPos(cursorAfterCommit + 1);
           addLog(`Passthrough: Added "${keyChar}" to committed output`);
           e.preventDefault();
         }
