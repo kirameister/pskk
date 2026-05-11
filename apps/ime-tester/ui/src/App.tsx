@@ -243,9 +243,11 @@ function App() {
         addLog(`Key pressed: "${keyChar}" (consumed: ${output.consumed})`);
       }
 
-      if (output.consumed) {
-        e.preventDefault();
-      } else if (isPressed) {
+      // First, process any commit_string from backend (before passthrough handling)
+      handleEngineOutput(output, addLog);
+
+      // Then handle passthrough keys when backend returns consumed=false
+      if (!output.consumed && isPressed) {
         // Backend didn't consume the key - handle passthrough keys manually
         if (e.key === 'Backspace') {
           if (committedCursorPos > 0) {
@@ -315,7 +317,10 @@ function App() {
         }
       }
 
-      handleEngineOutput(output, addLog);
+      // Prevent default for consumed keys
+      if (output.consumed) {
+        e.preventDefault();
+      }
     } catch (error) {
       addLog(`Key processing error: ${error}`);
       console.error("Failed to process key:", error);
