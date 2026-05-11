@@ -351,9 +351,9 @@ impl PSKKEngine {
 
         if is_pressed {
             match key_name {
-                "Return" | "KP_Enter" => return self.handle_enter(),
+                "Return" | "KP_Enter" | "Enter" => return self.handle_enter(),
                 "Escape" => return self.handle_escape(),
-                "BackSpace" => return self.handle_backspace(),
+                "BackSpace" | "Backspace" => return self.handle_backspace(),
                 "Down" if self.in_conversion => return self.handle_down_arrow(),
                 "Up" if self.in_conversion => return self.handle_up_arrow(),
                 "Right" if self.in_conversion => return self.handle_right_arrow(),
@@ -382,11 +382,16 @@ impl PSKKEngine {
     }
 
     fn handle_enter(&mut self) -> EngineOutput {
+        eprintln!("handle_enter: in_conversion={}, in_forced_preedit={}, bunsetsu_active={}, preedit_string='{}', preedit_hiragana='{}', preedit_pending='{}'",
+                  self.in_conversion, self.in_forced_preedit, self.bunsetsu_active, self.preedit_string, self.preedit_hiragana, self.preedit_pending);
+        
         if self.in_conversion {
+            eprintln!("  -> Confirming conversion");
             return self.confirm_conversion();
         }
         
         if self.in_forced_preedit && !self.preedit_string.is_empty() {
+            eprintln!("  -> Committing forced preedit: '{}'", self.preedit_string);
             let commit = self.preedit_string.clone();
             self.in_forced_preedit = false;
             self.reset_preedit();
@@ -394,6 +399,7 @@ impl PSKKEngine {
         }
         
         if self.bunsetsu_active && !self.preedit_string.is_empty() {
+            eprintln!("  -> Committing bunsetsu preedit: '{}'", self.preedit_string);
             let commit = self.preedit_string.clone();
             self.bunsetsu_active = false;
             self.reset_preedit();
@@ -401,14 +407,17 @@ impl PSKKEngine {
         }
         
         if !self.preedit_string.is_empty() {
+            eprintln!("  -> Committing normal preedit: '{}' with consumed=false", self.preedit_string);
             let commit = self.preedit_string.clone();
             self.reset_preedit();
             
             let mut output = EngineOutput::commit(commit, self.mode);
             output.consumed = false;
+            eprintln!("  -> Returning commit with consumed=false, commit_string='{:?}'", output.commit_string);
             return output;
         }
         
+        eprintln!("  -> Passthrough (no preedit)");
         EngineOutput::passthrough(self.mode)
     }
 
