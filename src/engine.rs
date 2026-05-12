@@ -115,6 +115,7 @@ pub struct PSKKEngine {
     
     marker_state: MarkerState,
     marker_first_key: Option<char>,
+    marker_second_key: Option<char>,
     marker_keys_held: std::collections::HashSet<String>,
     marker_had_input: bool,
     preedit_before_marker: String,
@@ -203,6 +204,7 @@ impl PSKKEngine {
             preedit_pending: String::new(),
             marker_state: MarkerState::Idle,
             marker_first_key: None,
+            marker_second_key: None,
             marker_keys_held: std::collections::HashSet::new(),
             marker_had_input: false,
             preedit_before_marker: String::new(),
@@ -465,6 +467,7 @@ impl PSKKEngine {
                 self.marker_had_input = false;
                 self.marker_keys_held.clear();
                 self.marker_first_key = None;
+                self.marker_second_key = None;
 
                 let mut output = EngineOutput::consumed(self.mode);
                 output.marker_state = self.marker_state;
@@ -557,7 +560,9 @@ impl PSKKEngine {
                     self.preedit_hiragana = self.preedit_before_marker.clone();
                     
                     self.marker_first_key = None;
+                    self.marker_second_key = None;
                     self.marker_had_input = false;
+                    self.marker_state = MarkerState::Idle;
                     
                     return self.build_preedit_output();
                 }
@@ -565,6 +570,7 @@ impl PSKKEngine {
                 eprintln!("No kanchoku, marking bunsetsu boundary with first_char='{}'", first_char);
                 self.mark_bunsetsu_boundary(first_char);
                 self.marker_first_key = None;
+                self.marker_second_key = None;
                 self.marker_state = MarkerState::Idle;
                 return self.build_preedit_output();
             }
@@ -586,16 +592,19 @@ impl PSKKEngine {
     }
 
     fn try_kanchoku_lookup(&mut self, first_char: char) -> Option<String> {
-        if self.marker_keys_held.len() == 1 {
-            if let Some(second_key_str) = self.marker_keys_held.iter().next() {
-                if let Some(second_char) = second_key_str.chars().next() {
-                    let kanji = self.kanchoku_processor.lookup_kanji(first_char, second_char);
-                    if kanji != crate::kanchoku::MISSING_KANCHOKU_KANJI {
-                        return Some(kanji);
-                    }
-                }
+        eprintln!("try_kanchoku_lookup: first_char='{}', marker_second_key={:?}", 
+                  first_char, self.marker_second_key);
+        
+        // Check if we have both first and second keys for Kanchoku
+        if let Some(second_char) = self.marker_second_key {
+            eprintln!("Looking up Kanchoku: '{}' + '{}'", first_char, second_char);
+            let kanji = self.kanchoku_processor.lookup_kanji(first_char, second_char);
+            eprintln!("Kanchoku lookup result: '{}'", kanji);
+            if kanji != crate::kanchoku::MISSING_KANCHOKU_KANJI {
+                return Some(kanji);
             }
         }
+        eprintln!("No valid Kanchoku pair found");
         None
     }
 
@@ -691,12 +700,23 @@ impl PSKKEngine {
         }
 
         if self.marker_state == MarkerState::FirstPressed {
+            // Second key pressed - transition to KanchokuSecondPressed
+            self.marker_second_key = Some(c);
             self.marker_keys_held.insert(c.to_string());
-            // Fall through to process character input normally
+            self.marker_state = MarkerState::KanchokuSecondPressed;
+            eprintln!("Second key '{}' pressed, transitioning to KanchokuSecondPressed", c);
+            
+            // Don't process as hiragana - just consume the key
+            let mut output = EngineOutput::consumed(self.mode);
+            output.marker_state = self.marker_state;
+            output.engine_state = self.get_engine_state();
+            return output;
         }
 
         if self.marker_state == MarkerState::KanchokuSecondPressed {
+            // Additional keys while in Kanchoku mode - just consume them
             self.marker_keys_held.insert(c.to_string());
+            eprintln!("Additional key '{}' pressed in KanchokuSecondPressed, consuming", c);
             return EngineOutput::consumed(self.mode);
         }
 
@@ -785,6 +805,15 @@ impl PSKKEngine {
                 eprintln!("All keys released, transitioning to FirstReleased");
                 self.marker_state = MarkerState::FirstReleased;
             }
+        }
+        
+        if self.marker_state == MarkerState::KanchokuSecondPressed {
+            let key_str = c.to_string();
+            eprintln!("Kanchoku: Removing '{}' from marker_keys_held", key_str);
+            self.marker_keys_held.remove(&key_str);
+            
+            // Don't transition state yet - wait for space release to process Kanchoku
+            eprintln!("Kanchoku: Key released, marker_keys_held={:?}", self.marker_keys_held);
         }
         
         eprintln!("After release: marker_state={:?}, marker_keys_held={:?}",
@@ -1048,6 +1077,7 @@ mod tests {
             preedit_pending: String::new(),
             marker_state: MarkerState::Idle,
             marker_first_key: None,
+            marker_second_key: None,
             marker_keys_held: std::collections::HashSet::new(),
             marker_had_input: false,
             preedit_before_marker: String::new(),
