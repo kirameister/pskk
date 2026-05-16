@@ -770,9 +770,11 @@ impl PSKKEngine {
                     
                     // In normal mode: commit the kanji directly
                     if !self.in_forced_preedit {
-                        // Restore preedit to state before marker
+                        // Restore preedit to state before marker and clear pending
                         self.preedit_string = self.preedit_before_marker.clone();
                         self.preedit_hiragana = self.preedit_before_marker.clone();
+                        self.preedit_pending.clear();
+                        self.preedit_ascii.clear();
                         
                         // Transition to KanchokuSecondPressed to wait for releases
                         self.marker_state = MarkerState::KanchokuSecondPressed;
