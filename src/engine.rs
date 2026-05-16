@@ -766,18 +766,36 @@ impl PSKKEngine {
             // Try Kanchoku lookup with first and second keys
             if let Some(first_char) = self.marker_first_key {
                 if let Some(kanji) = self.try_kanchoku_lookup(first_char) {
-                    eprintln!("Kanchoku found: '{}', outputting immediately", kanji);
-                    // Output the kanji to preedit
-                    self.preedit_string = self.preedit_before_marker.clone();
-                    self.preedit_string.push_str(&kanji);
-                    self.preedit_hiragana = self.preedit_before_marker.clone();
+                    eprintln!("Kanchoku found: '{}', committing immediately", kanji);
                     
-                    // Transition to KanchokuSecondPressed to wait for releases
-                    self.marker_state = MarkerState::KanchokuSecondPressed;
-                    
-                    let mut output = self.build_preedit_output();
-                    output.marker_state = self.marker_state;
-                    return output;
+                    // In normal mode: commit the kanji directly
+                    if !self.in_forced_preedit {
+                        // Restore preedit to state before marker
+                        self.preedit_string = self.preedit_before_marker.clone();
+                        self.preedit_hiragana = self.preedit_before_marker.clone();
+                        
+                        // Transition to KanchokuSecondPressed to wait for releases
+                        self.marker_state = MarkerState::KanchokuSecondPressed;
+                        
+                        // Commit the kanji
+                        let mut output = EngineOutput::commit(kanji, self.mode);
+                        output.preedit_segments = self.build_preedit_segments();
+                        output.preedit_cursor_pos = self.preedit_string.chars().count();
+                        output.marker_state = self.marker_state;
+                        output.engine_state = self.get_engine_state();
+                        return output;
+                    } else {
+                        // In forced preedit mode: add to preedit
+                        self.preedit_string = self.preedit_before_marker.clone();
+                        self.preedit_string.push_str(&kanji);
+                        self.preedit_hiragana = self.preedit_before_marker.clone();
+                        
+                        self.marker_state = MarkerState::KanchokuSecondPressed;
+                        
+                        let mut output = self.build_preedit_output();
+                        output.marker_state = self.marker_state;
+                        return output;
+                    }
                 }
             }
             
