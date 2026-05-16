@@ -551,11 +551,22 @@ impl PSKKEngine {
     }
 
     fn handle_marker_release_decision(&mut self) -> EngineOutput {
-        eprintln!("handle_marker_release_decision: marker_first_key={:?}, marker_keys_held.is_empty()={}, preedit_string='{}'",
-                  self.marker_first_key, self.marker_keys_held.is_empty(), self.preedit_string);
+        eprintln!("handle_marker_release_decision: marker_first_key={:?}, marker_second_key={:?}, marker_keys_held.is_empty()={}, preedit_string='{}'",
+                  self.marker_first_key, self.marker_second_key, self.marker_keys_held.is_empty(), self.preedit_string);
         
         if self.marker_first_key.is_some() && self.marker_keys_held.is_empty() {
             if let Some(first_char) = self.marker_first_key {
+                // Check if Kanchoku was already processed (second key exists)
+                if self.marker_second_key.is_some() {
+                    eprintln!("Kanchoku already processed, returning to Idle");
+                    self.marker_first_key = None;
+                    self.marker_second_key = None;
+                    self.marker_had_input = false;
+                    self.marker_state = MarkerState::Idle;
+                    
+                    return self.build_preedit_output();
+                }
+                
                 eprintln!("Checking kanchoku lookup for first_char='{}'", first_char);
                 if let Some(kanji) = self.try_kanchoku_lookup(first_char) {
                     eprintln!("Kanchoku found: '{}'", kanji);
@@ -729,14 +740,34 @@ impl PSKKEngine {
             return self.build_preedit_output();
         }
 
-        if self.marker_state == MarkerState::FirstPressed {
-            // Second key pressed - transition to KanchokuSecondPressed
+        if self.marker_state == MarkerState::FirstPressed || self.marker_state == MarkerState::FirstReleased {
+            // Second key pressed - try Kanchoku lookup immediately
             self.marker_second_key = Some(c);
             self.marker_keys_held.insert(c.to_string());
-            self.marker_state = MarkerState::KanchokuSecondPressed;
-            eprintln!("Second key '{}' pressed, transitioning to KanchokuSecondPressed", c);
+            eprintln!("Second key '{}' pressed (state={:?}), attempting Kanchoku lookup", c, self.marker_state);
             
-            // Don't process as hiragana - just consume the key
+            // Try Kanchoku lookup with first and second keys
+            if let Some(first_char) = self.marker_first_key {
+                if let Some(kanji) = self.try_kanchoku_lookup(first_char) {
+                    eprintln!("Kanchoku found: '{}', outputting immediately", kanji);
+                    // Output the kanji to preedit
+                    self.preedit_string = self.preedit_before_marker.clone();
+                    self.preedit_string.push_str(&kanji);
+                    self.preedit_hiragana = self.preedit_before_marker.clone();
+                    
+                    // Transition to KanchokuSecondPressed to wait for releases
+                    self.marker_state = MarkerState::KanchokuSecondPressed;
+                    
+                    let mut output = self.build_preedit_output();
+                    output.marker_state = self.marker_state;
+                    return output;
+                }
+            }
+            
+            // Not a valid Kanchoku pair - treat as bunsetsu marker
+            eprintln!("Not a valid Kanchoku pair, will activate bunsetsu on space release");
+            self.marker_state = MarkerState::KanchokuSecondPressed;
+            
             let mut output = EngineOutput::consumed(self.mode);
             output.marker_state = self.marker_state;
             output.engine_state = self.get_engine_state();
