@@ -410,19 +410,27 @@ impl PSKKEngine {
         }
         
         if self.in_forced_preedit && !self.preedit_string.is_empty() {
-            eprintln!("  -> Committing forced preedit: '{}'", self.preedit_string);
+            eprintln!("  -> Committing forced preedit: '{}' with consumed=false", self.preedit_string);
             let commit = self.preedit_string.clone();
             self.in_forced_preedit = false;
             self.reset_preedit();
-            return EngineOutput::commit(commit, self.mode);
+            
+            let mut output = EngineOutput::commit(commit, self.mode);
+            output.consumed = false;
+            eprintln!("  -> Returning commit with consumed=false, commit_string='{:?}'", output.commit_string);
+            return output;
         }
         
         if self.bunsetsu_active && !self.preedit_string.is_empty() {
-            eprintln!("  -> Committing bunsetsu preedit: '{}'", self.preedit_string);
+            eprintln!("  -> Committing bunsetsu preedit: '{}' with consumed=false", self.preedit_string);
             let commit = self.preedit_string.clone();
             self.bunsetsu_active = false;
             self.reset_preedit();
-            return EngineOutput::commit(commit, self.mode);
+            
+            let mut output = EngineOutput::commit(commit, self.mode);
+            output.consumed = false;
+            eprintln!("  -> Returning commit with consumed=false, commit_string='{:?}'", output.commit_string);
+            return output;
         }
         
         if !self.preedit_string.is_empty() {
