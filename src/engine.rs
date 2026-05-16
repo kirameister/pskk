@@ -458,10 +458,8 @@ impl PSKKEngine {
     fn handle_space_press(&mut self, _key_char: Option<char>) -> EngineOutput {
         match self.marker_state {
             MarkerState::Idle => {
-                if !self.preedit_string.is_empty() && !self.in_conversion {
-                    return self.trigger_conversion();
-                }
-
+                // Always enter MarkerHeld state
+                // Preedit will be committed on space release if it's a tap
                 self.marker_state = MarkerState::MarkerHeld;
                 self.preedit_before_marker = self.preedit_string.clone();
                 self.marker_had_input = false;
@@ -513,13 +511,19 @@ impl PSKKEngine {
                     self.marker_keys_held.clear();
                     self.trigger_conversion()
                 } else {
-                    // IDLE state: commit preedit + output space
-                    let _commit = self.preedit_string.clone();
+                    // Normal mode: space tap commits preedit (no space character output)
+                    let commit = self.preedit_string.clone();
                     self.reset_preedit();
                     self.marker_state = MarkerState::Idle;
                     self.marker_first_key = None;
                     self.marker_keys_held.clear();
-                    EngineOutput::commit(" ".to_string(), self.mode)
+                    
+                    if !commit.is_empty() {
+                        EngineOutput::commit(commit, self.mode)
+                    } else {
+                        // No preedit to commit - output space character
+                        EngineOutput::commit(" ".to_string(), self.mode)
+                    }
                 }
             }
             MarkerState::FirstPressed | MarkerState::FirstReleased => {
