@@ -616,7 +616,8 @@ impl PSKKEngine {
         // Simply activate bunsetsu mode - the first_char was already processed
         // in handle_character_input, so we don't need to process it again
         self.bunsetsu_active = true;
-        eprintln!("Bunsetsu mode activated. Current preedit: '{}'", self.preedit_string);
+        eprintln!("Bunsetsu mode activated. Current preedit: '{}', preedit_hiragana: '{}', preedit_pending: '{}'",
+                  self.preedit_string, self.preedit_hiragana, self.preedit_pending);
     }
 
     fn handle_character_input(&mut self, c: char, _has_shift: bool) -> EngineOutput {
@@ -626,6 +627,7 @@ impl PSKKEngine {
             self.marker_keys_held.insert(c.to_string());
             self.marker_had_input = true;
             self.marker_state = MarkerState::FirstPressed;
+            eprintln!("First key '{}' pressed, transitioning to FirstPressed", c);
             
             // If in CONVERTING state, commit the selected candidate before processing new character
             if self.in_conversion {
@@ -700,7 +702,31 @@ impl PSKKEngine {
                 return result;
             }
             
-            // Fall through to process character input normally
+            // Process character input normally and return
+            // (Don't fall through to FirstPressed check below!)
+            let (output, pending) = self.simul_processor.get_layout_output(
+                &self.preedit_pending,
+                &c.to_string(),
+                true,
+            );
+
+            eprintln!("Simul processor output: output={:?}, pending={:?}, preedit_pending='{}', char='{}'",
+                  output, pending, self.preedit_pending, c);
+
+            if let Some(ref out) = output {
+                if !out.is_empty() {
+                    self.preedit_hiragana.push_str(out);
+                    self.preedit_ascii.push(c);
+                    eprintln!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
+                }
+            }
+
+            self.preedit_pending = pending.unwrap_or_default();
+            self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
+            eprintln!("Final preedit_string: '{}' (hiragana='{}' + pending='{}')",
+                      self.preedit_string, self.preedit_hiragana, self.preedit_pending);
+
+            return self.build_preedit_output();
         }
 
         if self.marker_state == MarkerState::FirstPressed {
