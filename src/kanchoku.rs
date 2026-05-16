@@ -43,6 +43,11 @@ impl KanchokuProcessor {
         processor
     }
 
+    /// Check if the processor has a non-empty layout.
+    pub fn has_layout(&self) -> bool {
+        !self.layout.is_empty()
+    }
+
     /// Reset internal state and clear any pending first stroke.
     pub fn reset(&mut self) {
         self.first_stroke = None;
@@ -122,6 +127,29 @@ impl KanchokuProcessor {
             .map(|row| row.keys().copied().collect())
             .unwrap_or_default()
     }
+}
+
+/// Parse a Kanchoku layout from JSON Value into nested HashMap.
+/// Expected format: { "a": { "b": "日", "c": "月" }, ... }
+pub fn parse_kanchoku_layout(json: &serde_json::Value) -> Option<KanchokuLayout> {
+    let root = json.as_object()?;
+    let mut layout = HashMap::new();
+    
+    for (first_key_str, second_map_value) in root {
+        let first_char = first_key_str.chars().next()?;
+        let second_map = second_map_value.as_object()?;
+        
+        let mut inner_map = HashMap::new();
+        for (second_key_str, kanji_value) in second_map {
+            let second_char = second_key_str.chars().next()?;
+            let kanji = kanji_value.as_str()?.to_string();
+            inner_map.insert(second_char, kanji);
+        }
+        
+        layout.insert(first_char, inner_map);
+    }
+    
+    Some(layout)
 }
 
 #[cfg(test)]

@@ -192,6 +192,23 @@ impl PSKKEngine {
             SimultaneousInputProcessor::new(Some(layout_entries))
         };
 
+        // Load Kanchoku layout from config if not already provided
+        let kanchoku_processor = if kanchoku_processor.has_layout() {
+            eprintln!("Using provided Kanchoku layout");
+            kanchoku_processor
+        } else {
+            use crate::util::get_kanchoku_layout;
+            let kanchoku_layout_json = get_kanchoku_layout(&config)
+                .map_err(|e| format!("Failed to load Kanchoku layout: {}", e))?;
+            
+            // Parse Kanchoku layout JSON into nested HashMap
+            let kanchoku_layout = crate::kanchoku::parse_kanchoku_layout(&kanchoku_layout_json)
+                .ok_or_else(|| "Failed to parse Kanchoku layout".to_string())?;
+            
+            eprintln!("Loaded Kanchoku layout with {} first-stroke keys", kanchoku_layout.len());
+            KanchokuProcessor::new(Some(kanchoku_layout))
+        };
+
         Ok(Self {
             mode: InputMode::Alphanumeric,
             simul_processor,
