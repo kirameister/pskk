@@ -483,10 +483,34 @@ impl PSKKEngine {
     fn handle_space_press(&mut self, _key_char: Option<char>) -> EngineOutput {
         match self.marker_state {
             MarkerState::Idle => {
-                // Always enter MarkerHeld state
-                // Preedit will be committed on space release if it's a tap
+                // If in bunsetsu mode with preedit, trigger conversion
+                if self.bunsetsu_active && !self.preedit_string.is_empty() {
+                    eprintln!("Space pressed in bunsetsu mode, triggering conversion");
+                    return self.trigger_conversion();
+                }
+                
+                // If there's existing preedit in normal mode, commit it first
+                if !self.preedit_string.is_empty() {
+                    eprintln!("Space pressed with existing preedit '{}', committing it", self.preedit_string);
+                    let commit = self.preedit_string.clone();
+                    self.reset_preedit();
+                    
+                    // Enter MarkerHeld state for potential marker input
+                    self.marker_state = MarkerState::MarkerHeld;
+                    self.preedit_before_marker.clear();
+                    self.marker_had_input = false;
+                    self.marker_keys_held.clear();
+                    self.marker_first_key = None;
+                    self.marker_second_key = None;
+                    
+                    let mut output = EngineOutput::commit(commit, self.mode);
+                    output.marker_state = self.marker_state;
+                    return output;
+                }
+                
+                // No existing preedit - just enter MarkerHeld state
                 self.marker_state = MarkerState::MarkerHeld;
-                self.preedit_before_marker = self.preedit_string.clone();
+                self.preedit_before_marker.clear();
                 self.marker_had_input = false;
                 self.marker_keys_held.clear();
                 self.marker_first_key = None;
