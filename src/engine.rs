@@ -581,10 +581,17 @@ impl PSKKEngine {
         
         // Check for forced preedit trigger key first (before bunsetsu logic)
         if self.marker_first_key == Some('f') {
-            eprintln!("Entering forced preedit mode");
+            eprintln!("Entering forced preedit mode, clearing 'f' trigger from preedit");
             self.in_forced_preedit = true;
             self.marker_first_key = None;
             self.marker_state = MarkerState::Idle;
+            
+            // Restore preedit to state before marker (remove the 'f' trigger character)
+            self.preedit_string = self.preedit_before_marker.clone();
+            self.preedit_hiragana = self.preedit_before_marker.clone();
+            self.preedit_pending.clear();
+            self.preedit_ascii.clear();
+            
             return self.build_preedit_output();
         }
         
