@@ -579,6 +579,15 @@ impl PSKKEngine {
         eprintln!("handle_marker_release_decision: marker_first_key={:?}, marker_second_key={:?}, marker_keys_held.is_empty()={}, preedit_string='{}'",
                   self.marker_first_key, self.marker_second_key, self.marker_keys_held.is_empty(), self.preedit_string);
         
+        // Check for forced preedit trigger key first (before bunsetsu logic)
+        if self.marker_first_key == Some('f') {
+            eprintln!("Entering forced preedit mode");
+            self.in_forced_preedit = true;
+            self.marker_first_key = None;
+            self.marker_state = MarkerState::Idle;
+            return self.build_preedit_output();
+        }
+        
         if self.marker_first_key.is_some() && self.marker_keys_held.is_empty() {
             if let Some(first_char) = self.marker_first_key {
                 // Check if Kanchoku was already processed (second key exists)
@@ -614,14 +623,6 @@ impl PSKKEngine {
                 self.marker_state = MarkerState::Idle;
                 return self.build_preedit_output();
             }
-        }
-        
-        if self.marker_first_key == Some('f') {
-            eprintln!("Entering forced preedit mode");
-            self.in_forced_preedit = true;
-            self.marker_first_key = None;
-            self.marker_state = MarkerState::Idle;
-            return self.build_preedit_output();
         }
         
         eprintln!("No action taken, returning consumed");
