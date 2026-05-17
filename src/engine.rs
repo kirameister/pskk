@@ -820,10 +820,40 @@ impl PSKKEngine {
         }
 
         if self.marker_state == MarkerState::KanchokuSecondPressed {
-            // Additional keys while in Kanchoku mode - just consume them
+            // Additional key after Kanchoku - start a new Kanchoku sequence
+            eprintln!("Additional key '{}' pressed in KanchokuSecondPressed, starting new Kanchoku sequence", c);
+            
+            // Reset marker state for new sequence
+            self.marker_first_key = Some(c);
+            self.marker_second_key = None;
+            self.marker_keys_held.clear();
             self.marker_keys_held.insert(c.to_string());
-            eprintln!("Additional key '{}' pressed in KanchokuSecondPressed, consuming", c);
-            return EngineOutput::consumed(self.mode);
+            self.marker_state = MarkerState::FirstPressed;
+            
+            // Process the character normally (add to preedit)
+            let (output, pending) = self.simul_processor.get_layout_output(
+                &self.preedit_pending,
+                &c.to_string(),
+                true,
+            );
+
+            eprintln!("Simul processor output: output={:?}, pending={:?}, preedit_pending='{}', char='{}'",
+                  output, pending, self.preedit_pending, c);
+
+            if let Some(ref out) = output {
+                if !out.is_empty() {
+                    self.preedit_hiragana.push_str(out);
+                    self.preedit_ascii.push(c);
+                    eprintln!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
+                }
+            }
+
+            self.preedit_pending = pending.unwrap_or_default();
+            self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
+            eprintln!("Final preedit_string: '{}' (hiragana='{}' + pending='{}')",
+                      self.preedit_string, self.preedit_hiragana, self.preedit_pending);
+
+            return self.build_preedit_output();
         }
 
         // If in CONVERTING state and typing a new character (without holding space),
