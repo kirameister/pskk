@@ -483,10 +483,19 @@ impl PSKKEngine {
     fn handle_space_press(&mut self, _key_char: Option<char>) -> EngineOutput {
         match self.marker_state {
             MarkerState::Idle => {
-                // If in bunsetsu mode with preedit, trigger conversion
+                // If in bunsetsu mode with preedit, trigger conversion and enter MarkerHeld
                 if self.bunsetsu_active && !self.preedit_string.is_empty() {
-                    eprintln!("Space pressed in bunsetsu mode, triggering conversion");
-                    return self.trigger_conversion();
+                    eprintln!("Space pressed in bunsetsu mode, triggering conversion and entering MarkerHeld");
+                    self.marker_state = MarkerState::MarkerHeld;
+                    self.preedit_before_marker = self.preedit_string.clone();
+                    self.marker_had_input = true; // Treat as "had input" to prevent cycling on release
+                    self.marker_keys_held.clear();
+                    self.marker_first_key = None;
+                    self.marker_second_key = None;
+                    
+                    let mut output = self.trigger_conversion();
+                    output.marker_state = self.marker_state;
+                    return output;
                 }
                 
                 // If there's existing preedit in normal mode, commit it first
@@ -540,7 +549,15 @@ impl PSKKEngine {
             MarkerState::MarkerHeld => {
                 if self.marker_had_input {
                     // Keys were pressed during this space hold, not a tap
-                    // Just release cleanly
+                    // If in conversion mode, just return conversion output (don't cycle)
+                    if self.in_conversion {
+                        eprintln!("Space released after triggering conversion, staying in conversion");
+                        self.marker_state = MarkerState::Idle;
+                        self.marker_first_key = None;
+                        self.marker_keys_held.clear();
+                        return self.build_conversion_output();
+                    }
+                    // Otherwise just release cleanly
                     self.marker_state = MarkerState::Idle;
                     self.marker_first_key = None;
                     self.marker_keys_held.clear();
@@ -600,8 +617,43 @@ impl PSKKEngine {
     }
 
     fn handle_marker_release_decision(&mut self) -> EngineOutput {
-        eprintln!("handle_marker_release_decision: marker_first_key={:?}, marker_second_key={:?}, marker_keys_held.is_empty()={}, preedit_string='{}'",
-                  self.marker_first_key, self.marker_second_key, self.marker_keys_held.is_empty(), self.preedit_string);
+        eprintln!("handle_marker_release_decision: marker_first_key={:?}, marker_second_key={:?}, marker_keys_held.is_empty()={}, preedit_string='{}', in_conversion={}",
+                  self.marker_first_key, self.marker_second_key, self.marker_keys_held.is_empty(), self.preedit_string, self.in_conversion);
+        
+        // If in conversion mode, commit the conversion and activate bunsetsu mode
+        if self.in_conversion {
+            eprintln!("Committing conversion '{}' and activating bunsetsu mode", self.preedit_string);
+            let commit = self.preedit_string.clone();
+            self.in_conversion = false;
+            self.conversion_yomi.clear();
+            self.henkan_processor.reset();
+            
+            // Reset preedit but keep the first key's hiragana for bunsetsu mode
+            self.reset_preedit();
+            if let Some(first_char) = self.marker_first_key {
+                let (output, pending) = self.simul_processor.get_layout_output("", &first_char.to_string(), true);
+                if let Some(ref out) = output {
+                    if !out.is_empty() {
+                        self.preedit_hiragana.push_str(out);
+                        self.preedit_ascii.push(first_char);
+                    }
+                }
+                self.preedit_pending = pending.unwrap_or_default();
+                self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
+            }
+            
+            // Activate bunsetsu mode
+            self.bunsetsu_active = true;
+            self.marker_first_key = None;
+            self.marker_second_key = None;
+            self.marker_state = MarkerState::Idle;
+            
+            let mut output = EngineOutput::commit(commit, self.mode);
+            output.preedit_segments = self.build_preedit_segments();
+            output.preedit_cursor_pos = self.preedit_string.chars().count();
+            output.engine_state = self.get_engine_state();
+            return output;
+        }
         
         // Check for forced preedit trigger key first (before bunsetsu logic)
         if self.marker_first_key == Some('f') {
@@ -697,33 +749,13 @@ impl PSKKEngine {
             self.marker_state = MarkerState::FirstPressed;
             eprintln!("First key '{}' pressed, transitioning to FirstPressed", c);
             
-            // If in CONVERTING state, commit the selected candidate before processing new character
+            // If in CONVERTING state, don't commit yet and don't add to preedit
+            // Just track the first key and keep conversion active
+            // The conversion will be committed when space is released
             if self.in_conversion {
-                eprintln!("Implicit conversion: committing '{}' before new character '{}'", self.preedit_string, c);
-                let commit = self.preedit_string.clone();
-                self.in_conversion = false;
-                self.bunsetsu_active = false;
-                self.conversion_yomi.clear();
-                self.reset_preedit();
-                self.henkan_processor.reset();
-                
-                // Now process the new character and return commit + new preedit
-                let (output, pending) = self.simul_processor.get_layout_output("", &c.to_string(), true);
-                if let Some(ref out) = output {
-                    if !out.is_empty() {
-                        self.preedit_hiragana.push_str(out);
-                        self.preedit_ascii.push(c);
-                    }
-                }
-                self.preedit_pending = pending.unwrap_or_default();
-                self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
-                
-                let mut result = EngineOutput::commit(commit, self.mode);
-                result.preedit_segments = self.build_preedit_segments();
-                result.preedit_cursor_pos = self.preedit_string.chars().count();
-                result.marker_state = self.marker_state;
-                result.engine_state = self.get_engine_state();
-                return result;
+                eprintln!("First key '{}' pressed during conversion, keeping conversion active (not adding to preedit)", c);
+                // Just return the current conversion output without modifying preedit
+                return self.build_conversion_output();
             }
             
             // If in BUNSETSU state, perform implicit conversion and commit before processing new character
