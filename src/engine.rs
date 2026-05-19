@@ -895,6 +895,7 @@ impl PSKKEngine {
             let commit = self.preedit_string.clone();
             self.in_conversion = false;
             self.in_forced_preedit = false;
+            self.bunsetsu_active = false;
             self.conversion_yomi.clear();
             self.reset_preedit();
             self.henkan_processor.reset();
