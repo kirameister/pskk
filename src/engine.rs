@@ -830,13 +830,40 @@ impl PSKKEngine {
         }
 
         if self.marker_state == MarkerState::FirstPressed || self.marker_state == MarkerState::FirstReleased {
-            // Second key pressed - try Kanchoku lookup immediately
+            // Second key pressed - check if it's simultaneous input first, then try Kanchoku
             self.marker_second_key = Some(c);
             self.marker_keys_held.insert(c.to_string());
-            eprintln!("Second key '{}' pressed (state={:?}), attempting Kanchoku lookup", c, self.marker_state);
+            eprintln!("Second key '{}' pressed (state={:?}), checking simultaneous input first", c, self.marker_state);
             
-            // Try Kanchoku lookup with first and second keys
+            // First check if the two keys form a valid simultaneous input
             if let Some(first_char) = self.marker_first_key {
+                // Check if adding the second key to the pending state produces simultaneous output
+                let (simul_output, simul_pending) = self.simul_processor.get_layout_output(
+                    &self.preedit_pending,
+                    &c.to_string(),
+                    true,
+                );
+                
+                eprintln!("Checking simultaneous: pending='{}' + key='{}' → output={:?}, pending={:?}", 
+                          self.preedit_pending, c, simul_output, simul_pending);
+                
+                // If simultaneous input produces output (not just more pending), use that instead of Kanchoku
+                if let Some(ref out) = simul_output {
+                    if !out.is_empty() {
+                        eprintln!("Simultaneous input found: '{}' + '{}' → '{}'", first_char, c, out);
+                        self.preedit_hiragana.push_str(out);
+                        self.preedit_ascii.push(first_char);
+                        self.preedit_ascii.push(c);
+                        self.preedit_pending = simul_pending.unwrap_or_default();
+                        self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
+                        
+                        self.marker_state = MarkerState::KanchokuSecondPressed;
+                        return self.build_preedit_output();
+                    }
+                }
+                
+                eprintln!("No simultaneous input, attempting Kanchoku lookup");
+                // No simultaneous input - try Kanchoku lookup
                 if let Some(kanji) = self.try_kanchoku_lookup(first_char) {
                     eprintln!("Kanchoku found: '{}', committing immediately", kanji);
                     
