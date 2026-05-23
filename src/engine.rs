@@ -381,6 +381,17 @@ impl PSKKEngine {
                 return self.handle_space_release();
             }
             
+            // For arrow keys in conversion mode, return conversion output on release
+            if self.engine_state == EngineState::Converting {
+                match key_name {
+                    "Down" | "ArrowDown" | "Up" | "ArrowUp" | "Right" | "ArrowRight" | "Left" | "ArrowLeft" => {
+                        eprintln!("Arrow key '{}' released in conversion mode, returning conversion output", key_name);
+                        return self.build_conversion_output();
+                    }
+                    _ => {}
+                }
+            }
+            
             // Handle character key release for marker state machine
             if let Some(c) = key_char {
                 return self.handle_character_release(c);
