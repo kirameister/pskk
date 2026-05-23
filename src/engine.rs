@@ -673,9 +673,10 @@ impl PSKKEngine {
         
         if self.marker_first_key.is_some() && self.marker_keys_held.is_empty() {
             if let Some(first_char) = self.marker_first_key {
-                // Check if Kanchoku was already processed (second key exists)
+                // Check if Kanchoku/simultaneous was already processed (second key exists)
                 if self.marker_second_key.is_some() {
-                    eprintln!("Kanchoku already processed, returning to Idle");
+                    eprintln!("Kanchoku/simultaneous already processed, activating bunsetsu mode");
+                    self.bunsetsu_active = true;
                     self.marker_first_key = None;
                     self.marker_second_key = None;
                     self.marker_had_input = false;
