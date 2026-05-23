@@ -847,15 +847,16 @@ impl PSKKEngine {
                 eprintln!("Checking simultaneous: pending='{}' + key='{}' → output={:?}, pending={:?}", 
                           self.preedit_pending, c, simul_output, simul_pending);
                 
-                // If simultaneous input produces output (not just more pending), use that instead of Kanchoku
-                if let Some(ref out) = simul_output {
-                    if !out.is_empty() {
-                        eprintln!("Simultaneous input found: '{}' + '{}' → '{}'", first_char, c, out);
-                        self.preedit_hiragana.push_str(out);
+                // Check if we got a pending result (simultaneous input detected)
+                // Simultaneous input returns empty output and the result in pending
+                if let Some(ref pending_result) = simul_pending {
+                    if !pending_result.is_empty() && simul_output.as_ref().map_or(true, |o| o.is_empty()) {
+                        eprintln!("Simultaneous input found: '{}' + '{}' → '{}' (in pending)", first_char, c, pending_result);
+                        self.preedit_hiragana.push_str(pending_result);
                         self.preedit_ascii.push(first_char);
                         self.preedit_ascii.push(c);
-                        self.preedit_pending = simul_pending.unwrap_or_default();
-                        self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
+                        self.preedit_pending.clear();
+                        self.preedit_string = self.preedit_hiragana.clone();
                         
                         self.marker_state = MarkerState::KanchokuSecondPressed;
                         return self.build_preedit_output();
