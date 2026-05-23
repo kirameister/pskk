@@ -476,6 +476,20 @@ impl PSKKEngine {
     fn handle_space_press(&mut self, _key_char: Option<char>) -> EngineOutput {
         match self.marker_state {
             MarkerState::Idle => {
+                // If already in conversion mode, just enter MarkerHeld to prepare for cycling
+                if self.engine_state == EngineState::Converting {
+                    eprintln!("Space pressed in conversion mode, entering MarkerHeld for cycling");
+                    self.marker_state = MarkerState::MarkerHeld;
+                    self.marker_had_input = false;
+                    self.marker_keys_held.clear();
+                    self.marker_first_key = None;
+                    self.marker_second_key = None;
+                    
+                    let mut output = EngineOutput::consumed(self.mode);
+                    output.marker_state = self.marker_state;
+                    return output;
+                }
+                
                 // If in bunsetsu mode with preedit, trigger conversion and enter MarkerHeld
                 if self.engine_state == EngineState::Bunsetsu && !self.preedit_string.is_empty() {
                     eprintln!("Space pressed in bunsetsu mode, triggering conversion and entering MarkerHeld");
