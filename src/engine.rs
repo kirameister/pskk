@@ -350,6 +350,9 @@ impl PSKKEngine {
         has_ctrl: bool,
         has_alt: bool,
     ) -> EngineOutput {
+        eprintln!("process_hiragana_mode_key: key_name='{}', is_pressed={}, engine_state={:?}",
+                  key_name, is_pressed, self.engine_state);
+        
         if has_ctrl || has_alt {
             if !self.preedit_string.is_empty() {
                 let commit = self.preedit_string.clone();
@@ -366,10 +369,10 @@ impl PSKKEngine {
                 "Return" | "KP_Enter" | "Enter" => return self.handle_enter(),
                 "Escape" => return self.handle_escape(),
                 "BackSpace" | "Backspace" => return self.handle_backspace(),
-                "Down" if self.engine_state == EngineState::Converting => return self.handle_down_arrow(),
-                "Up" if self.engine_state == EngineState::Converting => return self.handle_up_arrow(),
-                "Right" if self.engine_state == EngineState::Converting => return self.handle_right_arrow(),
-                "Left" if self.engine_state == EngineState::Converting => return self.handle_left_arrow(),
+                "Down" | "ArrowDown" if self.engine_state == EngineState::Converting => return self.handle_down_arrow(),
+                "Up" | "ArrowUp" if self.engine_state == EngineState::Converting => return self.handle_up_arrow(),
+                "Right" | "ArrowRight" if self.engine_state == EngineState::Converting => return self.handle_right_arrow(),
+                "Left" | "ArrowLeft" if self.engine_state == EngineState::Converting => return self.handle_left_arrow(),
                 "space" | "Space" => return self.handle_space_press(key_char),
                 _ => {}
             }
@@ -1049,8 +1052,12 @@ impl PSKKEngine {
         eprintln!("After release: marker_state={:?}, marker_keys_held={:?}",
                   self.marker_state, self.marker_keys_held);
         
-        // Return current preedit state instead of passthrough to preserve preedit display
-        self.build_preedit_output()
+        // Return appropriate output based on engine state
+        if self.engine_state == EngineState::Converting {
+            self.build_conversion_output()
+        } else {
+            self.build_preedit_output()
+        }
     }
 
     fn trigger_conversion(&mut self) -> EngineOutput {
