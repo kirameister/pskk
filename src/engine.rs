@@ -499,9 +499,8 @@ impl PSKKEngine {
                     self.marker_first_key = None;
                     self.marker_second_key = None;
                     
-                    let mut output = EngineOutput::consumed(self.mode);
-                    output.marker_state = self.marker_state;
-                    return output;
+                    // Return current conversion output to keep preedit visible
+                    return self.build_conversion_output();
                 }
                 
                 // If in bunsetsu mode with preedit, trigger conversion and enter MarkerHeld
