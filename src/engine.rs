@@ -119,16 +119,12 @@ pub struct PSKKEngine {
     marker_keys_held: std::collections::HashSet<String>,
     marker_had_input: bool,
     preedit_before_marker: String,
-    in_forced_preedit: bool,
     
     pure_kanchoku_held: bool,
     pure_kanchoku_first_key: Option<char>,
     
-    bunsetsu_active: bool,
-    in_conversion: bool,
+    engine_state: EngineState,
     conversion_yomi: String,
-    
-    converted: bool,
     
     // Full configuration
     config: serde_json::Value,
@@ -225,13 +221,10 @@ impl PSKKEngine {
             marker_keys_held: std::collections::HashSet::new(),
             marker_had_input: false,
             preedit_before_marker: String::new(),
-            in_forced_preedit: false,
             pure_kanchoku_held: false,
             pure_kanchoku_first_key: None,
-            bunsetsu_active: false,
-            in_conversion: false,
+            engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
-            converted: false,
         })
     }
 
@@ -373,10 +366,10 @@ impl PSKKEngine {
                 "Return" | "KP_Enter" | "Enter" => return self.handle_enter(),
                 "Escape" => return self.handle_escape(),
                 "BackSpace" | "Backspace" => return self.handle_backspace(),
-                "Down" if self.in_conversion => return self.handle_down_arrow(),
-                "Up" if self.in_conversion => return self.handle_up_arrow(),
-                "Right" if self.in_conversion => return self.handle_right_arrow(),
-                "Left" if self.in_conversion => return self.handle_left_arrow(),
+                "Down" if self.engine_state == EngineState::Converting => return self.handle_down_arrow(),
+                "Up" if self.engine_state == EngineState::Converting => return self.handle_up_arrow(),
+                "Right" if self.engine_state == EngineState::Converting => return self.handle_right_arrow(),
+                "Left" if self.engine_state == EngineState::Converting => return self.handle_left_arrow(),
                 "space" | "Space" => return self.handle_space_press(key_char),
                 _ => {}
             }
@@ -401,18 +394,18 @@ impl PSKKEngine {
     }
 
     fn handle_enter(&mut self) -> EngineOutput {
-        eprintln!("handle_enter: in_conversion={}, in_forced_preedit={}, bunsetsu_active={}, preedit_string='{}', preedit_hiragana='{}', preedit_pending='{}'",
-                  self.in_conversion, self.in_forced_preedit, self.bunsetsu_active, self.preedit_string, self.preedit_hiragana, self.preedit_pending);
+        eprintln!("handle_enter: engine_state={:?}, preedit_string='{}', preedit_hiragana='{}', preedit_pending='{}'",
+                  self.engine_state, self.preedit_string, self.preedit_hiragana, self.preedit_pending);
         
-        if self.in_conversion {
+        if self.engine_state == EngineState::Converting {
             eprintln!("  -> Confirming conversion");
             return self.confirm_conversion();
         }
         
-        if self.in_forced_preedit && !self.preedit_string.is_empty() {
+        if self.engine_state == EngineState::ForcedPreedit && !self.preedit_string.is_empty() {
             eprintln!("  -> Committing forced preedit: '{}' with consumed=false", self.preedit_string);
             let commit = self.preedit_string.clone();
-            self.in_forced_preedit = false;
+            self.engine_state = EngineState::Normal;
             self.reset_preedit();
             
             let mut output = EngineOutput::commit(commit, self.mode);
@@ -421,10 +414,10 @@ impl PSKKEngine {
             return output;
         }
         
-        if self.bunsetsu_active && !self.preedit_string.is_empty() {
+        if self.engine_state == EngineState::Bunsetsu && !self.preedit_string.is_empty() {
             eprintln!("  -> Committing bunsetsu preedit: '{}' with consumed=false", self.preedit_string);
             let commit = self.preedit_string.clone();
-            self.bunsetsu_active = false;
+            self.engine_state = EngineState::Normal;
             self.reset_preedit();
             
             let mut output = EngineOutput::commit(commit, self.mode);
@@ -449,7 +442,7 @@ impl PSKKEngine {
     }
 
     fn handle_escape(&mut self) -> EngineOutput {
-        if self.in_conversion {
+        if self.engine_state == EngineState::Converting {
             return self.cancel_conversion();
         }
         
@@ -462,7 +455,7 @@ impl PSKKEngine {
     }
 
     fn handle_backspace(&mut self) -> EngineOutput {
-        if self.in_conversion {
+        if self.engine_state == EngineState::Converting {
             return self.cancel_conversion();
         }
         
@@ -484,7 +477,7 @@ impl PSKKEngine {
         match self.marker_state {
             MarkerState::Idle => {
                 // If in bunsetsu mode with preedit, trigger conversion and enter MarkerHeld
-                if self.bunsetsu_active && !self.preedit_string.is_empty() {
+                if self.engine_state == EngineState::Bunsetsu && !self.preedit_string.is_empty() {
                     eprintln!("Space pressed in bunsetsu mode, triggering conversion and entering MarkerHeld");
                     self.marker_state = MarkerState::MarkerHeld;
                     self.preedit_before_marker = self.preedit_string.clone();
@@ -542,15 +535,15 @@ impl PSKKEngine {
     }
 
     fn handle_space_release(&mut self) -> EngineOutput {
-        eprintln!("handle_space_release: marker_state={:?}, in_conversion={}, bunsetsu_active={}",
-                  self.marker_state, self.in_conversion, self.bunsetsu_active);
+        eprintln!("handle_space_release: marker_state={:?}, engine_state={:?}",
+                  self.marker_state, self.engine_state);
         
         match self.marker_state {
             MarkerState::MarkerHeld => {
                 if self.marker_had_input {
                     // Keys were pressed during this space hold, not a tap
                     // If in conversion mode, just return conversion output (don't cycle)
-                    if self.in_conversion {
+                    if self.engine_state == EngineState::Converting {
                         eprintln!("Space released after triggering conversion, staying in conversion");
                         self.marker_state = MarkerState::Idle;
                         self.marker_first_key = None;
@@ -564,13 +557,13 @@ impl PSKKEngine {
                     let mut output = EngineOutput::consumed(self.mode);
                     output.marker_state = self.marker_state;
                     output
-                } else if self.in_conversion {
+                } else if self.engine_state == EngineState::Converting {
                     // CONVERTING state: cycle to next candidate
                     self.marker_state = MarkerState::Idle;
                     self.marker_first_key = None;
                     self.marker_keys_held.clear();
                     self.handle_down_arrow()
-                } else if self.bunsetsu_active || self.in_forced_preedit {
+                } else if self.engine_state == EngineState::Bunsetsu || self.engine_state == EngineState::ForcedPreedit {
                     // BUNSETSU or FORCED_PREEDIT state: trigger conversion
                     self.marker_state = MarkerState::Idle;
                     self.marker_first_key = None;
@@ -601,7 +594,7 @@ impl PSKKEngine {
             }
             _ => {
                 // Handle space release when in conversion mode (marker_state is Idle)
-                if self.in_conversion {
+                if self.engine_state == EngineState::Converting {
                     eprintln!("Space released during conversion, returning conversion output");
                     return self.build_conversion_output();
                 }
@@ -617,14 +610,14 @@ impl PSKKEngine {
     }
 
     fn handle_marker_release_decision(&mut self) -> EngineOutput {
-        eprintln!("handle_marker_release_decision: marker_first_key={:?}, marker_second_key={:?}, marker_keys_held.is_empty()={}, preedit_string='{}', in_conversion={}",
-                  self.marker_first_key, self.marker_second_key, self.marker_keys_held.is_empty(), self.preedit_string, self.in_conversion);
+        eprintln!("handle_marker_release_decision: marker_first_key={:?}, marker_second_key={:?}, marker_keys_held.is_empty()={}, preedit_string='{}', engine_state={:?}",
+                  self.marker_first_key, self.marker_second_key, self.marker_keys_held.is_empty(), self.preedit_string, self.engine_state);
         
         // If in conversion mode, commit the conversion and activate bunsetsu mode
-        if self.in_conversion {
+        if self.engine_state == EngineState::Converting {
             eprintln!("Committing conversion '{}' and activating bunsetsu mode", self.preedit_string);
             let commit = self.preedit_string.clone();
-            self.in_conversion = false;
+            self.engine_state = EngineState::Bunsetsu;
             self.conversion_yomi.clear();
             self.henkan_processor.reset();
             
@@ -641,9 +634,6 @@ impl PSKKEngine {
                 self.preedit_pending = pending.unwrap_or_default();
                 self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
             }
-            
-            // Activate bunsetsu mode
-            self.bunsetsu_active = true;
             self.marker_first_key = None;
             self.marker_second_key = None;
             self.marker_state = MarkerState::Idle;
@@ -658,7 +648,7 @@ impl PSKKEngine {
         // Check for forced preedit trigger key first (before bunsetsu logic)
         if self.marker_first_key == Some('f') {
             eprintln!("Entering forced preedit mode, clearing 'f' trigger from preedit");
-            self.in_forced_preedit = true;
+            self.engine_state = EngineState::ForcedPreedit;
             self.marker_first_key = None;
             self.marker_state = MarkerState::Idle;
             
@@ -679,9 +669,10 @@ impl PSKKEngine {
                     // If preedit is empty, return to Idle (Kanchoku was committed)
                     if !self.preedit_string.is_empty() {
                         eprintln!("Simultaneous input processed, activating bunsetsu mode");
-                        self.bunsetsu_active = true;
+                        self.engine_state = EngineState::Bunsetsu;
                     } else {
                         eprintln!("Kanchoku already committed, returning to Idle");
+                        self.engine_state = EngineState::Normal;
                     }
                     
                     self.marker_first_key = None;
@@ -743,7 +734,7 @@ impl PSKKEngine {
     fn mark_bunsetsu_boundary(&mut self, _first_char: char) {
         // Simply activate bunsetsu mode - the first_char was already processed
         // in handle_character_input, so we don't need to process it again
-        self.bunsetsu_active = true;
+        self.engine_state = EngineState::Bunsetsu;
         eprintln!("Bunsetsu mode activated. Current preedit: '{}', preedit_hiragana: '{}', preedit_pending: '{}'",
                   self.preedit_string, self.preedit_hiragana, self.preedit_pending);
     }
@@ -760,14 +751,14 @@ impl PSKKEngine {
             // If in CONVERTING state, don't commit yet and don't add to preedit
             // Just track the first key and keep conversion active
             // The conversion will be committed when space is released
-            if self.in_conversion {
+            if self.engine_state == EngineState::Converting {
                 eprintln!("First key '{}' pressed during conversion, keeping conversion active (not adding to preedit)", c);
                 // Just return the current conversion output without modifying preedit
                 return self.build_conversion_output();
             }
             
             // If in BUNSETSU state, perform implicit conversion and commit before processing new character
-            if self.bunsetsu_active {
+            if self.engine_state == EngineState::Bunsetsu {
                 let yomi = self.preedit_string.clone();
                 let commit = if !yomi.is_empty() {
                     let candidates = self.henkan_processor.convert(&yomi).to_vec();
@@ -782,7 +773,7 @@ impl PSKKEngine {
                     String::new()
                 };
                 
-                self.bunsetsu_active = false;
+                self.engine_state = EngineState::Normal;
                 self.reset_preedit();
                 self.henkan_processor.reset();
                 
@@ -877,7 +868,7 @@ impl PSKKEngine {
                     eprintln!("Kanchoku found: '{}', committing immediately", kanji);
                     
                     // In normal mode: commit the kanji directly
-                    if !self.in_forced_preedit {
+                    if self.engine_state != EngineState::ForcedPreedit {
                         // Restore preedit to state before marker and clear pending
                         self.preedit_string = self.preedit_before_marker.clone();
                         self.preedit_hiragana = self.preedit_before_marker.clone();
@@ -958,12 +949,10 @@ impl PSKKEngine {
 
         // If in CONVERTING state and typing a new character (without holding space),
         // commit the selected candidate and continue with the new character
-        if self.in_conversion {
+        if self.engine_state == EngineState::Converting {
             eprintln!("Char input in CONVERTING: confirming '{}' and adding '{}'", self.preedit_string, c);
             let commit = self.preedit_string.clone();
-            self.in_conversion = false;
-            self.in_forced_preedit = false;
-            self.bunsetsu_active = false;
+            self.engine_state = EngineState::Normal;
             self.conversion_yomi.clear();
             self.reset_preedit();
             self.henkan_processor.reset();
@@ -985,16 +974,6 @@ impl PSKKEngine {
             result.marker_state = self.marker_state;
             result.engine_state = self.get_engine_state();
             return result;
-        }
-
-        if self.converted {
-            let commit = self.preedit_string.clone();
-            self.reset_preedit();
-            self.converted = false;
-
-            let mut output = EngineOutput::commit(commit, self.mode);
-            output.consumed = false;
-            return output;
         }
 
         let (output, pending) = self.simul_processor.get_layout_output(
@@ -1067,7 +1046,7 @@ impl PSKKEngine {
         
         // Use preedit_string which includes both hiragana and pending
         self.conversion_yomi = self.preedit_string.clone();
-        self.in_conversion = true;
+        self.engine_state = EngineState::Converting;
         
         eprintln!("Triggering conversion for yomi: '{}'", self.conversion_yomi);
         let candidates = self.henkan_processor.convert(&self.conversion_yomi).to_vec();
@@ -1092,14 +1071,13 @@ impl PSKKEngine {
     }
 
     fn confirm_conversion(&mut self) -> EngineOutput {
-        if !self.in_conversion {
+        if self.engine_state != EngineState::Converting {
             return EngineOutput::passthrough(self.mode);
         }
         
         let commit = self.preedit_string.clone();
         
-        self.in_conversion = false;
-        self.bunsetsu_active = false;
+        self.engine_state = EngineState::Normal;
         self.conversion_yomi.clear();
         self.reset_preedit();
         
@@ -1107,18 +1085,18 @@ impl PSKKEngine {
     }
 
     fn cancel_conversion(&mut self) -> EngineOutput {
-        if !self.in_conversion {
+        if self.engine_state != EngineState::Converting {
             return EngineOutput::passthrough(self.mode);
         }
         
         self.preedit_string = self.conversion_yomi.clone();
-        self.in_conversion = false;
+        self.engine_state = EngineState::Bunsetsu;
         
         self.build_preedit_output()
     }
 
     fn handle_down_arrow(&mut self) -> EngineOutput {
-        if !self.in_conversion {
+        if self.engine_state != EngineState::Converting {
             return EngineOutput::passthrough(self.mode);
         }
         
@@ -1136,7 +1114,7 @@ impl PSKKEngine {
     }
 
     fn handle_up_arrow(&mut self) -> EngineOutput {
-        if !self.in_conversion {
+        if self.engine_state != EngineState::Converting {
             return EngineOutput::passthrough(self.mode);
         }
         
@@ -1154,7 +1132,7 @@ impl PSKKEngine {
     }
 
     fn handle_right_arrow(&mut self) -> EngineOutput {
-        if !self.in_conversion || !self.henkan_processor.is_bunsetsu_mode() {
+        if self.engine_state != EngineState::Converting || !self.henkan_processor.is_bunsetsu_mode() {
             return EngineOutput::passthrough(self.mode);
         }
         
@@ -1163,7 +1141,7 @@ impl PSKKEngine {
     }
 
     fn handle_left_arrow(&mut self) -> EngineOutput {
-        if !self.in_conversion || !self.henkan_processor.is_bunsetsu_mode() {
+        if self.engine_state != EngineState::Converting || !self.henkan_processor.is_bunsetsu_mode() {
             return EngineOutput::passthrough(self.mode);
         }
         
@@ -1172,15 +1150,7 @@ impl PSKKEngine {
     }
 
     fn get_engine_state(&self) -> EngineState {
-        if self.in_conversion {
-            EngineState::Converting
-        } else if self.in_forced_preedit {
-            EngineState::ForcedPreedit
-        } else if self.bunsetsu_active {
-            EngineState::Bunsetsu
-        } else {
-            EngineState::Normal
-        }
+        self.engine_state
     }
 
     fn build_preedit_output(&self) -> EngineOutput {
@@ -1215,10 +1185,10 @@ impl PSKKEngine {
     }
 
     fn build_preedit_segments(&self) -> Vec<PreeditSegment> {
-        eprintln!("build_preedit_segments: in_conversion={}, is_bunsetsu_mode={}, preedit_string='{}'",
-                  self.in_conversion, self.henkan_processor.is_bunsetsu_mode(), self.preedit_string);
+        eprintln!("build_preedit_segments: engine_state={:?}, is_bunsetsu_mode={}, preedit_string='{}'",
+                  self.engine_state, self.henkan_processor.is_bunsetsu_mode(), self.preedit_string);
         
-        if self.in_conversion && self.henkan_processor.is_bunsetsu_mode() {
+        if self.engine_state == EngineState::Converting && self.henkan_processor.is_bunsetsu_mode() {
             let segments = self.henkan_processor
                 .get_display_surface_with_selection()
                 .into_iter()
@@ -1250,13 +1220,10 @@ impl PSKKEngine {
         self.marker_keys_held.clear();
         self.marker_had_input = false;
         self.preedit_before_marker.clear();
-        self.in_forced_preedit = false;
         self.pure_kanchoku_held = false;
         self.pure_kanchoku_first_key = None;
-        self.bunsetsu_active = false;
-        self.in_conversion = false;
+        self.engine_state = EngineState::Normal;
         self.conversion_yomi.clear();
-        self.converted = false;
         self.henkan_processor.reset();
         self.kanchoku_processor.reset();
         self.simul_processor.simultaneous_reset();
