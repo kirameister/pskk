@@ -30,6 +30,15 @@ pub struct EngineState {
 
 impl EngineState {
     pub fn new() -> Self {
+        // Initialize logging first
+        // Load config to get logging level
+        let config = pskk::util::get_config_data()
+            .ok()
+            .map(|(config, _)| config);
+        
+        // Initialize logging (will log to both terminal and file)
+        let _ = pskk::util::init_logging(config.as_ref());
+        
         // Layout will be loaded by the engine from config
         let simul = SimultaneousInputProcessor::new(None);
         let kanchoku = KanchokuProcessor::new(None);

@@ -4,6 +4,7 @@ use crate::kanchoku::KanchokuProcessor;
 use crate::simultaneous_processor::SimultaneousInputProcessor;
 use crate::util::{get_config_data, get_layout_data};
 use serde::{Deserialize, Serialize};
+use tracing::{debug, info, trace};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InputMode {
@@ -155,7 +156,7 @@ impl PSKKEngine {
 
         // Load layout from config if not already provided
         let simul_processor = if simul_processor.layout_data.is_some() {
-            eprintln!("Using provided layout data with {} entries", simul_processor.layout_data.as_ref().unwrap().len());
+            info!("Using provided layout data with {} entries", simul_processor.layout_data.as_ref().unwrap().len());
             simul_processor
         } else {
             // Load layout from config
@@ -184,13 +185,13 @@ impl PSKKEngine {
                 })
                 .collect::<Result<Vec<_>, String>>()?;
 
-            eprintln!("Loaded {} layout entries from config", layout_entries.len());
+            info!("Loaded {} layout entries from config", layout_entries.len());
             SimultaneousInputProcessor::new(Some(layout_entries))
         };
 
         // Load Kanchoku layout from config if not already provided
         let kanchoku_processor = if kanchoku_processor.has_layout() {
-            eprintln!("Using provided Kanchoku layout");
+            info!("Using provided Kanchoku layout");
             kanchoku_processor
         } else {
             use crate::util::get_kanchoku_layout;
@@ -201,7 +202,7 @@ impl PSKKEngine {
             let kanchoku_layout = crate::kanchoku::parse_kanchoku_layout(&kanchoku_layout_json)
                 .ok_or_else(|| "Failed to parse Kanchoku layout".to_string())?;
             
-            eprintln!("Loaded Kanchoku layout with {} first-stroke keys", kanchoku_layout.len());
+            info!("Loaded Kanchoku layout with {} first-stroke keys", kanchoku_layout.len());
             KanchokuProcessor::new(Some(kanchoku_layout))
         };
 
@@ -248,7 +249,7 @@ impl PSKKEngine {
             .map_err(|e| format!("Failed to reload config: {}", e))?;
 
         self.config = config;
-        eprintln!("Config reloaded.");
+        info!("Config reloaded.");
 
         Ok(())
     }
@@ -293,7 +294,7 @@ impl PSKKEngine {
         };
         // Check for mode switching keys first (before mode check)
         if is_pressed {
-            // eprintln!("KEY PRESSED: '{}' (char: {:?})", key_name, key_char);
+            // debug!("KEY PRESSED: '{}' (char: {:?})", key_name, key_char);
 
             // Extract mode switching keys from config
             let enable_hiragana_keys = self
@@ -310,15 +311,15 @@ impl PSKKEngine {
                 .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
                 .unwrap_or_else(|| vec!["Muhenkan", "NonConvert"]);
 
-            // eprintln!("  Checking against enable_keys: {:?}", enable_hiragana_keys);
-            // eprintln!("  Checking against disable_keys: {:?}", disable_hiragana_keys);
+            // debug!("  Checking against enable_keys: {:?}", enable_hiragana_keys);
+            // debug!("  Checking against disable_keys: {:?}", disable_hiragana_keys);
 
             // Check for enable hiragana keys (Convert, etc.)
             if enable_hiragana_keys
                 .iter()
                 .any(|k| Self::mode_switch_key_matches(k, key_name))
             {
-                // eprintln!("  ✓ MATCHED enable key! Switching to Hiragana");
+                // debug!("  ✓ MATCHED enable key! Switching to Hiragana");
                 return self.set_mode(ProtoInputMode::Hiragana);
             }
 
@@ -327,11 +328,11 @@ impl PSKKEngine {
                 .iter()
                 .any(|k| Self::mode_switch_key_matches(k, key_name))
             {
-                // eprintln!("  ✓ MATCHED disable key! Switching to Alphanumeric");
+                // debug!("  ✓ MATCHED disable key! Switching to Alphanumeric");
                 return self.set_mode(ProtoInputMode::Alphanumeric);
             }
 
-            // eprintln!("  ✗ No match");
+            // debug!("  ✗ No match");
         }
         
         if self.mode == InputMode::Alphanumeric {
@@ -350,7 +351,7 @@ impl PSKKEngine {
         has_ctrl: bool,
         has_alt: bool,
     ) -> EngineOutput {
-        eprintln!("process_hiragana_mode_key: key_name='{}', is_pressed={}, engine_state={:?}",
+        trace!("process_hiragana_mode_key: key_name='{}', is_pressed={}, engine_state={:?}",
                   key_name, is_pressed, self.engine_state);
         
         if has_ctrl || has_alt {
@@ -385,7 +386,7 @@ impl PSKKEngine {
             if self.engine_state == EngineState::Converting {
                 match key_name {
                     "Down" | "ArrowDown" | "Up" | "ArrowUp" | "Right" | "ArrowRight" | "Left" | "ArrowLeft" => {
-                        eprintln!("Arrow key '{}' released in conversion mode, returning conversion output", key_name);
+                        debug!("Arrow key '{}' released in conversion mode, returning conversion output", key_name);
                         return self.build_conversion_output();
                     }
                     _ => {}
@@ -408,50 +409,50 @@ impl PSKKEngine {
     }
 
     fn handle_enter(&mut self) -> EngineOutput {
-        eprintln!("handle_enter: engine_state={:?}, preedit_string='{}', preedit_hiragana='{}', preedit_pending='{}'",
+        debug!("handle_enter: engine_state={:?}, preedit_string='{}', preedit_hiragana='{}', preedit_pending='{}'",
                   self.engine_state, self.preedit_string, self.preedit_hiragana, self.preedit_pending);
         
         if self.engine_state == EngineState::Converting {
-            eprintln!("  -> Confirming conversion");
+            debug!("  -> Confirming conversion");
             return self.confirm_conversion();
         }
         
         if self.engine_state == EngineState::ForcedPreedit && !self.preedit_string.is_empty() {
-            eprintln!("  -> Committing forced preedit: '{}' with consumed=false", self.preedit_string);
+            debug!("  -> Committing forced preedit: '{}' with consumed=false", self.preedit_string);
             let commit = self.preedit_string.clone();
             self.engine_state = EngineState::Normal;
             self.reset_preedit();
             
             let mut output = EngineOutput::commit(commit, self.mode);
             output.consumed = false;
-            eprintln!("  -> Returning commit with consumed=false, commit_string='{:?}'", output.commit_string);
+            debug!("  -> Returning commit with consumed=false, commit_string='{:?}'", output.commit_string);
             return output;
         }
         
         if self.engine_state == EngineState::Bunsetsu && !self.preedit_string.is_empty() {
-            eprintln!("  -> Committing bunsetsu preedit: '{}' with consumed=false", self.preedit_string);
+            debug!("  -> Committing bunsetsu preedit: '{}' with consumed=false", self.preedit_string);
             let commit = self.preedit_string.clone();
             self.engine_state = EngineState::Normal;
             self.reset_preedit();
             
             let mut output = EngineOutput::commit(commit, self.mode);
             output.consumed = false;
-            eprintln!("  -> Returning commit with consumed=false, commit_string='{:?}'", output.commit_string);
+            debug!("  -> Returning commit with consumed=false, commit_string='{:?}'", output.commit_string);
             return output;
         }
         
         if !self.preedit_string.is_empty() {
-            eprintln!("  -> Committing normal preedit: '{}' with consumed=false", self.preedit_string);
+            debug!("  -> Committing normal preedit: '{}' with consumed=false", self.preedit_string);
             let commit = self.preedit_string.clone();
             self.reset_preedit();
             
             let mut output = EngineOutput::commit(commit, self.mode);
             output.consumed = false;
-            eprintln!("  -> Returning commit with consumed=false, commit_string='{:?}'", output.commit_string);
+            debug!("  -> Returning commit with consumed=false, commit_string='{:?}'", output.commit_string);
             return output;
         }
         
-        eprintln!("  -> Passthrough (no preedit)");
+        debug!("  -> Passthrough (no preedit)");
         EngineOutput::passthrough(self.mode)
     }
 
@@ -492,7 +493,7 @@ impl PSKKEngine {
             MarkerState::Idle => {
                 // If already in conversion mode, just enter MarkerHeld to prepare for cycling
                 if self.engine_state == EngineState::Converting {
-                    eprintln!("Space pressed in conversion mode, entering MarkerHeld for cycling");
+                    debug!("Space pressed in conversion mode, entering MarkerHeld for cycling");
                     self.marker_state = MarkerState::MarkerHeld;
                     self.marker_had_input = false;
                     self.marker_keys_held.clear();
@@ -505,7 +506,7 @@ impl PSKKEngine {
                 
                 // If in bunsetsu mode with preedit, trigger conversion and enter MarkerHeld
                 if self.engine_state == EngineState::Bunsetsu && !self.preedit_string.is_empty() {
-                    eprintln!("Space pressed in bunsetsu mode, triggering conversion and entering MarkerHeld");
+                    debug!("Space pressed in bunsetsu mode, triggering conversion and entering MarkerHeld");
                     self.marker_state = MarkerState::MarkerHeld;
                     self.preedit_before_marker = self.preedit_string.clone();
                     self.marker_had_input = true; // Treat as "had input" to prevent cycling on release
@@ -520,7 +521,7 @@ impl PSKKEngine {
                 
                 // If there's existing preedit in normal mode, commit it first
                 if !self.preedit_string.is_empty() {
-                    eprintln!("Space pressed with existing preedit '{}', committing it", self.preedit_string);
+                    debug!("Space pressed with existing preedit '{}', committing it", self.preedit_string);
                     let commit = self.preedit_string.clone();
                     self.reset_preedit();
                     
@@ -562,7 +563,7 @@ impl PSKKEngine {
     }
 
     fn handle_space_release(&mut self) -> EngineOutput {
-        eprintln!("handle_space_release: marker_state={:?}, engine_state={:?}",
+        debug!("handle_space_release: marker_state={:?}, engine_state={:?}",
                   self.marker_state, self.engine_state);
         
         match self.marker_state {
@@ -571,7 +572,7 @@ impl PSKKEngine {
                     // Keys were pressed during this space hold, not a tap
                     // If in conversion mode, just return conversion output (don't cycle)
                     if self.engine_state == EngineState::Converting {
-                        eprintln!("Space released after triggering conversion, staying in conversion");
+                        debug!("Space released after triggering conversion, staying in conversion");
                         self.marker_state = MarkerState::Idle;
                         self.marker_first_key = None;
                         self.marker_keys_held.clear();
@@ -622,7 +623,7 @@ impl PSKKEngine {
             _ => {
                 // Handle space release when in conversion mode (marker_state is Idle)
                 if self.engine_state == EngineState::Converting {
-                    eprintln!("Space released during conversion, returning conversion output");
+                    debug!("Space released during conversion, returning conversion output");
                     return self.build_conversion_output();
                 }
                 
@@ -637,12 +638,12 @@ impl PSKKEngine {
     }
 
     fn handle_marker_release_decision(&mut self) -> EngineOutput {
-        eprintln!("handle_marker_release_decision: marker_first_key={:?}, marker_second_key={:?}, marker_keys_held.is_empty()={}, preedit_string='{}', engine_state={:?}",
+        debug!("handle_marker_release_decision: marker_first_key={:?}, marker_second_key={:?}, marker_keys_held.is_empty()={}, preedit_string='{}', engine_state={:?}",
                   self.marker_first_key, self.marker_second_key, self.marker_keys_held.is_empty(), self.preedit_string, self.engine_state);
         
         // If in conversion mode, commit the conversion and activate bunsetsu mode
         if self.engine_state == EngineState::Converting {
-            eprintln!("Committing conversion '{}' and activating bunsetsu mode", self.preedit_string);
+            debug!("Committing conversion '{}' and activating bunsetsu mode", self.preedit_string);
             let commit = self.preedit_string.clone();
             self.engine_state = EngineState::Bunsetsu;
             self.conversion_yomi.clear();
@@ -674,7 +675,7 @@ impl PSKKEngine {
         
         // Check for forced preedit trigger key first (before bunsetsu logic)
         if self.marker_first_key == Some('f') {
-            eprintln!("Entering forced preedit mode, clearing 'f' trigger from preedit");
+            debug!("Entering forced preedit mode, clearing 'f' trigger from preedit");
             self.engine_state = EngineState::ForcedPreedit;
             self.marker_first_key = None;
             self.marker_state = MarkerState::Idle;
@@ -695,10 +696,10 @@ impl PSKKEngine {
                     // If preedit has content, activate bunsetsu mode (simultaneous input)
                     // If preedit is empty, return to Idle (Kanchoku was committed)
                     if !self.preedit_string.is_empty() {
-                        eprintln!("Simultaneous input processed, activating bunsetsu mode");
+                        debug!("Simultaneous input processed, activating bunsetsu mode");
                         self.engine_state = EngineState::Bunsetsu;
                     } else {
-                        eprintln!("Kanchoku already committed, returning to Idle");
+                        debug!("Kanchoku already committed, returning to Idle");
                         self.engine_state = EngineState::Normal;
                     }
                     
@@ -710,9 +711,9 @@ impl PSKKEngine {
                     return self.build_preedit_output();
                 }
                 
-                eprintln!("Checking kanchoku lookup for first_char='{}'", first_char);
+                debug!("Checking kanchoku lookup for first_char='{}'", first_char);
                 if let Some(kanji) = self.try_kanchoku_lookup(first_char) {
-                    eprintln!("Kanchoku found: '{}'", kanji);
+                    debug!("Kanchoku found: '{}'", kanji);
                     self.preedit_string = self.preedit_before_marker.clone();
                     self.preedit_string.push_str(&kanji);
                     self.preedit_hiragana = self.preedit_before_marker.clone();
@@ -725,7 +726,7 @@ impl PSKKEngine {
                     return self.build_preedit_output();
                 }
                 
-                eprintln!("No kanchoku, marking bunsetsu boundary with first_char='{}'", first_char);
+                debug!("No kanchoku, marking bunsetsu boundary with first_char='{}'", first_char);
                 self.mark_bunsetsu_boundary(first_char);
                 self.marker_first_key = None;
                 self.marker_second_key = None;
@@ -734,7 +735,7 @@ impl PSKKEngine {
             }
         }
         
-        eprintln!("No action taken, returning consumed");
+        debug!("No action taken, returning consumed");
         self.marker_first_key = None;
         self.marker_had_input = false;
         self.marker_state = MarkerState::Idle;
@@ -742,19 +743,19 @@ impl PSKKEngine {
     }
 
     fn try_kanchoku_lookup(&mut self, first_char: char) -> Option<String> {
-        eprintln!("try_kanchoku_lookup: first_char='{}', marker_second_key={:?}", 
+        debug!("try_kanchoku_lookup: first_char='{}', marker_second_key={:?}", 
                   first_char, self.marker_second_key);
         
         // Check if we have both first and second keys for Kanchoku
         if let Some(second_char) = self.marker_second_key {
-            eprintln!("Looking up Kanchoku: '{}' + '{}'", first_char, second_char);
+            debug!("Looking up Kanchoku: '{}' + '{}'", first_char, second_char);
             let kanji = self.kanchoku_processor.lookup_kanji(first_char, second_char);
-            eprintln!("Kanchoku lookup result: '{}'", kanji);
+            debug!("Kanchoku lookup result: '{}'", kanji);
             if kanji != crate::kanchoku::MISSING_KANCHOKU_KANJI {
                 return Some(kanji);
             }
         }
-        eprintln!("No valid Kanchoku pair found");
+        debug!("No valid Kanchoku pair found");
         None
     }
 
@@ -762,7 +763,7 @@ impl PSKKEngine {
         // Simply activate bunsetsu mode - the first_char was already processed
         // in handle_character_input, so we don't need to process it again
         self.engine_state = EngineState::Bunsetsu;
-        eprintln!("Bunsetsu mode activated. Current preedit: '{}', preedit_hiragana: '{}', preedit_pending: '{}'",
+        debug!("Bunsetsu mode activated. Current preedit: '{}', preedit_hiragana: '{}', preedit_pending: '{}'",
                   self.preedit_string, self.preedit_hiragana, self.preedit_pending);
     }
 
@@ -773,13 +774,13 @@ impl PSKKEngine {
             self.marker_keys_held.insert(c.to_string());
             self.marker_had_input = true;
             self.marker_state = MarkerState::FirstPressed;
-            eprintln!("First key '{}' pressed, transitioning to FirstPressed", c);
+            debug!("First key '{}' pressed, transitioning to FirstPressed", c);
             
             // If in CONVERTING state, don't commit yet and don't add to preedit
             // Just track the first key and keep conversion active
             // The conversion will be committed when space is released
             if self.engine_state == EngineState::Converting {
-                eprintln!("First key '{}' pressed during conversion, keeping conversion active (not adding to preedit)", c);
+                debug!("First key '{}' pressed during conversion, keeping conversion active (not adding to preedit)", c);
                 // Just return the current conversion output without modifying preedit
                 return self.build_conversion_output();
             }
@@ -790,10 +791,10 @@ impl PSKKEngine {
                 let commit = if !yomi.is_empty() {
                     let candidates = self.henkan_processor.convert(&yomi).to_vec();
                     if let Some(first) = candidates.first() {
-                        eprintln!("Immediate implicit conversion: '{}' → '{}'", yomi, first.surface);
+                        debug!("Immediate implicit conversion: '{}' → '{}'", yomi, first.surface);
                         first.surface.clone()
                     } else {
-                        eprintln!("No candidates, committing yomi: '{}'", yomi);
+                        debug!("No candidates, committing yomi: '{}'", yomi);
                         yomi
                     }
                 } else {
@@ -836,20 +837,20 @@ impl PSKKEngine {
                 true,
             );
 
-            eprintln!("Simul processor output: output={:?}, pending={:?}, preedit_pending='{}', char='{}'",
+            debug!("Simul processor output: output={:?}, pending={:?}, preedit_pending='{}', char='{}'",
                   output, pending, self.preedit_pending, c);
 
             if let Some(ref out) = output {
                 if !out.is_empty() {
                     self.preedit_hiragana.push_str(out);
                     self.preedit_ascii.push(c);
-                    eprintln!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
+                    debug!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
                 }
             }
 
             self.preedit_pending = pending.unwrap_or_default();
             self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
-            eprintln!("Final preedit_string: '{}' (hiragana='{}' + pending='{}')",
+            debug!("Final preedit_string: '{}' (hiragana='{}' + pending='{}')",
                       self.preedit_string, self.preedit_hiragana, self.preedit_pending);
 
             return self.build_preedit_output();
@@ -859,7 +860,7 @@ impl PSKKEngine {
             // Second key pressed - check if it's simultaneous input first, then try Kanchoku
             self.marker_second_key = Some(c);
             self.marker_keys_held.insert(c.to_string());
-            eprintln!("Second key '{}' pressed (state={:?}), checking simultaneous input first", c, self.marker_state);
+            debug!("Second key '{}' pressed (state={:?}), checking simultaneous input first", c, self.marker_state);
             
             // First check if the two keys form a valid simultaneous input
             if let Some(first_char) = self.marker_first_key {
@@ -870,14 +871,14 @@ impl PSKKEngine {
                     true,
                 );
                 
-                eprintln!("Checking simultaneous: pending='{}' + key='{}' → output={:?}, pending={:?}", 
+                debug!("Checking simultaneous: pending='{}' + key='{}' → output={:?}, pending={:?}", 
                           self.preedit_pending, c, simul_output, simul_pending);
                 
                 // Check if we got a pending result (simultaneous input detected)
                 // Simultaneous input returns empty output and the result in pending
                 if let Some(ref pending_result) = simul_pending {
                     if !pending_result.is_empty() && simul_output.as_ref().map_or(true, |o| o.is_empty()) {
-                        eprintln!("Simultaneous input found: '{}' + '{}' → '{}' (in pending)", first_char, c, pending_result);
+                        debug!("Simultaneous input found: '{}' + '{}' → '{}' (in pending)", first_char, c, pending_result);
                         self.preedit_hiragana.push_str(pending_result);
                         self.preedit_ascii.push(first_char);
                         self.preedit_ascii.push(c);
@@ -889,10 +890,10 @@ impl PSKKEngine {
                     }
                 }
                 
-                eprintln!("No simultaneous input, attempting Kanchoku lookup");
+                debug!("No simultaneous input, attempting Kanchoku lookup");
                 // No simultaneous input - try Kanchoku lookup
                 if let Some(kanji) = self.try_kanchoku_lookup(first_char) {
-                    eprintln!("Kanchoku found: '{}', committing immediately", kanji);
+                    debug!("Kanchoku found: '{}', committing immediately", kanji);
                     
                     // In normal mode: commit the kanji directly
                     if self.engine_state != EngineState::ForcedPreedit {
@@ -928,7 +929,7 @@ impl PSKKEngine {
             }
             
             // Not a valid Kanchoku pair - treat as bunsetsu marker
-            eprintln!("Not a valid Kanchoku pair, will activate bunsetsu on space release");
+            debug!("Not a valid Kanchoku pair, will activate bunsetsu on space release");
             self.marker_state = MarkerState::KanchokuSecondPressed;
             
             let mut output = EngineOutput::consumed(self.mode);
@@ -939,7 +940,7 @@ impl PSKKEngine {
 
         if self.marker_state == MarkerState::KanchokuSecondPressed {
             // Additional key after Kanchoku - start a new Kanchoku sequence
-            eprintln!("Additional key '{}' pressed in KanchokuSecondPressed, starting new Kanchoku sequence", c);
+            debug!("Additional key '{}' pressed in KanchokuSecondPressed, starting new Kanchoku sequence", c);
             
             // Reset marker state for new sequence
             self.marker_first_key = Some(c);
@@ -955,20 +956,20 @@ impl PSKKEngine {
                 true,
             );
 
-            eprintln!("Simul processor output: output={:?}, pending={:?}, preedit_pending='{}', char='{}'",
+            debug!("Simul processor output: output={:?}, pending={:?}, preedit_pending='{}', char='{}'",
                   output, pending, self.preedit_pending, c);
 
             if let Some(ref out) = output {
                 if !out.is_empty() {
                     self.preedit_hiragana.push_str(out);
                     self.preedit_ascii.push(c);
-                    eprintln!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
+                    debug!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
                 }
             }
 
             self.preedit_pending = pending.unwrap_or_default();
             self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
-            eprintln!("Final preedit_string: '{}' (hiragana='{}' + pending='{}')",
+            debug!("Final preedit_string: '{}' (hiragana='{}' + pending='{}')",
                       self.preedit_string, self.preedit_hiragana, self.preedit_pending);
 
             return self.build_preedit_output();
@@ -977,7 +978,7 @@ impl PSKKEngine {
         // If in CONVERTING state and typing a new character (without holding space),
         // commit the selected candidate and continue with the new character
         if self.engine_state == EngineState::Converting {
-            eprintln!("Char input in CONVERTING: confirming '{}' and adding '{}'", self.preedit_string, c);
+            debug!("Char input in CONVERTING: confirming '{}' and adding '{}'", self.preedit_string, c);
             let commit = self.preedit_string.clone();
             self.engine_state = EngineState::Normal;
             self.conversion_yomi.clear();
@@ -1009,7 +1010,7 @@ impl PSKKEngine {
             true,
         );
 
-        eprintln!("Simul processor output: output={:?}, pending={:?}, preedit_pending='{}', char='{}'",
+        debug!("Simul processor output: output={:?}, pending={:?}, preedit_pending='{}', char='{}'",
               output, pending, self.preedit_pending, c);
 
         // For simultaneous input layouts, if output is empty but pending is not,
@@ -1018,7 +1019,7 @@ impl PSKKEngine {
             if !out.is_empty() {
                 self.preedit_hiragana.push_str(out);
                 self.preedit_ascii.push(c);
-                eprintln!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
+                debug!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
             }
         }
 
@@ -1027,39 +1028,39 @@ impl PSKKEngine {
         // For simultaneous input layouts, show both preedit_hiragana and preedit_pending
         // in the preedit display
         self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
-        eprintln!("Final preedit_string: '{}' (hiragana='{}' + pending='{}')",
+        debug!("Final preedit_string: '{}' (hiragana='{}' + pending='{}')",
                   self.preedit_string, self.preedit_hiragana, self.preedit_pending);
 
         self.build_preedit_output()
     }
 
     fn handle_character_release(&mut self, c: char) -> EngineOutput {
-        eprintln!("handle_character_release: c='{}', marker_state={:?}, marker_keys_held={:?}",
+        debug!("handle_character_release: c='{}', marker_state={:?}, marker_keys_held={:?}",
                   c, self.marker_state, self.marker_keys_held);
         
         // Track marker state transitions on key release
         if self.marker_state == MarkerState::FirstPressed {
             let key_str = c.to_string();
-            eprintln!("Removing '{}' from marker_keys_held", key_str);
+            debug!("Removing '{}' from marker_keys_held", key_str);
             self.marker_keys_held.remove(&key_str);
             
             // If all keys are released, transition to FirstReleased
             if self.marker_keys_held.is_empty() {
-                eprintln!("All keys released, transitioning to FirstReleased");
+                debug!("All keys released, transitioning to FirstReleased");
                 self.marker_state = MarkerState::FirstReleased;
             }
         }
         
         if self.marker_state == MarkerState::KanchokuSecondPressed {
             let key_str = c.to_string();
-            eprintln!("Kanchoku: Removing '{}' from marker_keys_held", key_str);
+            debug!("Kanchoku: Removing '{}' from marker_keys_held", key_str);
             self.marker_keys_held.remove(&key_str);
             
             // Don't transition state yet - wait for space release to process Kanchoku
-            eprintln!("Kanchoku: Key released, marker_keys_held={:?}", self.marker_keys_held);
+            debug!("Kanchoku: Key released, marker_keys_held={:?}", self.marker_keys_held);
         }
         
-        eprintln!("After release: marker_state={:?}, marker_keys_held={:?}",
+        debug!("After release: marker_state={:?}, marker_keys_held={:?}",
                   self.marker_state, self.marker_keys_held);
         
         // Return appropriate output based on engine state
@@ -1079,10 +1080,10 @@ impl PSKKEngine {
         self.conversion_yomi = self.preedit_string.clone();
         self.engine_state = EngineState::Converting;
         
-        eprintln!("Triggering conversion for yomi: '{}'", self.conversion_yomi);
+        debug!("Triggering conversion for yomi: '{}'", self.conversion_yomi);
         let candidates = self.henkan_processor.convert(&self.conversion_yomi).to_vec();
         let is_bunsetsu = self.henkan_processor.is_bunsetsu_mode();
-        eprintln!("Got {} candidates, is_bunsetsu_mode={}", candidates.len(), is_bunsetsu);
+        debug!("Got {} candidates, is_bunsetsu_mode={}", candidates.len(), is_bunsetsu);
         
         let mut output = EngineOutput::empty(self.mode);
         output.consumed = true;
@@ -1092,11 +1093,11 @@ impl PSKKEngine {
         
         if let Some(first) = candidates.first() {
             self.preedit_string = first.surface.clone();
-            eprintln!("Set preedit_string to first candidate: '{}'", self.preedit_string);
+            debug!("Set preedit_string to first candidate: '{}'", self.preedit_string);
         }
         
         output.preedit_segments = self.build_preedit_segments();
-        eprintln!("Built {} preedit segments", output.preedit_segments.len());
+        debug!("Built {} preedit segments", output.preedit_segments.len());
         
         output
     }
@@ -1191,7 +1192,7 @@ impl PSKKEngine {
         output.preedit_cursor_pos = self.preedit_string.chars().count();
         output.marker_state = self.marker_state;
         output.engine_state = self.get_engine_state();
-        eprintln!("Built preedit output: segments.len()={}, preedit_string='{}', cursor_pos={}",
+        debug!("Built preedit output: segments.len()={}, preedit_string='{}', cursor_pos={}",
                   output.preedit_segments.len(), self.preedit_string, output.preedit_cursor_pos);
         output
     }
@@ -1216,7 +1217,7 @@ impl PSKKEngine {
     }
 
     fn build_preedit_segments(&self) -> Vec<PreeditSegment> {
-        eprintln!("build_preedit_segments: engine_state={:?}, is_bunsetsu_mode={}, preedit_string='{}'",
+        debug!("build_preedit_segments: engine_state={:?}, is_bunsetsu_mode={}, preedit_string='{}'",
                   self.engine_state, self.henkan_processor.is_bunsetsu_mode(), self.preedit_string);
         
         if self.engine_state == EngineState::Converting && self.henkan_processor.is_bunsetsu_mode() {
@@ -1225,14 +1226,14 @@ impl PSKKEngine {
                 .into_iter()
                 .map(|(text, is_selected)| PreeditSegment { text, is_selected })
                 .collect::<Vec<_>>();
-            eprintln!("Returning {} bunsetsu segments", segments.len());
+            debug!("Returning {} bunsetsu segments", segments.len());
             segments
         } else {
             let segment = vec![PreeditSegment {
                 text: self.preedit_string.clone(),
                 is_selected: false,
             }];
-            eprintln!("Returning single segment with text: '{}'", self.preedit_string);
+            debug!("Returning single segment with text: '{}'", self.preedit_string);
             segment
         }
     }

@@ -6,6 +6,7 @@ use std::fmt;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use tracing_subscriber::{fmt as tracing_fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 pub const PACKAGE_NAME: &str = "pskk";
 pub const VERSION: &str = "0.0.1";
@@ -620,6 +621,66 @@ fn write_log(message: &str) -> Result<(), UtilError> {
         "[{:04}-{:02}-{:02} {:02}:{:02}:{:02}] {}",
         year, month, day, hours, minutes, seconds, message
     )?;
+    Ok(())
+}
+
+/// Initialize the tracing logging system based on config
+/// 
+/// Logs will be written to both stderr (if running in terminal) and to pskk.log file.
+/// The logging level is determined by:
+/// 1. RUST_LOG environment variable (highest priority)
+/// 2. logging_level from config file
+/// 3. "info" as default
+pub fn init_logging(config: Option<&Value>) -> Result<(), UtilError> {
+    let log_path = get_user_config_dir().join("pskk.log");
+    let log_file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)?;
+
+    // Read logging level from config, default to "info"
+    let log_level = config
+        .and_then(|c| c.get("logging_level"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("info");
+    
+    // Build filter: env var overrides config if set
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| {
+            // No env var set, use config value
+            EnvFilter::new(format!("pskk={}", log_level))
+        });
+
+    // Check if we're running in a terminal
+    let is_terminal = atty::is(atty::Stream::Stderr);
+    
+    if is_terminal {
+        // Terminal: log to both stderr and file
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(
+                tracing_fmt::layer()
+                    .with_writer(std::io::stderr)
+                    .with_ansi(true)  // Colorful output in terminal
+            )
+            .with(
+                tracing_fmt::layer()
+                    .with_writer(log_file)
+                    .with_ansi(false)  // No colors in file
+            )
+            .init();
+    } else {
+        // Non-terminal (service): log only to file
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(
+                tracing_fmt::layer()
+                    .with_writer(log_file)
+                    .with_ansi(false)
+            )
+            .init();
+    }
+
     Ok(())
 }
 
