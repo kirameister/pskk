@@ -776,13 +776,33 @@ impl PSKKEngine {
             self.marker_state = MarkerState::FirstPressed;
             debug!("First key '{}' pressed, transitioning to FirstPressed", c);
             
-            // If in CONVERTING state, don't commit yet and don't add to preedit
-            // Just track the first key and keep conversion active
-            // The conversion will be committed when space is released
+            // If in CONVERTING state, commit the conversion immediately and start new preedit
             if self.engine_state == EngineState::Converting {
-                debug!("First key '{}' pressed during conversion, keeping conversion active (not adding to preedit)", c);
-                // Just return the current conversion output without modifying preedit
-                return self.build_conversion_output();
+                debug!("First key '{}' pressed during conversion, committing conversion and starting new preedit", c);
+                let commit = self.preedit_string.clone();
+                self.engine_state = EngineState::Normal;
+                self.conversion_yomi.clear();
+                self.reset_preedit();
+                self.henkan_processor.reset();
+                
+                // Process the new character
+                let (output, pending) = self.simul_processor.get_layout_output("", &c.to_string(), true);
+                if let Some(ref out) = output {
+                    if !out.is_empty() {
+                        self.preedit_hiragana.push_str(out);
+                        self.preedit_ascii.push(c);
+                    }
+                }
+                self.preedit_pending = pending.unwrap_or_default();
+                self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
+                
+                // Return commit with new preedit
+                let mut result = EngineOutput::commit(commit, self.mode);
+                result.preedit_segments = self.build_preedit_segments();
+                result.preedit_cursor_pos = self.preedit_string.chars().count();
+                result.marker_state = self.marker_state;
+                result.engine_state = self.get_engine_state();
+                return result;
             }
             
             // If in BUNSETSU state, perform implicit conversion and commit before processing new character
