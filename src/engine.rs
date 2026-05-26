@@ -785,6 +785,9 @@ impl PSKKEngine {
                 self.reset_preedit();
                 self.henkan_processor.reset();
                 
+                // Clear preedit_before_marker to prevent old preedit from being restored
+                self.preedit_before_marker.clear();
+                
                 // Process the new character
                 let (output, pending) = self.simul_processor.get_layout_output("", &c.to_string(), true);
                 if let Some(ref out) = output {
