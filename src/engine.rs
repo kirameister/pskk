@@ -961,6 +961,8 @@ impl PSKKEngine {
                         self.preedit_string = self.preedit_before_marker.clone();
                         self.preedit_string.push_str(&kanji);
                         self.preedit_hiragana = self.preedit_before_marker.clone();
+                        self.preedit_hiragana.push_str(&kanji);
+                        self.preedit_pending.clear();
                         
                         self.marker_state = MarkerState::KanchokuSecondPressed;
                         
