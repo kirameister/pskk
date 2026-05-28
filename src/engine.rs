@@ -693,12 +693,16 @@ impl PSKKEngine {
             if let Some(first_char) = self.marker_first_key {
                 // Check if Kanchoku/simultaneous was already processed (second key exists)
                 if self.marker_second_key.is_some() {
-                    // If preedit has content, activate bunsetsu mode (simultaneous input)
-                    // If preedit is empty, return to Idle (Kanchoku was committed)
-                    if !self.preedit_string.is_empty() {
+                    // After Kanchoku/simultaneous input, determine next state
+                    if self.engine_state == EngineState::ForcedPreedit {
+                        // In forced preedit mode, stay in forced preedit after Kanchoku
+                        debug!("Kanchoku in forced preedit, staying in ForcedPreedit mode");
+                    } else if !self.preedit_string.is_empty() {
+                        // If preedit has content, activate bunsetsu mode (simultaneous input)
                         debug!("Simultaneous input processed, activating bunsetsu mode");
                         self.engine_state = EngineState::Bunsetsu;
                     } else {
+                        // If preedit is empty, return to Idle (Kanchoku was committed)
                         debug!("Kanchoku already committed, returning to Idle");
                         self.engine_state = EngineState::Normal;
                     }
@@ -808,8 +812,8 @@ impl PSKKEngine {
                 return result;
             }
             
-            // If in BUNSETSU state, perform implicit conversion and commit before processing new character
-            if self.engine_state == EngineState::Bunsetsu {
+            // If in BUNSETSU or FORCED_PREEDIT state, perform implicit conversion and commit before processing new character
+            if self.engine_state == EngineState::Bunsetsu || self.engine_state == EngineState::ForcedPreedit {
                 let yomi = self.preedit_string.clone();
                 let commit = if !yomi.is_empty() {
                     let candidates = self.henkan_processor.convert(&yomi).to_vec();
@@ -824,7 +828,7 @@ impl PSKKEngine {
                     String::new()
                 };
                 
-                self.engine_state = EngineState::Normal;
+                self.engine_state = EngineState::Bunsetsu;
                 self.reset_preedit();
                 self.henkan_processor.reset();
                 
