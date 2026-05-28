@@ -519,6 +519,21 @@ impl PSKKEngine {
                     return output;
                 }
                 
+                // If in forced preedit mode, save preedit and enter MarkerHeld for Kanchoku input
+                if self.engine_state == EngineState::ForcedPreedit {
+                    debug!("Space pressed in forced preedit mode, entering MarkerHeld for Kanchoku");
+                    self.marker_state = MarkerState::MarkerHeld;
+                    self.preedit_before_marker = self.preedit_string.clone();
+                    self.marker_had_input = false;
+                    self.marker_keys_held.clear();
+                    self.marker_first_key = None;
+                    self.marker_second_key = None;
+                    
+                    let mut output = self.build_preedit_output();
+                    output.marker_state = self.marker_state;
+                    return output;
+                }
+                
                 // If there's existing preedit in normal mode, commit it first
                 if !self.preedit_string.is_empty() {
                     debug!("Space pressed with existing preedit '{}', committing it", self.preedit_string);
@@ -812,8 +827,9 @@ impl PSKKEngine {
                 return result;
             }
             
-            // If in BUNSETSU or FORCED_PREEDIT state, perform implicit conversion and commit before processing new character
-            if self.engine_state == EngineState::Bunsetsu || self.engine_state == EngineState::ForcedPreedit {
+            // If in BUNSETSU state, perform implicit conversion and commit before processing new character
+            // Note: ForcedPreedit is NOT included here because we want to allow Kanchoku input
+            if self.engine_state == EngineState::Bunsetsu {
                 let yomi = self.preedit_string.clone();
                 let commit = if !yomi.is_empty() {
                     let candidates = self.henkan_processor.convert(&yomi).to_vec();
