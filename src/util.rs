@@ -767,6 +767,19 @@ fn initialize_user_config_files() -> Result<Vec<String>, UtilError> {
         ));
     }
     
+    // Create empty user_dictionary.json if it doesn't exist
+    let user_dict_path = user_config_dir.join("user_dictionary.json");
+    if !user_dict_path.exists() {
+        let empty_user_dict = json!({
+            "entries": []
+        });
+        write_json_value(&user_dict_path, &empty_user_dict)?;
+        warnings.push(format!(
+            "Created empty user_dictionary.json at {}",
+            user_dict_path.display()
+        ));
+    }
+    
     Ok(warnings)
 }
 
