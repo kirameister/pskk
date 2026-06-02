@@ -7,7 +7,67 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <!-- Empty window - no content yet -->
+    <div class="container">
+        <!-- Add New Entry Section -->
+        <div class="section add-entry-section">
+            <h2>Add New Entry</h2>
+            <div class="add-entry-form">
+                <label for="reading-input">Reading:</label>
+                <input type="text" id="reading-input" placeholder="かな" />
+                
+                <span class="arrow">→</span>
+                
+                <label for="kanji-input">Kanji:</label>
+                <input type="text" id="kanji-input" placeholder="漢字" />
+                
+                <button id="add-button" class="btn btn-primary">Add</button>
+            </div>
+        </div>
+
+        <!-- Dictionary Entries Section -->
+        <div class="section entries-section">
+            <h2>Dictionary Entries</h2>
+            
+            <!-- Search Box -->
+            <div class="search-box">
+                <label for="search-input">Search:</label>
+                <input type="text" id="search-input" placeholder="Filter by reading or kanji..." />
+                <button id="clear-search-button" class="btn btn-secondary">Clear</button>
+            </div>
+
+            <!-- Entries Table -->
+            <div class="table-container">
+                <table id="entries-table">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-column="reading">Reading</th>
+                            <th class="sortable" data-column="kanji">Kanji</th>
+                            <th class="sortable" data-column="count">Count</th>
+                        </tr>
+                    </thead>
+                    <tbody id="entries-tbody">
+                        <!-- Entries will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Entry Count and Actions -->
+            <div class="entries-footer">
+                <div class="entry-count" id="entry-count">0 entries</div>
+                <div class="action-buttons">
+                    <button id="delete-button" class="btn btn-danger">Delete Selected</button>
+                    <button id="refresh-button" class="btn btn-secondary">Refresh</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Bar -->
+        <div class="bottom-bar">
+            <div class="file-path" id="file-path">~/.config/pskk/user_dictionary.json</div>
+            <button id="close-button" class="btn btn-secondary">Close</button>
+        </div>
+    </div>
+
     <script type="module" src="main.js"></script>
 </body>
 </html>

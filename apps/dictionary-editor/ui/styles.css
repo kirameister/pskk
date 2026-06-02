@@ -9,4 +9,265 @@
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     background-color: #f5f5f5;
+    padding: 10px;
+}
+
+.container {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* Section Styling */
+.section {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 15px;
+}
+
+.section h2 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eee;
+}
+
+/* Add Entry Form */
+.add-entry-form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.add-entry-form label {
+    font-size: 14px;
+    color: #333;
+}
+
+.add-entry-form input[type="text"] {
+    flex: 1;
+    min-width: 150px;
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.add-entry-form input[type="text"]:focus {
+    outline: none;
+    border-color: #4a90e2;
+    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+}
+
+.add-entry-form .arrow {
+    font-size: 18px;
+    color: #666;
+    margin: 0 5px;
+}
+
+/* Search Box */
+.search-box {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.search-box label {
+    font-size: 14px;
+    color: #333;
+}
+
+.search-box input[type="text"] {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.search-box input[type="text"]:focus {
+    outline: none;
+    border-color: #4a90e2;
+    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+}
+
+/* Table Container */
+.table-container {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin-bottom: 10px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+thead {
+    position: sticky;
+    top: 0;
+    background: #f8f8f8;
+    z-index: 10;
+}
+
+th {
+    padding: 10px;
+    text-align: left;
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+    border-bottom: 2px solid #ddd;
+    cursor: pointer;
+    user-select: none;
+}
+
+th.sortable:hover {
+    background: #eee;
+}
+
+th.sortable::after {
+    content: ' ⇅';
+    opacity: 0.3;
+    font-size: 11px;
+}
+
+th.sort-asc::after {
+    content: ' ▲';
+    opacity: 1;
+}
+
+th.sort-desc::after {
+    content: ' ▼';
+    opacity: 1;
+}
+
+tbody tr {
+    border-bottom: 1px solid #eee;
+}
+
+tbody tr:hover {
+    background: #f9f9f9;
+}
+
+tbody tr.selected {
+    background: #e3f2fd;
+}
+
+td {
+    padding: 8px 10px;
+    font-size: 14px;
+    color: #333;
+}
+
+td.editable {
+    cursor: pointer;
+}
+
+td.editable:hover {
+    background: #f0f0f0;
+}
+
+/* Entries Footer */
+.entries-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.entry-count {
+    font-size: 13px;
+    color: #666;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+/* Bottom Bar */
+.bottom-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+
+.file-path {
+    font-size: 12px;
+    color: #666;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    margin-right: 15px;
+}
+
+/* Buttons */
+.btn {
+    padding: 6px 14px;
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+.btn-primary {
+    background: #4a90e2;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #357abd;
+}
+
+.btn-secondary {
+    background: #e0e0e0;
+    color: #333;
+}
+
+.btn-secondary:hover {
+    background: #d0d0d0;
+}
+
+.btn-danger {
+    background: #e74c3c;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c0392b;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn:disabled:hover {
+    transform: none;
+    box-shadow: none;
 }
