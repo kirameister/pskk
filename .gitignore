@@ -1,3 +1,4 @@
 target/
-apps/settings/ui/node_modules/
-apps/settings/ui/dist/
+**/node_modules/
+**/dist/
+**/.vite/
