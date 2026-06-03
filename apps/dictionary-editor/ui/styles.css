@@ -12,6 +12,18 @@ body {
     padding: 10px;
 }
 
+/* Hide native number input spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
 .container {
     max-width: 900px;
     margin: 0 auto;

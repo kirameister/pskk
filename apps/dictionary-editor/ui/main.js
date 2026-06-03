@@ -261,22 +261,22 @@ function handleCountEdit(entry, cell) {
     const wrapper = document.createElement('div');
     wrapper.style.cssText = 'display:flex; align-items:center; gap:2px;';
 
-    const decBtn = document.createElement('button');
-    decBtn.textContent = '−';
-    decBtn.style.cssText = 'width:20px; padding:0; cursor:pointer; line-height:1.4;';
-
     const input = document.createElement('input');
     input.type = 'number';
     input.min = '1';
     input.value = currentValue;
     input.style.cssText = 'width:50px; padding:2px 4px; text-align:right;';
 
+    const decBtn = document.createElement('button');
+    decBtn.textContent = '−';
+    decBtn.style.cssText = 'width:20px; padding:0; cursor:pointer; line-height:1.4;';
+
     const incBtn = document.createElement('button');
     incBtn.textContent = '+';
     incBtn.style.cssText = 'width:20px; padding:0; cursor:pointer; line-height:1.4;';
 
-    wrapper.appendChild(decBtn);
     wrapper.appendChild(input);
+    wrapper.appendChild(decBtn);
     wrapper.appendChild(incBtn);
     cell.appendChild(wrapper);
     input.focus();
