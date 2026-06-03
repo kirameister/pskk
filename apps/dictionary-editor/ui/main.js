@@ -278,13 +278,22 @@ function handleCountEdit(entry, cell) {
         cell.textContent = newValue;
     };
 
-    input.addEventListener('blur', saveEdit);
+    // Use setTimeout to allow spinner buttons to update value before blur
+    input.addEventListener('blur', () => {
+        setTimeout(saveEdit, 100);
+    });
+    
     input.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             saveEdit();
         } else if (e.key === 'Escape') {
             cell.textContent = currentValue;
         }
+    });
+    
+    // Also save on change event (when spinner buttons are used)
+    input.addEventListener('change', () => {
+        saveEdit();
     });
 }
 
