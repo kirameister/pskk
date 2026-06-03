@@ -266,6 +266,8 @@ function handleCountEdit(entry, cell) {
     input.focus();
     input.select();
 
+    let isUsingSpinner = false;
+
     const saveEdit = () => {
         const newValue = parseInt(input.value);
         if (isNaN(newValue) || newValue < 1) {
@@ -278,9 +280,25 @@ function handleCountEdit(entry, cell) {
         cell.textContent = newValue;
     };
 
-    // Use setTimeout to allow spinner buttons to update value before blur
+    // Detect when spinner buttons are being used
+    input.addEventListener('mousedown', () => {
+        isUsingSpinner = true;
+    });
+
+    input.addEventListener('mouseup', () => {
+        setTimeout(() => {
+            isUsingSpinner = false;
+        }, 100);
+    });
+
+    // Only close on blur if not using spinner buttons
     input.addEventListener('blur', () => {
-        setTimeout(saveEdit, 100);
+        if (!isUsingSpinner) {
+            setTimeout(saveEdit, 100);
+        } else {
+            // Re-focus to keep editing
+            setTimeout(() => input.focus(), 0);
+        }
     });
     
     input.addEventListener('keypress', (e) => {
@@ -291,9 +309,12 @@ function handleCountEdit(entry, cell) {
         }
     });
     
-    // Also save on change event (when spinner buttons are used)
+    // Update entry value on change (when spinner buttons are used)
     input.addEventListener('change', () => {
-        saveEdit();
+        const newValue = parseInt(input.value);
+        if (!isNaN(newValue) && newValue >= 1) {
+            entry.count = newValue;
+        }
     });
 }
 
