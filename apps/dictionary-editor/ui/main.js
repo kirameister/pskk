@@ -266,7 +266,7 @@ function handleCountEdit(entry, cell) {
     input.focus();
     input.select();
 
-    let isUsingSpinner = false;
+    let isInteracting = false;
 
     const saveEdit = () => {
         const newValue = parseInt(input.value);
@@ -280,28 +280,28 @@ function handleCountEdit(entry, cell) {
         cell.textContent = newValue;
     };
 
-    // Detect when spinner buttons are being used
+    // Track when user is actively interacting with spinner buttons
     input.addEventListener('mousedown', () => {
-        isUsingSpinner = true;
+        isInteracting = true;
     });
 
     input.addEventListener('mouseup', () => {
+        // Keep interaction flag for a moment to prevent blur
         setTimeout(() => {
-            isUsingSpinner = false;
-        }, 100);
+            isInteracting = false;
+        }, 150);
     });
 
-    // Only close on blur if not using spinner buttons
+    // Only save on blur if not actively interacting with spinners
     input.addEventListener('blur', () => {
-        if (!isUsingSpinner) {
-            setTimeout(saveEdit, 100);
-        } else {
-            // Re-focus to keep editing
-            setTimeout(() => input.focus(), 0);
-        }
+        setTimeout(() => {
+            if (!isInteracting) {
+                saveEdit();
+            }
+        }, 50);
     });
     
-    input.addEventListener('keypress', (e) => {
+    input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             saveEdit();
         } else if (e.key === 'Escape') {
@@ -309,8 +309,8 @@ function handleCountEdit(entry, cell) {
         }
     });
     
-    // Update entry value on change (when spinner buttons are used)
-    input.addEventListener('change', () => {
+    // Update entry value on input (when spinner buttons or typing)
+    input.addEventListener('input', () => {
         const newValue = parseInt(input.value);
         if (!isNaN(newValue) && newValue >= 1) {
             entry.count = newValue;
