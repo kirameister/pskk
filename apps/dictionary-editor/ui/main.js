@@ -254,19 +254,33 @@ function renderTable() {
 // Handle Count Edit
 function handleCountEdit(entry, cell) {
     const currentValue = entry.count;
+
+    cell.textContent = '';
+    cell.style.padding = '2px';
+
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'display:flex; align-items:center; gap:2px;';
+
+    const decBtn = document.createElement('button');
+    decBtn.textContent = '−';
+    decBtn.style.cssText = 'width:20px; padding:0; cursor:pointer; line-height:1.4;';
+
     const input = document.createElement('input');
     input.type = 'number';
     input.min = '1';
     input.value = currentValue;
-    input.style.width = '60px';
-    input.style.padding = '2px 4px';
+    input.style.cssText = 'width:50px; padding:2px 4px; text-align:right;';
 
-    cell.textContent = '';
-    cell.appendChild(input);
+    const incBtn = document.createElement('button');
+    incBtn.textContent = '+';
+    incBtn.style.cssText = 'width:20px; padding:0; cursor:pointer; line-height:1.4;';
+
+    wrapper.appendChild(decBtn);
+    wrapper.appendChild(input);
+    wrapper.appendChild(incBtn);
+    cell.appendChild(wrapper);
     input.focus();
     input.select();
-
-    let isInteracting = false;
 
     const saveEdit = () => {
         const newValue = parseInt(input.value);
@@ -275,41 +289,39 @@ function handleCountEdit(entry, cell) {
             input.focus();
             return;
         }
-
         entry.count = newValue;
+        cell.style.padding = '';
         cell.textContent = newValue;
     };
 
-    // Track when user is actively interacting with spinner buttons
-    input.addEventListener('mousedown', () => {
-        isInteracting = true;
+    // Use pointerdown + preventDefault to adjust value without stealing focus
+    decBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); // keeps focus on input
+        const val = parseInt(input.value) || 1;
+        if (val > 1) {
+            input.value = val - 1;
+            entry.count = val - 1;
+        }
     });
 
-    input.addEventListener('mouseup', () => {
-        // Keep interaction flag for a moment to prevent blur
-        setTimeout(() => {
-            isInteracting = false;
-        }, 150);
+    incBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); // keeps focus on input
+        const val = parseInt(input.value) || 1;
+        input.value = val + 1;
+        entry.count = val + 1;
     });
 
-    // Only save on blur if not actively interacting with spinners
-    input.addEventListener('blur', () => {
-        setTimeout(() => {
-            if (!isInteracting) {
-                saveEdit();
-            }
-        }, 50);
-    });
-    
+    input.addEventListener('blur', saveEdit);
+
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             saveEdit();
         } else if (e.key === 'Escape') {
+            cell.style.padding = '';
             cell.textContent = currentValue;
         }
     });
-    
-    // Update entry value on input (when spinner buttons or typing)
+
     input.addEventListener('input', () => {
         const newValue = parseInt(input.value);
         if (!isNaN(newValue) && newValue >= 1) {
