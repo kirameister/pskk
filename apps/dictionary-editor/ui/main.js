@@ -1,4 +1,5 @@
 // PSKK Dictionary Editor - Main JavaScript
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 console.log('PSKK Dictionary Editor loaded');
 
@@ -193,10 +194,9 @@ function handleRefresh() {
 }
 
 // Handle Close
-function handleClose() {
-    // In real implementation, this would close the Tauri window
-    console.log('Close button clicked');
-    alert('Close functionality will be implemented with Tauri commands');
+async function handleClose() {
+    const appWindow = getCurrentWindow();
+    await appWindow.close();
 }
 
 // Render Table
