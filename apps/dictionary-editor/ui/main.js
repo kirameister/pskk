@@ -1,20 +1,12 @@
 // PSKK Dictionary Editor - Main JavaScript
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { readText } from '@tauri-apps/plugin-clipboard-manager';
+import { invoke } from '@tauri-apps/api/core';
 
 console.log('PSKK Dictionary Editor loaded');
 
-// Mock data for demonstration (will be replaced with Tauri commands later)
-let mockEntries = [
-    { reading: 'たなか', kanji: '田中', count: 5 },
-    { reading: 'たなか', kanji: '棚下', count: 1 },
-    { reading: 'ひろし', kanji: '博', count: 3 },
-    { reading: 'ひろし', kanji: '宏', count: 2 },
-    { reading: 'さとう', kanji: '佐藤', count: 4 },
-];
-
-let allEntries = [...mockEntries];
-let filteredEntries = [...allEntries];
+let allEntries = [];
+let filteredEntries = [];
 let selectedRows = new Set();
 let sortColumn = null;
 let sortDirection = 'asc';
@@ -34,9 +26,35 @@ const closeButton = document.getElementById('close-button');
 // Initialize
 async function init() {
     setupEventListeners();
+    await loadDictionaryFromFile();
     renderTable();
     updateEntryCount();
     await prefillFromClipboardAndArgs();
+}
+
+// Load dictionary from file
+async function loadDictionaryFromFile() {
+    try {
+        const entries = await invoke('load_dictionary');
+        allEntries = entries;
+        filteredEntries = [...allEntries];
+        console.log('Loaded dictionary:', entries.length, 'entries');
+    } catch (err) {
+        console.error('Failed to load dictionary:', err);
+        allEntries = [];
+        filteredEntries = [];
+    }
+}
+
+// Save dictionary to file
+async function saveDictionaryToFile() {
+    try {
+        await invoke('save_dictionary', { entries: allEntries });
+        console.log('Dictionary saved successfully');
+    } catch (err) {
+        console.error('Failed to save dictionary:', err);
+        alert('Failed to save dictionary: ' + err);
+    }
 }
 
 // Pre-fill form from clipboard and launch arguments
@@ -130,7 +148,7 @@ function setupEventListeners() {
 }
 
 // Handle Add
-function handleAdd() {
+async function handleAdd() {
     const reading = readingInput.value.trim();
     const kanji = kanjiInput.value.trim();
 
@@ -153,6 +171,9 @@ function handleAdd() {
     } else {
         allEntries.push({ reading, kanji, count: 1 });
     }
+
+    // Save to file
+    await saveDictionaryToFile();
 
     // Set search to show the added entry
     searchInput.value = reading;
@@ -221,7 +242,7 @@ function handleSort(column) {
 }
 
 // Handle Delete
-function handleDelete() {
+async function handleDelete() {
     if (selectedRows.size === 0) {
         alert('Please select entries to delete.');
         return;
@@ -236,6 +257,9 @@ function handleDelete() {
     const toDelete = Array.from(selectedRows);
     allEntries = allEntries.filter((_, index) => !toDelete.includes(index));
     
+    // Save to file
+    await saveDictionaryToFile();
+    
     selectedRows.clear();
     handleSearch(); // Refilter
     renderTable();
@@ -243,10 +267,10 @@ function handleDelete() {
 }
 
 // Handle Refresh
-function handleRefresh() {
-    // In real implementation, this would reload from file
-    // For now, just re-render
+async function handleRefresh() {
     selectedRows.clear();
+    await loadDictionaryFromFile();
+    handleSearch(); // Reapply current search filter
     renderTable();
     updateEntryCount();
 }
@@ -340,7 +364,7 @@ function handleCountEdit(entry, cell) {
     input.focus();
     input.select();
 
-    const saveEdit = () => {
+    const saveEdit = async () => {
         const newValue = parseInt(input.value);
         if (isNaN(newValue) || newValue < 1) {
             alert('Count must be at least 1.');
@@ -350,6 +374,9 @@ function handleCountEdit(entry, cell) {
         entry.count = newValue;
         cell.style.padding = '';
         cell.textContent = newValue;
+        
+        // Save to file
+        await saveDictionaryToFile();
     };
 
     // Use pointerdown + preventDefault to adjust value without stealing focus
