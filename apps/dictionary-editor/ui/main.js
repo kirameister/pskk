@@ -1,5 +1,6 @@
 // PSKK Dictionary Editor - Main JavaScript
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { readText } from '@tauri-apps/plugin-clipboard-manager';
 
 console.log('PSKK Dictionary Editor loaded');
 
@@ -31,10 +32,67 @@ const refreshButton = document.getElementById('refresh-button');
 const closeButton = document.getElementById('close-button');
 
 // Initialize
-function init() {
+async function init() {
     setupEventListeners();
     renderTable();
     updateEntryCount();
+    await prefillFromClipboardAndArgs();
+}
+
+// Pre-fill form from clipboard and launch arguments
+async function prefillFromClipboardAndArgs() {
+    try {
+        // Get launch arguments from window label (will be set by Rust backend)
+        const appWindow = getCurrentWindow();
+        const label = appWindow.label;
+        
+        // Parse label for prefill data (format: "dict-editor-reading:yomi-candidate:kanji")
+        let prefillReading = null;
+        let prefillCandidate = null;
+        
+        if (label && label.startsWith('dict-editor-')) {
+            const data = label.substring('dict-editor-'.length);
+            const parts = data.split('-candidate:');
+            if (parts.length === 2) {
+                prefillReading = parts[0].replace('reading:', '');
+                prefillCandidate = parts[1];
+            } else if (data.startsWith('reading:')) {
+                prefillReading = data.replace('reading:', '');
+            }
+        }
+        
+        // If no candidate provided, try to get from clipboard
+        if (!prefillCandidate) {
+            try {
+                const clipboardText = await readText();
+                if (clipboardText && clipboardText.trim()) {
+                    prefillCandidate = clipboardText.trim();
+                    console.log('Pre-filled candidate from clipboard:', prefillCandidate);
+                }
+            } catch (err) {
+                console.log('Could not read clipboard:', err);
+            }
+        }
+        
+        // Pre-fill the form fields
+        if (prefillReading) {
+            readingInput.value = prefillReading;
+            console.log('Pre-filled reading:', prefillReading);
+        }
+        
+        if (prefillCandidate) {
+            kanjiInput.value = prefillCandidate;
+            console.log('Pre-filled candidate:', prefillCandidate);
+            // Focus on candidate with text selected for easy replacement
+            kanjiInput.focus();
+            kanjiInput.select();
+        } else if (prefillReading) {
+            // Reading is pre-filled but not candidate: focus on candidate entry
+            kanjiInput.focus();
+        }
+    } catch (err) {
+        console.error('Error in prefillFromClipboardAndArgs:', err);
+    }
 }
 
 // Setup Event Listeners
