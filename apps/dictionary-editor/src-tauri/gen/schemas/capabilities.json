@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default capability for the PSKK settings app","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-close"]}}
+{"default":{"identifier":"default","description":"Default capability for the PSKK dictionary editor app","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-close","clipboard-manager:allow-read-text"]}}

@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capability for the PSKK settings app",
+  "description": "Default capability for the PSKK dictionary editor app",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "clipboard-manager:allow-read-text"
   ]
 }
