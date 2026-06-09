@@ -20,6 +20,21 @@ server-run:
 server-dev:
   cargo run --bin pskk-server
 
+# IBus Engine
+ibus-build:
+  cargo build --release --bin pskk
+
+ibus-run:
+  cargo run --bin pskk
+
+ibus-dev:
+  cargo run --bin pskk
+
+ibus-install:
+  sudo cp target/release/pskk /opt/pskk/libexec/
+  sudo cp packaging/pskk.xml /usr/share/ibus/component/
+  ibus restart
+
 # Settings app
 settings-ui-install:
   cd apps/settings/ui && npm install

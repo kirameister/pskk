@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<component>
+  <name>net.kirameister.pskk</name>
+  <description>PSKK - Japanese Input Method Engine</description>
+  <exec>/opt/pskk/libexec/pskk --ibus</exec>
+  <version>0.1.0</version>
+  <author>Akira K.</author>
+  <license>MIT</license>
+  <homepage>https://github.com/kirameister/pskk</homepage>
+  <textdomain>pskk</textdomain>
+
+  <engines>
+    <engine>
+      <name>pskk</name>
+      <language>ja</language>
+      <license>MIT</license>
+      <author>Akira K.</author>
+      <icon>/opt/pskk/share/icons/pskk.png</icon>
+      <layout>default</layout>
+      <layout_variant></layout_variant>
+      <layout_option></layout_option>
+      <rank>99</rank>
+      <symbol>あ</symbol>
+      <longname>PSKK</longname>
+      <description>PSKK - Japanese Input Method with Kanchoku support</description>
+      <icon_prop_key>InputMode</icon_prop_key>
+      <setup>/opt/pskk/bin/pskk-settings</setup>
+    </engine>
+  </engines>
+</component>
