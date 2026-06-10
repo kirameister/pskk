@@ -1,10 +1,13 @@
+mod ibus_engine;
+
 use glib::MainLoop;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::runtime::Runtime;
 use pskk::grpc::client::PSKKClient;
 use pskk::util::{get_config_data, init_logging};
-use tracing::{info, error, warn};
+use tracing::{info, error};
+use ibus_engine::PskkIBusEngine;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
@@ -15,7 +18,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_logging(config.as_ref())?;
     
     info!("Starting PSKK IBus Engine...");
-    info!("This is a minimal IBus engine stub - full implementation coming next");
 
     // Create tokio runtime for async operations
     let rt = Arc::new(Runtime::new()?);
@@ -41,15 +43,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("Failed to connect to PSKK gRPC server".into());
     }
     
+    let client = client.unwrap();
+    
+    info!("Initializing IBus engine...");
+    
+    // Create and run the IBus engine
+    let engine = PskkIBusEngine::new(client, rt.clone())?;
+    
     info!("PSKK IBus engine initialized successfully");
-    warn!("Note: Full IBus protocol implementation is not yet complete");
-    warn!("      This is a minimal stub for testing the build system");
     info!("Entering main loop...");
     
     // Run the main loop
-    // TODO: Implement actual IBus engine protocol using D-Bus
-    let main_loop = MainLoop::new(None, false);
-    main_loop.run();
+    engine.run()?;
 
     Ok(())
 }

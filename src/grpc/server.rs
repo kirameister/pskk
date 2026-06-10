@@ -45,7 +45,11 @@ impl PskkService for PSKKServiceImpl {
     ) -> Result<Response<EngineOutput>, Status> {
         let key_event = request.into_inner();
 
-        let key_char = key_event.key_char.and_then(|s| s.chars().next());
+        let key_char = if key_event.key_char.is_empty() {
+            None
+        } else {
+            key_event.key_char.chars().next()
+        };
 
         let mut engine = self
             .engine

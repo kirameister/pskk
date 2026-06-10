@@ -20,18 +20,18 @@ server-run:
 server-dev:
   cargo run --bin pskk-server
 
-# IBus Engine
-ibus-build:
-  cargo build --release --bin pskk
+# IBus Engine (Python client)
+ibus-generate-grpc:
+  python3 -m grpc_tools.protoc -I./proto --python_out=./proto --grpc_python_out=./proto ./proto/pskk.proto
 
 ibus-run:
-  cargo run --bin pskk
-
-ibus-dev:
-  cargo run --bin pskk
+  ./ibus-engine-pskk.py
 
 ibus-install:
-  sudo cp target/release/pskk /opt/pskk/libexec/
+  sudo mkdir -p /opt/pskk/libexec
+  sudo cp ibus-engine-pskk.py /opt/pskk/libexec/
+  sudo chmod +x /opt/pskk/libexec/ibus-engine-pskk.py
+  sudo cp proto/pskk_pb2.py proto/pskk_pb2_grpc.py /opt/pskk/libexec/ || echo "Run 'just ibus-generate-grpc' first"
   sudo cp packaging/pskk.xml /usr/share/ibus/component/
   ibus restart
 

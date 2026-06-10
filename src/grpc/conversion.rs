@@ -23,7 +23,7 @@ pub fn engine_output_to_proto(output: RustEngineOutput) -> EngineOutput {
     };
 
     EngineOutput {
-        commit_string: output.commit_string,
+        commit_string: output.commit_string.unwrap_or_default(),
         preedit_segments: output
             .preedit_segments
             .into_iter()

@@ -2,7 +2,7 @@
 <component>
   <name>net.kirameister.pskk</name>
   <description>PSKK - Japanese Input Method Engine</description>
-  <exec>/opt/pskk/libexec/pskk --ibus</exec>
+  <exec>/opt/pskk/libexec/ibus-engine-pskk.py</exec>
   <version>0.1.0</version>
   <author>Akira K.</author>
   <license>MIT</license>

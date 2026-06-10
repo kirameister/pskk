@@ -35,8 +35,8 @@ message Empty {}
 
 // Keyboard event from the client
 message KeyEvent {
-  // Single character if printable, null otherwise
-  optional string key_char = 1;
+  // Single character if printable, empty string otherwise
+  string key_char = 1;
   
   // Key name (e.g., "a", "Space", "Enter", "Escape")
   string key_name = 2;
@@ -102,8 +102,8 @@ message DictionarySizeResponse {
 
 // Engine output - everything the client needs to update UI
 message EngineOutput {
-  // Text to commit to the application (if any)
-  optional string commit_string = 1;
+  // Text to commit to the application (empty string if none)
+  string commit_string = 1;
 
   // Preedit (composition) segments
   repeated PreeditSegment preedit_segments = 2;

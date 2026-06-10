@@ -28,7 +28,7 @@ impl PSKKClient {
         alt: bool,
     ) -> Result<crate::grpc::proto::EngineOutput, String> {
         let request = tonic::Request::new(KeyEvent {
-            key_char: key_char.map(|c| c.to_string()),
+            key_char: key_char.map(|c| c.to_string()).unwrap_or_default(),
             key_name,
             is_pressed,
             modifiers: Some(KeyModifiers { shift, ctrl, alt }),
