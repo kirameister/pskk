@@ -10,6 +10,8 @@ from gi.repository import IBus, GLib
 import grpc
 import sys
 import logging
+import subprocess
+import time
 from pathlib import Path
 
 # Add proto directory to path
@@ -43,23 +45,100 @@ class PSKKEngine(IBus.Engine):
         super().__init__()
         logger.info("Initializing PSKK Engine")
         
-        # Connect to gRPC server
+        # Connect to gRPC server (auto-start if needed)
         self.channel = None
         self.stub = None
+        self.server_process = None
         self.connect_to_server()
         
         # Property list for the input mode menu
         self._prop_list = self._create_properties()
+    
+    def _is_server_running(self):
+        """Check if the gRPC server is already running"""
+        try:
+            channel = grpc.insecure_channel('localhost:50051')
+            stub = pskk_pb2_grpc.PSKKServiceStub(channel)
+            # Try a quick health check
+            stub.GetMode(pskk_pb2.Empty(), timeout=0.5)
+            channel.close()
+            return True
+        except:
+            return False
+    
+    def _start_server(self):
+        """Start the pskk-server process"""
+        # Try to find the server binary
+        server_paths = [
+            '/opt/pskk/bin/pskk-server',  # Installed location
+            Path(__file__).parent / 'target/release/pskk-server',  # Dev build
+            Path(__file__).parent / 'target/debug/pskk-server',  # Dev debug build
+        ]
+        
+        server_binary = None
+        for path in server_paths:
+            if Path(path).exists():
+                server_binary = str(path)
+                break
+        
+        if not server_binary:
+            logger.error("Could not find pskk-server binary")
+            logger.error("Tried: " + ", ".join(str(p) for p in server_paths))
+            return False
+        
+        try:
+            logger.info(f"Starting pskk-server: {server_binary}")
+            # Start the server process in the background
+            self.server_process = subprocess.Popen(
+                [server_binary],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True  # Detach from parent
+            )
+            
+            # Wait a bit for the server to start
+            time.sleep(0.5)
+            
+            # Check if it's running
+            if self.server_process.poll() is not None:
+                # Process exited immediately
+                stderr = self.server_process.stderr.read().decode('utf-8')
+                logger.error(f"Server failed to start: {stderr}")
+                return False
+            
+            logger.info("pskk-server started successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to start pskk-server: {e}")
+            return False
         
     def connect_to_server(self):
-        """Connect to the PSKK gRPC server"""
+        """Connect to the PSKK gRPC server, starting it if necessary"""
+        # Check if server is already running
+        if self._is_server_running():
+            logger.info("pskk-server is already running")
+        else:
+            logger.info("pskk-server not running, starting it...")
+            if not self._start_server():
+                logger.error("Failed to start pskk-server")
+                return
+            
+            # Wait a bit more and retry connection
+            time.sleep(0.5)
+        
+        # Connect to the server
         try:
             self.channel = grpc.insecure_channel('localhost:50051')
             self.stub = pskk_pb2_grpc.PSKKServiceStub(self.channel)
-            logger.info("Connected to PSKK gRPC server at localhost:50051")
+            
+            # Verify connection
+            self.stub.GetMode(pskk_pb2.Empty(), timeout=1.0)
+            logger.info("✓ Connected to PSKK gRPC server at localhost:50051")
+            
         except Exception as e:
-            logger.error(f"Failed to connect to PSKK gRPC server: {e}")
-            logger.error("Make sure pskk-server is running: cargo run --bin pskk-server")
+            logger.error(f"✗ Failed to connect to PSKK gRPC server: {e}")
+            logger.error("  The server may not be running properly")
     
     def _create_properties(self):
         """Create the property menu for input mode switching"""
@@ -169,7 +248,6 @@ class PSKKEngine(IBus.Engine):
     
     def _open_settings(self):
         """Open PSKK settings application"""
-        import subprocess
         try:
             subprocess.Popen(['pskk-settings'])
         except Exception as e:

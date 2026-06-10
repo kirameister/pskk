@@ -9,7 +9,11 @@ IBus ↔ Python Client (ibus-engine-pskk.py) ↔ gRPC ↔ Rust Server (pskk-serv
 ```
 
 - **Python Client**: Thin wrapper that implements the IBus.Engine interface
+  - **Auto-starts the server** if not already running
+  - Manages server lifecycle
 - **Rust Server**: Core engine logic, dictionary handling, conversion
+  - Runs in the background
+  - Shared across all applications
 
 ## Prerequisites
 
@@ -54,15 +58,18 @@ just server-build
 
 ### 3. Test Locally
 
-Terminal 1 - Start the gRPC server:
-```bash
-just server-run
-```
+The server will auto-start, so you only need to run:
 
-Terminal 2 - Run the IBus engine:
 ```bash
 just ibus-run
 ```
+
+Or run directly:
+```bash
+./ibus-engine-pskk.py
+```
+
+The Python client will automatically start `pskk-server` if it's not already running.
 
 ### 4. Install System-Wide
 
@@ -111,14 +118,25 @@ pip3 install --user grpcio-tools
 
 ### "Failed to connect to PSKK gRPC server"
 
-Make sure the server is running:
+The client should auto-start the server, but if it fails:
+
+1. Check if the server binary exists:
 ```bash
+ls -l /opt/pskk/bin/pskk-server
+# or for development:
+ls -l target/release/pskk-server
+```
+
+2. Try starting it manually to see errors:
+```bash
+/opt/pskk/bin/pskk-server
+# or
 cargo run --bin pskk-server
 ```
 
-Or check if it's installed:
+3. Check if port 50051 is already in use:
 ```bash
-/opt/pskk/bin/pskk-server
+lsof -i :50051
 ```
 
 ### "Failed to connect to IBus daemon"
@@ -144,10 +162,20 @@ Or run the engine directly to see output:
 
 1. **Make changes to Rust engine** (`src/engine.rs`, etc.)
 2. **Rebuild server**: `cargo build --bin pskk-server`
-3. **Restart server**: Kill and restart `pskk-server`
-4. **Test**: The Python client will automatically use the new server
+3. **Restart**: 
+   - Kill any running `pskk-server` process: `pkill pskk-server`
+   - The Python client will auto-start the new version next time you use it
+   - Or restart IBus: `ibus restart`
 
 No need to restart the Python client unless you modify `ibus-engine-pskk.py`.
+
+**Quick development cycle:**
+```bash
+# Make changes to Rust code
+cargo build --bin pskk-server
+pkill pskk-server
+# Switch to PSKK in any app - new server auto-starts
+```
 
 ## File Locations
 
