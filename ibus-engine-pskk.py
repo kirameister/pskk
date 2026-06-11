@@ -69,21 +69,31 @@ class PSKKEngine(IBus.Engine):
     def _start_server(self):
         """Start the pskk-server process"""
         # Try to find the server binary
+        # Resolve the script's actual location (follow symlinks)
+        script_path = Path(__file__).resolve()
+        
         server_paths = [
             '/opt/pskk/bin/pskk-server',  # Installed location
-            Path(__file__).parent / 'target/release/pskk-server',  # Dev build
-            Path(__file__).parent / 'target/debug/pskk-server',  # Dev debug build
+            script_path.parent.parent / 'target/release/pskk-server',  # Dev build (go up from libexec)
+            script_path.parent.parent / 'target/debug/pskk-server',  # Dev debug build
+            script_path.parent / 'target/release/pskk-server',  # If running from project root
+            script_path.parent / 'target/debug/pskk-server',  # If running from project root
         ]
         
         server_binary = None
+        logger.debug(f"Searching for pskk-server binary...")
         for path in server_paths:
+            logger.debug(f"  Checking: {path}")
             if Path(path).exists():
                 server_binary = str(path)
+                logger.info(f"  Found: {server_binary}")
                 break
         
         if not server_binary:
             logger.error("Could not find pskk-server binary")
-            logger.error("Tried: " + ", ".join(str(p) for p in server_paths))
+            logger.error("Tried paths:")
+            for p in server_paths:
+                logger.error(f"  - {p}")
             return False
         
         try:
