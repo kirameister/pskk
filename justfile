@@ -22,6 +22,7 @@ server-dev:
 
 server-install:
   cargo build --release --bin pskk-server
+  @pkill pskk-server || true
   sudo mkdir -p /opt/pskk/bin
   sudo cp target/release/pskk-server /opt/pskk/bin/
   @echo "✓ Server installed to /opt/pskk/bin/pskk-server"

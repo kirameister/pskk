@@ -314,6 +314,11 @@ class PSKKEngine(IBus.Engine):
     
     def _update_ui(self, output):
         """Update IBus UI based on EngineOutput from gRPC server"""
+        logger.info(f"=== Python _update_ui ===")
+        logger.info(f"  commit_string: {output.commit_string!r}")
+        logger.info(f"  preedit_segments: {len(output.preedit_segments)}")
+        logger.info(f"  candidates: {len(output.candidates)}")
+        logger.info(f"  show_candidates: {output.show_candidates}")
         
         # Handle commit
         if output.commit_string:

@@ -5,7 +5,15 @@ use crate::grpc::proto::{
 
 /// Convert Rust EngineOutput to protobuf EngineOutput
 pub fn engine_output_to_proto(output: RustEngineOutput) -> EngineOutput {
-    eprintln!("Converting engine output to proto: preedit_segments.len()={}", output.preedit_segments.len());
+    eprintln!("=== Engine Output ===");
+    eprintln!("  consumed: {}", output.consumed);
+    eprintln!("  commit_string: {:?}", output.commit_string);
+    eprintln!("  preedit_segments: {} segments", output.preedit_segments.len());
+    for (i, seg) in output.preedit_segments.iter().enumerate() {
+        eprintln!("    [{}] '{}' (selected: {})", i, seg.text, seg.is_selected);
+    }
+    eprintln!("  candidates: {}", output.candidates.len());
+    eprintln!("  show_candidates: {}", output.show_candidates);
 
     let marker_state = match output.marker_state {
         MarkerState::Idle => ProtoMarkerState::Idle,
