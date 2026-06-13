@@ -288,10 +288,16 @@ impl PSKKEngine {
         is_pressed: bool,
         modifiers: Option<ProtoKeyModifiers>,
     ) -> EngineOutput {
-        let (has_shift, has_ctrl, has_alt) = match modifiers {
-            Some(m) => (m.shift, m.ctrl, m.alt),
-            None => (false, false, false),
+        let (has_shift, has_ctrl, has_alt, has_super) = match modifiers {
+            Some(m) => (m.shift, m.ctrl, m.alt, m.super_),
+            None => (false, false, false, false),
         };
+        
+        // Pass through Super key combos (system shortcuts like Super+Space for IME switching)
+        if has_super {
+            eprintln!("Super key detected, passing through");
+            return EngineOutput::passthrough(self.mode);
+        }
         // Check for mode switching keys first (before mode check)
         if is_pressed {
             // debug!("KEY PRESSED: '{}' (char: {:?})", key_name, key_char);

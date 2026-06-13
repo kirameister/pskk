@@ -53,6 +53,7 @@ message KeyModifiers {
   bool shift = 1;
   bool ctrl = 2;
   bool alt = 3;
+  bool super = 4;  // Windows/Meta/Super key
 }
 
 // Request to change input mode

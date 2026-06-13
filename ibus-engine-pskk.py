@@ -288,8 +288,9 @@ class PSKKEngine(IBus.Engine):
         shift = bool(state & IBus.ModifierType.SHIFT_MASK)
         ctrl = bool(state & IBus.ModifierType.CONTROL_MASK)
         alt = bool(state & IBus.ModifierType.MOD1_MASK)
+        super_key = bool(state & IBus.ModifierType.SUPER_MASK)
         
-        logger.debug(f"Key: {key_name} (char={key_char}, is_pressed={is_pressed}, shift={shift}, ctrl={ctrl}, alt={alt})")
+        logger.debug(f"Key: {key_name} (char={key_char}, is_pressed={is_pressed}, shift={shift}, ctrl={ctrl}, alt={alt}, super={super_key})")
         
         if not self.stub:
             logger.warning("No gRPC connection, key not processed")
@@ -300,7 +301,8 @@ class PSKKEngine(IBus.Engine):
             modifiers = pskk_pb2.KeyModifiers(
                 shift=shift,
                 ctrl=ctrl,
-                alt=alt
+                alt=alt,
+                super=super_key
             )
             
             request = pskk_pb2.KeyEvent(
