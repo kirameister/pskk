@@ -55,6 +55,11 @@ class PSKKEngine(IBus.Engine):
         
         # Property list for the input mode menu
         self._prop_list = self._create_properties()
+        
+        # Initialize server to Hiragana mode (default)
+        if self.stub:
+            logger.info("Setting initial mode to Hiragana")
+            self._set_mode(pskk_pb2.HIRAGANA)
     
     def _is_server_running(self):
         """Check if the gRPC server is already running"""
