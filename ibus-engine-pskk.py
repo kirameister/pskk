@@ -241,9 +241,11 @@ class PSKKEngine(IBus.Engine):
         """Handle property menu activation"""
         logger.info(f"Property activated: {prop_name}, state: {state}")
         
-        if prop_name == 'InputMode.Hiragana':
+        # For radio buttons, only process when checked (state=1)
+        # IBus calls this twice: once for the new selection (state=1) and once for the old (state=0)
+        if prop_name == 'InputMode.Hiragana' and state == IBus.PropState.CHECKED:
             self._set_mode(pskk_pb2.HIRAGANA)
-        elif prop_name == 'InputMode.Alphanumeric':
+        elif prop_name == 'InputMode.Alphanumeric' and state == IBus.PropState.CHECKED:
             self._set_mode(pskk_pb2.ALPHANUMERIC)
         elif prop_name == 'Settings':
             self._open_settings()
@@ -343,32 +345,32 @@ class PSKKEngine(IBus.Engine):
             text = IBus.Text.new_from_string(preedit_text)
             
             # Add underline attributes for each segment
+            attrs = IBus.AttrList()
             pos = 0
             for seg in output.preedit_segments:
                 seg_len = len(seg.text)
                 if seg.is_selected:
                     # Selected segment - reverse colors
-                    attr = IBus.Attribute.new(
+                    attrs.append(IBus.Attribute.new(
                         IBus.AttrType.BACKGROUND,
                         0x000000,  # Black background
                         pos, pos + seg_len
-                    )
-                    text.append_attribute(attr)
-                    attr = IBus.Attribute.new(
+                    ))
+                    attrs.append(IBus.Attribute.new(
                         IBus.AttrType.FOREGROUND,
                         0xFFFFFF,  # White foreground
                         pos, pos + seg_len
-                    )
-                    text.append_attribute(attr)
+                    ))
                 else:
                     # Normal segment - underline
-                    attr = IBus.Attribute.new(
+                    attrs.append(IBus.Attribute.new(
                         IBus.AttrType.UNDERLINE,
                         IBus.AttrUnderline.SINGLE,
                         pos, pos + seg_len
-                    )
-                    text.append_attribute(attr)
+                    ))
                 pos += seg_len
+            
+            text.set_attributes(attrs)
             
             self.update_preedit_text(text, output.preedit_cursor_pos, True)
         else:
