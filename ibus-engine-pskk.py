@@ -56,6 +56,9 @@ class PSKKEngine(IBus.Engine):
         # Property list for the input mode menu
         self._prop_list = self._create_properties()
         
+        # Track Super key state manually (IBus doesn't always include it in modifier mask)
+        self._super_pressed = False
+        
         # Initialize server to Hiragana mode (default)
         if self.stub:
             logger.info("Setting initial mode to Hiragana")
@@ -283,6 +286,18 @@ class PSKKEngine(IBus.Engine):
         # Convert IBus key event to PSKK KeyEvent
         key_char = chr(keyval) if 32 <= keyval < 127 else ""
         key_name = IBus.keyval_name(keyval) or str(keyval)
+        
+        # Track Super key state manually (IBus doesn't include it in modifier mask immediately)
+        if key_name in ['Super_L', 'Super_R']:
+            if is_pressed:
+                self._super_pressed = True
+            else:
+                self._super_pressed = False
+        
+        # If Super is held, pass through immediately (for system shortcuts like Super+Space)
+        if self._super_pressed:
+            logger.info(f"Super key held, passing through: {key_name}")
+            return False  # Let IBus/system handle it
         
         # Modifier keys
         shift = bool(state & IBus.ModifierType.SHIFT_MASK)
