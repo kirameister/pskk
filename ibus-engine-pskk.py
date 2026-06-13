@@ -14,16 +14,18 @@ import subprocess
 import time
 from pathlib import Path
 
-# Add proto directory to path
-proto_dir = Path(__file__).parent / 'proto'
-sys.path.insert(0, str(proto_dir))
+# Add paths for gRPC stubs
+script_dir = Path(__file__).parent
+sys.path.insert(0, str(script_dir / 'proto'))  # Dev: ./proto/
+sys.path.insert(0, str(script_dir))  # Installed: /opt/pskk/libexec/
 
-# Import generated gRPC stubs (we'll generate these)
+# Import generated gRPC stubs
 try:
     import pskk_pb2
     import pskk_pb2_grpc
-except ImportError:
-    print("Error: gRPC stubs not found. Run: python -m grpc_tools.protoc -I./proto --python_out=./proto --grpc_python_out=./proto ./proto/pskk.proto")
+except ImportError as e:
+    print(f"Error: gRPC stubs not found: {e}")
+    print("Run: python -m grpc_tools.protoc -I./proto --python_out=./proto --grpc_python_out=./proto ./proto/pskk.proto")
     sys.exit(1)
 
 # Set up logging
@@ -268,17 +270,19 @@ class PSKKEngine(IBus.Engine):
         Main key event handler - forwards to gRPC server
         Returns True if the key was handled, False otherwise
         """
+        # Check if this is a key press or release (important for simultaneous typing)
+        is_pressed = not bool(state & IBus.ModifierType.RELEASE_MASK)
+        
         # Convert IBus key event to PSKK KeyEvent
         key_char = chr(keyval) if 32 <= keyval < 127 else ""
         key_name = IBus.keyval_name(keyval) or str(keyval)
-        is_pressed = True  # IBus only sends press events
         
         # Modifier keys
         shift = bool(state & IBus.ModifierType.SHIFT_MASK)
         ctrl = bool(state & IBus.ModifierType.CONTROL_MASK)
         alt = bool(state & IBus.ModifierType.MOD1_MASK)
         
-        logger.debug(f"Key: {key_name} (char={key_char}, shift={shift}, ctrl={ctrl}, alt={alt})")
+        logger.debug(f"Key: {key_name} (char={key_char}, is_pressed={is_pressed}, shift={shift}, ctrl={ctrl}, alt={alt})")
         
         if not self.stub:
             logger.warning("No gRPC connection, key not processed")
