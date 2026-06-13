@@ -364,8 +364,16 @@ impl PSKKEngine {
         trace!("process_hiragana_mode_key: key_name='{}', is_pressed={}, engine_state={:?}",
                   key_name, is_pressed, self.engine_state);
         
-        if has_ctrl || has_alt {
+        // Handle Ctrl/Alt combos - check for PSKK commands first
+        if is_pressed && (has_ctrl || has_alt) {
+            // Try to handle as PSKK command
+            if let Some(output) = self.handle_modifier_combo(key_name, has_shift, has_ctrl, has_alt) {
+                return output;
+            }
+            
+            // Not a PSKK command - passthrough to application
             if !self.preedit_string.is_empty() {
+                // Commit preedit first, then passthrough
                 let commit = self.preedit_string.clone();
                 self.reset_state();
                 let mut output = EngineOutput::commit(commit, self.mode);
@@ -496,6 +504,101 @@ impl PSKKEngine {
         }
         
         EngineOutput::passthrough(self.mode)
+    }
+
+    fn handle_modifier_combo(
+        &mut self,
+        key_name: &str,
+        has_shift: bool,
+        has_ctrl: bool,
+        has_alt: bool,
+    ) -> Option<EngineOutput> {
+        // Build the key combo string (e.g., "Ctrl+K", "Ctrl+Shift+L")
+        let mut combo = String::new();
+        if has_ctrl {
+            combo.push_str("Ctrl+");
+        }
+        if has_shift {
+            combo.push_str("Shift+");
+        }
+        if has_alt {
+            combo.push_str("Alt+");
+        }
+        combo.push_str(key_name);
+        
+        debug!("Checking modifier combo: {}", combo);
+        
+        // Check conversion_keys config
+        if let Some(conversion_keys) = self.config.get("conversion_keys").and_then(|v| v.as_object()) {
+            // to_katakana (default: Ctrl+K)
+            if let Some(keys) = conversion_keys.get("to_katakana").and_then(|v| v.as_array()) {
+                if self.matches_key_combo(&combo, keys) {
+                    debug!("Matched to_katakana");
+                    return Some(self.convert_to_katakana());
+                }
+            }
+            
+            // to_hiragana (default: Ctrl+J)
+            if let Some(keys) = conversion_keys.get("to_hiragana").and_then(|v| v.as_array()) {
+                if self.matches_key_combo(&combo, keys) {
+                    debug!("Matched to_hiragana");
+                    return Some(self.convert_to_hiragana());
+                }
+            }
+            
+            // to_ascii (default: Ctrl+L)
+            if let Some(keys) = conversion_keys.get("to_ascii").and_then(|v| v.as_array()) {
+                if self.matches_key_combo(&combo, keys) {
+                    debug!("Matched to_ascii");
+                    return Some(self.convert_to_ascii());
+                }
+            }
+            
+            // to_zenkaku (default: Ctrl+Shift+L)
+            if let Some(keys) = conversion_keys.get("to_zenkaku").and_then(|v| v.as_array()) {
+                if self.matches_key_combo(&combo, keys) {
+                    debug!("Matched to_zenkaku");
+                    return Some(self.convert_to_zenkaku());
+                }
+            }
+        }
+        
+        // Check force_commit_key (default: Ctrl+O)
+        if let Some(keys) = self.config.get("force_commit_key").and_then(|v| v.as_array()) {
+            if self.matches_key_combo(&combo, keys) {
+                debug!("Matched force_commit_key");
+                if !self.preedit_string.is_empty() {
+                    let commit = self.preedit_string.clone();
+                    self.reset_state();
+                    return Some(EngineOutput::commit(commit, self.mode));
+                }
+                // Empty preedit, passthrough to app
+                return Some(EngineOutput::passthrough(self.mode));
+            }
+        }
+        
+        // Check user_dictionary_editor_trigger (default: Ctrl+Shift+R)
+        if let Some(keys) = self.config.get("user_dictionary_editor_trigger").and_then(|v| v.as_array()) {
+            if self.matches_key_combo(&combo, keys) {
+                debug!("Matched user_dictionary_editor_trigger");
+                // TODO: Implement dictionary editor trigger
+                // For now, just passthrough
+                return Some(EngineOutput::passthrough(self.mode));
+            }
+        }
+        
+        // Not a PSKK command
+        None
+    }
+    
+    fn matches_key_combo(&self, combo: &str, config_keys: &[serde_json::Value]) -> bool {
+        config_keys.iter().any(|v| {
+            if let Some(key_str) = v.as_str() {
+                key_str.eq_ignore_ascii_case(combo)
+            } else {
+                false
+            }
+        })
     }
 
     fn handle_space_press(&mut self, _key_char: Option<char>) -> EngineOutput {
@@ -1325,6 +1428,69 @@ impl PSKKEngine {
         
         self.reset_state();
         output
+    }
+    
+    // Conversion methods for Ctrl+K/J/L commands
+    fn convert_to_katakana(&mut self) -> EngineOutput {
+        if self.preedit_string.is_empty() {
+            return EngineOutput::passthrough(self.mode);
+        }
+        
+        // Convert hiragana to katakana
+        let katakana = self.preedit_hiragana.chars().map(|c| {
+            if c >= 'ぁ' && c <= 'ん' {
+                // Hiragana to Katakana conversion (add 0x60)
+                char::from_u32(c as u32 + 0x60).unwrap_or(c)
+            } else {
+                c
+            }
+        }).collect::<String>();
+        
+        self.reset_state();
+        EngineOutput::commit(katakana, self.mode)
+    }
+    
+    fn convert_to_hiragana(&mut self) -> EngineOutput {
+        if self.preedit_string.is_empty() {
+            return EngineOutput::passthrough(self.mode);
+        }
+        
+        // Preedit is already in hiragana, just commit it
+        let commit = self.preedit_hiragana.clone();
+        self.reset_state();
+        EngineOutput::commit(commit, self.mode)
+    }
+    
+    fn convert_to_ascii(&mut self) -> EngineOutput {
+        if self.preedit_string.is_empty() {
+            return EngineOutput::passthrough(self.mode);
+        }
+        
+        // Commit the ASCII representation
+        let commit = self.preedit_ascii.clone();
+        self.reset_state();
+        EngineOutput::commit(commit, self.mode)
+    }
+    
+    fn convert_to_zenkaku(&mut self) -> EngineOutput {
+        if self.preedit_string.is_empty() {
+            return EngineOutput::passthrough(self.mode);
+        }
+        
+        // Convert ASCII to full-width (zenkaku)
+        let zenkaku = self.preedit_ascii.chars().map(|c| {
+            if c >= '!' && c <= '~' {
+                // ASCII to full-width conversion
+                char::from_u32(c as u32 - 0x21 + 0xFF01).unwrap_or(c)
+            } else if c == ' ' {
+                '　' // Full-width space
+            } else {
+                c
+            }
+        }).collect::<String>();
+        
+        self.reset_state();
+        EngineOutput::commit(zenkaku, self.mode)
     }
 }
 
