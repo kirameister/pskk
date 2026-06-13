@@ -40,7 +40,7 @@ ibus-install:
   sudo chmod +x /opt/pskk/libexec/ibus-engine-pskk.py
   sudo cp proto/pskk_pb2.py proto/pskk_pb2_grpc.py /opt/pskk/libexec/ || echo "Run 'just ibus-generate-grpc' first"
   sudo cp packaging/pskk.xml /usr/share/ibus/component/
-  ibus restart
+  @ibus restart || echo "⚠ IBus not running - start it manually with 'ibus-daemon -drx'"
 
 # Install everything (server + client)
 install:
