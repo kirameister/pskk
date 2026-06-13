@@ -335,10 +335,14 @@ impl PSKKEngine {
             // debug!("  ✗ No match");
         }
         
+        eprintln!("Current mode: {:?}, is_pressed: {}", self.mode, is_pressed);
+        
         if self.mode == InputMode::Alphanumeric {
+            eprintln!("  -> In Alphanumeric mode, passing through");
             return EngineOutput::passthrough(self.mode);
         }
 
+        eprintln!("  -> Processing in Hiragana mode");
         self.process_hiragana_mode_key(key_char, key_name, is_pressed, has_shift, has_ctrl, has_alt)
     }
 
