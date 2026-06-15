@@ -42,11 +42,12 @@ ibus-install:
   sudo cp packaging/pskk.xml /usr/share/ibus/component/
   @ibus restart || echo "⚠ IBus not running - start it manually with 'ibus-daemon -drx'"
 
-# Install everything (server + client)
+# Install everything (server + client + apps)
 install:
   just ibus-generate-grpc
   just server-install
   just ibus-install
+  just dict-editor-install
   @echo "✓ PSKK installed successfully!"
 
 # Settings app
@@ -91,6 +92,12 @@ dict-editor-dev:
 
 dict-editor-build:
   cd apps/dictionary-editor/src-tauri && cargo tauri build
+
+dict-editor-install:
+  cd apps/dictionary-editor/src-tauri && cargo build --release
+  sudo mkdir -p /opt/pskk/bin
+  sudo cp target/release/pskk-dictionary-editor /opt/pskk/bin/
+  @echo "✓ Dictionary editor installed to /opt/pskk/bin/pskk-dictionary-editor"
 
 # Install all dependencies
 install-deps:

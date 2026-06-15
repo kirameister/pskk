@@ -12,6 +12,7 @@ pub struct KeyModifiers {
     pub shift: bool,
     pub ctrl: bool,
     pub alt: bool,
+    pub super_key: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

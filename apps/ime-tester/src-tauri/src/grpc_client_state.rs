@@ -15,6 +15,7 @@ pub struct KeyModifiers {
     pub shift: bool,
     pub ctrl: bool,
     pub alt: bool,
+    pub super_key: bool,
 }
 
 /// Wrapper around gRPC client for Tauri state management
@@ -95,6 +96,7 @@ impl GrpcClientState {
                 modifiers.shift,
                 modifiers.ctrl,
                 modifiers.alt,
+                modifiers.super_key,
             )
             .await
             .map_err(|e| format!("gRPC error: {}", e))
