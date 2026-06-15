@@ -96,7 +96,7 @@ dict-editor-build:
 dict-editor-install:
   cd apps/dictionary-editor/src-tauri && cargo build --release
   sudo mkdir -p /opt/pskk/bin
-  sudo cp target/release/pskk-dictionary-editor /opt/pskk/bin/
+  sudo cp apps/dictionary-editor/src-tauri/target/release/pskk-dictionary-editor /opt/pskk/bin/
   @echo "✓ Dictionary editor installed to /opt/pskk/bin/pskk-dictionary-editor"
 
 # Install all dependencies
