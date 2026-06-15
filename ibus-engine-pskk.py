@@ -293,7 +293,7 @@ class PSKKEngine(IBus.Engine):
     def _open_dictionary_editor(self):
         """Open PSKK dictionary editor application"""
         try:
-            subprocess.Popen(['pskk-dictionary-editor'])
+            subprocess.Popen(['/opt/pskk/bin/pskk-dictionary-editor'])
         except Exception as e:
             logger.error(f"Failed to open dictionary editor: {e}")
     
