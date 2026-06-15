@@ -59,6 +59,9 @@ class PSKKEngine(IBus.Engine):
         # Track Super key state manually (IBus doesn't always include it in modifier mask)
         self._super_pressed = False
         
+        # Track current mode for detecting mode changes
+        self._current_mode = pskk_pb2.HIRAGANA
+        
         # Initialize server to Hiragana mode (default)
         if self.stub:
             logger.info("Setting initial mode to Hiragana")
@@ -347,6 +350,26 @@ class PSKKEngine(IBus.Engine):
         logger.info(f"  preedit_segments: {len(output.preedit_segments)}")
         logger.info(f"  candidates: {len(output.candidates)}")
         logger.info(f"  show_candidates: {output.show_candidates}")
+        
+        # Check if mode changed (e.g., via Henkan/Muhenkan keybinding)
+        if output.current_mode != self._current_mode:
+            logger.info(f"Mode changed: {self._current_mode} -> {output.current_mode}")
+            self._current_mode = output.current_mode
+            
+            # Update property menu icon
+            symbol = 'あ' if output.current_mode == pskk_pb2.HIRAGANA else 'A'
+            self._prop_list.get(0).set_symbol(IBus.Text.new_from_string(symbol))
+            self.update_property(self._prop_list.get(0))
+            
+            # Update radio button states
+            for i in range(self._prop_list.get(0).get_sub_props().get_properties().__len__()):
+                prop = self._prop_list.get(0).get_sub_props().get(i)
+                if prop.get_key() == 'InputMode.Hiragana':
+                    prop.set_state(IBus.PropState.CHECKED if output.current_mode == pskk_pb2.HIRAGANA else IBus.PropState.UNCHECKED)
+                    self.update_property(prop)
+                elif prop.get_key() == 'InputMode.Alphanumeric':
+                    prop.set_state(IBus.PropState.CHECKED if output.current_mode == pskk_pb2.ALPHANUMERIC else IBus.PropState.UNCHECKED)
+                    self.update_property(prop)
         
         # Handle commit
         if output.commit_string:
