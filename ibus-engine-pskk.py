@@ -338,9 +338,10 @@ class PSKKEngine(IBus.Engine):
             modifiers = pskk_pb2.KeyModifiers(
                 shift=shift,
                 ctrl=ctrl,
-                alt=alt,
-                super=super_key
+                alt=alt
             )
+            # Set super field separately to avoid Python keyword conflict
+            setattr(modifiers, 'super', super_key)
             
             request = pskk_pb2.KeyEvent(
                 key_char=key_char,
@@ -381,18 +382,25 @@ class PSKKEngine(IBus.Engine):
             self.update_property(self._prop_list.get(0))
             
             # Update radio button states
-            mode_menu = self._prop_list.get(0).get_sub_props()
-            num_props = mode_menu.get_properties().__len__()
-            for i in range(num_props):
-                prop = mode_menu.get(i)
-                if prop.get_key() == 'InputMode.Hiragana':
-                    new_state = IBus.PropState.CHECKED if output.current_mode == pskk_pb2.HIRAGANA else IBus.PropState.UNCHECKED
-                    prop.set_state(new_state)
-                    self.update_property(prop)
-                elif prop.get_key() == 'InputMode.Alphanumeric':
-                    new_state = IBus.PropState.CHECKED if output.current_mode == pskk_pb2.ALPHANUMERIC else IBus.PropState.UNCHECKED
-                    prop.set_state(new_state)
-                    self.update_property(prop)
+            try:
+                mode_menu = self._prop_list.get(0).get_sub_props()
+                logger.debug(f"Updating menu properties")
+                for i in range(2):  # Hiragana and Alphanumeric
+                    prop = mode_menu.get(i)
+                    prop_key = prop.get_key()
+                    logger.debug(f"Property {i}: {prop_key}")
+                    if prop_key == 'InputMode.Hiragana':
+                        new_state = IBus.PropState.CHECKED if output.current_mode == pskk_pb2.HIRAGANA else IBus.PropState.UNCHECKED
+                        prop.set_state(new_state)
+                        self.update_property(prop)
+                        logger.debug(f"Updated Hiragana to {new_state}")
+                    elif prop_key == 'InputMode.Alphanumeric':
+                        new_state = IBus.PropState.CHECKED if output.current_mode == pskk_pb2.ALPHANUMERIC else IBus.PropState.UNCHECKED
+                        prop.set_state(new_state)
+                        self.update_property(prop)
+                        logger.debug(f"Updated Alphanumeric to {new_state}")
+            except Exception as e:
+                logger.error(f"Error updating radio buttons: {e}", exc_info=True)
         
         # Handle commit
         if output.commit_string:
