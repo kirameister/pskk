@@ -381,13 +381,17 @@ class PSKKEngine(IBus.Engine):
             self.update_property(self._prop_list.get(0))
             
             # Update radio button states
-            for i in range(self._prop_list.get(0).get_sub_props().get_properties().__len__()):
-                prop = self._prop_list.get(0).get_sub_props().get(i)
+            mode_menu = self._prop_list.get(0).get_sub_props()
+            num_props = mode_menu.get_properties().__len__()
+            for i in range(num_props):
+                prop = mode_menu.get(i)
                 if prop.get_key() == 'InputMode.Hiragana':
-                    prop.set_state(IBus.PropState.CHECKED if output.current_mode == pskk_pb2.HIRAGANA else IBus.PropState.UNCHECKED)
+                    new_state = IBus.PropState.CHECKED if output.current_mode == pskk_pb2.HIRAGANA else IBus.PropState.UNCHECKED
+                    prop.set_state(new_state)
                     self.update_property(prop)
                 elif prop.get_key() == 'InputMode.Alphanumeric':
-                    prop.set_state(IBus.PropState.CHECKED if output.current_mode == pskk_pb2.ALPHANUMERIC else IBus.PropState.UNCHECKED)
+                    new_state = IBus.PropState.CHECKED if output.current_mode == pskk_pb2.ALPHANUMERIC else IBus.PropState.UNCHECKED
+                    prop.set_state(new_state)
                     self.update_property(prop)
         
         # Handle commit
