@@ -361,6 +361,8 @@ impl PSKKEngine {
         has_ctrl: bool,
         has_alt: bool,
     ) -> EngineOutput {
+        eprintln!("process_hiragana_mode_key: key_name='{}', is_pressed={}, has_ctrl={}, has_alt={}, preedit='{}'",
+                  key_name, is_pressed, has_ctrl, has_alt, self.preedit_string);
         trace!("process_hiragana_mode_key: key_name='{}', is_pressed={}, engine_state={:?}",
                   key_name, is_pressed, self.engine_state);
         
@@ -374,6 +376,8 @@ impl PSKKEngine {
         
         // If this is a modifier key press/release, return current state without consuming
         if is_modifier_key {
+            eprintln!("Modifier key detected: {}, preedit_string='{}', engine_state={:?}",
+                     key_name, self.preedit_string, self.engine_state);
             return self.build_current_output_passthrough();
         }
         

@@ -63,6 +63,7 @@ impl PskkService for PSKKServiceImpl {
             key_event.modifiers,
         );
 
+        eprintln!("Key event: key_name='{}', is_pressed={}", key_event.key_name, key_event.is_pressed);
         Ok(Response::new(engine_output_to_proto(output)))
     }
 
