@@ -402,12 +402,7 @@ class PSKKEngine(IBus.Engine):
             except Exception as e:
                 logger.error(f"Error updating radio buttons: {e}", exc_info=True)
         
-        # Handle commit
-        if output.commit_string:
-            logger.debug(f"Committing: {output.commit_string}")
-            self.commit_text(IBus.Text.new_from_string(output.commit_string))
-        
-        # Update preedit
+        # Update preedit first (before commit) to avoid visual flash
         if output.preedit_segments:
             preedit_text = ''.join(seg.text for seg in output.preedit_segments)
             logger.debug(f"Preedit: {preedit_text} (cursor: {output.preedit_cursor_pos})")
@@ -444,8 +439,16 @@ class PSKKEngine(IBus.Engine):
             text.set_attributes(attrs)
             
             self.update_preedit_text(text, output.preedit_cursor_pos, True)
-        else:
-            # Clear preedit
+        elif not output.commit_string:
+            # Only clear preedit if we're not committing
+            # (if committing, the commit will replace the preedit smoothly)
+            self.hide_preedit_text()
+        
+        # Handle commit after preedit update
+        if output.commit_string:
+            logger.debug(f"Committing: {output.commit_string}")
+            self.commit_text(IBus.Text.new_from_string(output.commit_string))
+            # Now hide preedit after commit
             self.hide_preedit_text()
         
         # Update candidates
