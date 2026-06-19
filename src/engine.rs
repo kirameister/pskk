@@ -365,6 +365,18 @@ impl PSKKEngine {
                   key_name, is_pressed, self.engine_state);
         
         // Handle Ctrl/Alt combos - check for PSKK commands first
+        // But ignore if the key itself is a modifier key (Ctrl, Alt, Shift, etc.)
+        let is_modifier_key = matches!(key_name,
+            "Control_L" | "Control_R" | "Alt_L" | "Alt_R" |
+            "Shift_L" | "Shift_R" | "Super_L" | "Super_R" |
+            "Meta_L" | "Meta_R" | "Hyper_L" | "Hyper_R"
+        );
+        
+        // If this is a modifier key press/release, return current state without consuming
+        if is_modifier_key {
+            return self.build_current_output_passthrough();
+        }
+        
         if is_pressed && (has_ctrl || has_alt) {
             // Try to handle as PSKK command
             if let Some(output) = self.handle_modifier_combo(key_name, has_shift, has_ctrl, has_alt) {
@@ -1352,6 +1364,34 @@ impl PSKKEngine {
         output.engine_state = self.get_engine_state();
         debug!("Built preedit output: segments.len()={}, preedit_string='{}', cursor_pos={}",
                   output.preedit_segments.len(), self.preedit_string, output.preedit_cursor_pos);
+        output
+    }
+
+    fn build_current_output_passthrough(&self) -> EngineOutput {
+        let mut output = EngineOutput::empty(self.mode);
+        output.consumed = false;  // Don't consume modifier keys
+        
+        // Preserve current preedit state if any
+        if !self.preedit_string.is_empty() {
+            output.preedit_segments = self.build_preedit_segments();
+            output.preedit_cursor_pos = self.preedit_string.chars().count();
+        }
+        
+        // Preserve conversion state if active
+        if self.engine_state == EngineState::Converting {
+            output.show_candidates = true;
+            output.candidates = self.henkan_processor.get_candidates().to_vec();
+            
+            if let Some(selected) = self.henkan_processor.get_selected_candidate() {
+                output.candidate_cursor_pos = self.henkan_processor.get_candidates()
+                    .iter()
+                    .position(|c| c.surface == selected.surface)
+                    .unwrap_or(0);
+            }
+        }
+        
+        output.marker_state = self.marker_state;
+        output.engine_state = self.get_engine_state();
         output
     }
 

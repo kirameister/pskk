@@ -329,6 +329,10 @@ class PSKKEngine(IBus.Engine):
         
         logger.debug(f"Key: {key_name} (char={key_char}, is_pressed={is_pressed}, shift={shift}, ctrl={ctrl}, alt={alt}, super={super_key})")
         
+        # Special logging for modifier keys
+        if key_name in ['Control_L', 'Control_R', 'Alt_L', 'Alt_R', 'Shift_L', 'Shift_R']:
+            logger.info(f"Modifier key event: {key_name}, is_pressed={is_pressed}")
+        
         if not self.stub:
             logger.warning("No gRPC connection, key not processed")
             return False
@@ -368,8 +372,12 @@ class PSKKEngine(IBus.Engine):
         logger.info(f"=== Python _update_ui ===")
         logger.info(f"  commit_string: {output.commit_string!r}")
         logger.info(f"  preedit_segments: {len(output.preedit_segments)}")
+        if output.preedit_segments:
+            preedit_text = ''.join(seg.text for seg in output.preedit_segments)
+            logger.info(f"  preedit_text: {preedit_text!r}")
         logger.info(f"  candidates: {len(output.candidates)}")
         logger.info(f"  show_candidates: {output.show_candidates}")
+        logger.info(f"  consumed: {output.consumed}")
         
         # Check if mode changed (e.g., via Henkan/Muhenkan keybinding)
         if output.current_mode != self._current_mode:
