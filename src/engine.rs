@@ -352,6 +352,84 @@ impl PSKKEngine {
         self.process_hiragana_mode_key(key_char, key_name, is_pressed, has_shift, has_ctrl, has_alt)
     }
 
+    /// Check if a key is relevant to IME processing (whitelist)
+    /// Keys not in this list will trigger commit + passthrough behavior
+    fn is_ime_relevant_key(key_name: &str) -> bool {
+        match key_name {
+            // Alphanumeric characters
+            "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" |
+            "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" |
+            "u" | "v" | "w" | "x" | "y" | "z" |
+            "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" |
+            "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" |
+            "U" | "V" | "W" | "X" | "Y" | "Z" |
+            "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" => true,
+            
+            // Conversion and editing keys
+            "space" | "Space" | "Return" | "KP_Enter" | "Enter" | 
+            "Escape" | "BackSpace" | "Backspace" | "Delete" => true,
+            
+            // Arrow keys (context-dependent behavior, but in whitelist)
+            "Up" | "Down" | "Left" | "Right" |
+            "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" => true,
+            
+            // Tab (behavior to be configured later)
+            "Tab" | "ISO_Left_Tab" => true,
+            
+            // Common punctuation (used in layouts and kanchoku)
+            "comma" | "period" | "slash" | "backslash" | "minus" | "equal" |
+            "bracketleft" | "bracketright" | "semicolon" | "apostrophe" |
+            "grave" | "asciitilde" | "exclam" | "at" | "numbersign" |
+            "dollar" | "percent" | "asciicircum" | "ampersand" | "asterisk" |
+            "parenleft" | "parenright" | "underscore" | "plus" |
+            "braceleft" | "braceright" | "bar" | "colon" | "quotedbl" |
+            "less" | "greater" | "question" => true,
+            
+            // Modifier keys (don't trigger commit when pressed alone)
+            "Control_L" | "Control_R" | "Alt_L" | "Alt_R" |
+            "Shift_L" | "Shift_R" | "Super_L" | "Super_R" |
+            "Meta_L" | "Meta_R" | "Hyper_L" | "Hyper_R" => true,
+            
+            // Japanese-specific keys
+            "Henkan" | "Muhenkan" | "Convert" | "NonConvert" |
+            "Hiragana_Katakana" | "Zenkaku_Hankaku" | "Eisu_toggle" => true,
+            
+            // Everything else is not IME-relevant
+            _ => false,
+        }
+    }
+    
+    /// Check if we should commit current state and passthrough the key
+    /// This happens when a non-whitelisted key is pressed with active preedit/conversion
+    fn should_commit_and_passthrough(&self, key_name: &str) -> bool {
+        // If no active state, nothing to commit
+        if self.preedit_string.is_empty() && self.engine_state == EngineState::Normal {
+            return false;
+        }
+        
+        // If it's an IME-relevant key, don't passthrough
+        if Self::is_ime_relevant_key(key_name) {
+            return false;
+        }
+        
+        // Non-IME key with active preedit/conversion -> commit and passthrough
+        true
+    }
+    
+    /// Get the text to commit based on current engine state
+    fn get_commit_text(&self) -> String {
+        match self.engine_state {
+            EngineState::Converting => {
+                // In conversion mode, commit the current selection (preedit_string already contains it)
+                self.preedit_string.clone()
+            }
+            EngineState::Bunsetsu | EngineState::ForcedPreedit | EngineState::Normal => {
+                // In other modes, commit the preedit as-is
+                self.preedit_string.clone()
+            }
+        }
+    }
+
     fn process_hiragana_mode_key(
         &mut self,
         key_char: Option<char>,
@@ -381,16 +459,27 @@ impl PSKKEngine {
             return self.build_current_output_passthrough();
         }
         
+        // Check for non-whitelisted keys that should trigger commit + passthrough
+        // This must be checked BEFORE handling specific keys, but AFTER modifier key check
+        if is_pressed && self.should_commit_and_passthrough(key_name) {
+            eprintln!("Non-whitelisted key '{}' with active state, committing and passing through", key_name);
+            let commit = self.get_commit_text();
+            self.reset_state();
+            let mut output = EngineOutput::commit(commit, self.mode);
+            output.consumed = false;  // Passthrough the key to application
+            return output;
+        }
+        
         if is_pressed && (has_ctrl || has_alt) {
             // Try to handle as PSKK command
             if let Some(output) = self.handle_modifier_combo(key_name, has_shift, has_ctrl, has_alt) {
                 return output;
             }
             
-            // Not a PSKK command - passthrough to application
+            // Not a PSKK command - commit and passthrough
+            // This handles Ctrl/Alt combos with whitelisted keys that aren't PSKK commands
             if !self.preedit_string.is_empty() {
-                // Commit preedit first, then passthrough
-                let commit = self.preedit_string.clone();
+                let commit = self.get_commit_text();
                 self.reset_state();
                 let mut output = EngineOutput::commit(commit, self.mode);
                 output.consumed = false;
@@ -400,14 +489,56 @@ impl PSKKEngine {
         }
 
         if is_pressed {
+            // Handle arrow keys: in Converting mode they navigate, otherwise commit + passthrough
             match key_name {
+                "Down" | "ArrowDown" => {
+                    if self.engine_state == EngineState::Converting {
+                        return self.handle_down_arrow();
+                    } else if !self.preedit_string.is_empty() {
+                        // Commit preedit and passthrough arrow key
+                        let commit = self.preedit_string.clone();
+                        self.reset_state();
+                        let mut output = EngineOutput::commit(commit, self.mode);
+                        output.consumed = false;
+                        return output;
+                    }
+                }
+                "Up" | "ArrowUp" => {
+                    if self.engine_state == EngineState::Converting {
+                        return self.handle_up_arrow();
+                    } else if !self.preedit_string.is_empty() {
+                        let commit = self.preedit_string.clone();
+                        self.reset_state();
+                        let mut output = EngineOutput::commit(commit, self.mode);
+                        output.consumed = false;
+                        return output;
+                    }
+                }
+                "Right" | "ArrowRight" => {
+                    if self.engine_state == EngineState::Converting {
+                        return self.handle_right_arrow();
+                    } else if !self.preedit_string.is_empty() {
+                        let commit = self.preedit_string.clone();
+                        self.reset_state();
+                        let mut output = EngineOutput::commit(commit, self.mode);
+                        output.consumed = false;
+                        return output;
+                    }
+                }
+                "Left" | "ArrowLeft" => {
+                    if self.engine_state == EngineState::Converting {
+                        return self.handle_left_arrow();
+                    } else if !self.preedit_string.is_empty() {
+                        let commit = self.preedit_string.clone();
+                        self.reset_state();
+                        let mut output = EngineOutput::commit(commit, self.mode);
+                        output.consumed = false;
+                        return output;
+                    }
+                }
                 "Return" | "KP_Enter" | "Enter" => return self.handle_enter(),
                 "Escape" => return self.handle_escape(),
                 "BackSpace" | "Backspace" => return self.handle_backspace(),
-                "Down" | "ArrowDown" if self.engine_state == EngineState::Converting => return self.handle_down_arrow(),
-                "Up" | "ArrowUp" if self.engine_state == EngineState::Converting => return self.handle_up_arrow(),
-                "Right" | "ArrowRight" if self.engine_state == EngineState::Converting => return self.handle_right_arrow(),
-                "Left" | "ArrowLeft" if self.engine_state == EngineState::Converting => return self.handle_left_arrow(),
                 "space" | "Space" => return self.handle_space_press(key_char),
                 _ => {}
             }
