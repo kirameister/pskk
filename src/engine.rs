@@ -1431,12 +1431,17 @@ impl PSKKEngine {
             debug!("Returning {} bunsetsu segments", segments.len());
             segments
         } else {
-            let segment = vec![PreeditSegment {
-                text: self.preedit_string.clone(),
-                is_selected: false,
-            }];
-            debug!("Returning single segment with text: '{}'", self.preedit_string);
-            segment
+            if self.preedit_string.is_empty() {
+                debug!("Preedit string is empty, returning empty segments");
+                vec![]
+            } else {
+                let segment = vec![PreeditSegment {
+                    text: self.preedit_string.clone(),
+                    is_selected: false,
+                }];
+                debug!("Returning single segment with text: '{}'", self.preedit_string);
+                segment
+            }
         }
     }
 
