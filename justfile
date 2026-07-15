@@ -10,45 +10,139 @@ test:
 build:
   cargo build --release
 
-# gRPC Server
-server-build:
-  cargo build --release --bin pskk-server
+# ============================================================================
+# Core Installation (IMF-agnostic)
+# ============================================================================
 
-server-run:
-  cargo run --bin pskk-server
+# Install core PSKK components (server, gRPC stubs)
+core-install:
+  @echo "=== Installing PSKK Core Components ==="
+  just _install-grpc-stubs
+  just _install-server
+  @echo "✓ Core installation complete"
 
-server-dev:
-  cargo run --bin pskk-server
+# Internal: Generate and install gRPC stubs
+_install-grpc-stubs:
+  @echo "  Generating gRPC stubs..."
+  python3 -m grpc_tools.protoc -I./proto --python_out=./proto --grpc_python_out=./proto ./proto/pskk.proto
+  @echo "  ✓ gRPC stubs generated"
 
-server-install:
+# Internal: Build and install gRPC server
+_install-server:
+  @echo "  Building and installing pskk-server..."
   cargo build --release --bin pskk-server
   @pkill pskk-server || true
   sudo mkdir -p /opt/pskk/bin
   sudo cp target/release/pskk-server /opt/pskk/bin/
-  @echo "✓ Server installed to /opt/pskk/bin/pskk-server"
+  @echo "  ✓ pskk-server installed to /opt/pskk/bin/pskk-server"
 
-# IBus Engine (Python client)
-ibus-generate-grpc:
-  python3 -m grpc_tools.protoc -I./proto --python_out=./proto --grpc_python_out=./proto ./proto/pskk.proto
+# ============================================================================
+# IBus-Specific Installation
+# ============================================================================
 
-ibus-run:
-  ./ibus-engine-pskk.py
-
+# Install PSKK for IBus (includes core + IBus integration)
 ibus-install:
+  @echo "=== Installing PSKK for IBus ==="
+  just core-install
+  just _install-ibus-engine
+  just _install-ibus-component
+  just _restart-ibus
+  @echo ""
+  @echo "✓ IBus installation complete!"
+  @echo ""
+  @echo "Next steps:"
+  @echo "  1. Open IBus preferences: ibus-setup"
+  @echo "  2. Go to Input Method tab and click Add"
+  @echo "  3. Select Japanese → PSKK"
+
+# Internal: Install IBus Python engine
+_install-ibus-engine:
+  @echo "  Installing IBus engine..."
   sudo mkdir -p /opt/pskk/libexec
   sudo cp ibus-engine-pskk.py /opt/pskk/libexec/
   sudo chmod +x /opt/pskk/libexec/ibus-engine-pskk.py
-  sudo cp proto/pskk_pb2.py proto/pskk_pb2_grpc.py /opt/pskk/libexec/ || echo "Run 'just ibus-generate-grpc' first"
-  sudo cp packaging/pskk.xml /usr/share/ibus/component/
-  @ibus restart || echo "⚠ IBus not running - start it manually with 'ibus-daemon -drx'"
+  sudo cp proto/pskk_pb2.py proto/pskk_pb2_grpc.py /opt/pskk/libexec/
+  @echo "  ✓ IBus engine installed"
 
-# Install everything (server + client + apps)
-install:
-  just ibus-generate-grpc
-  just server-install
-  just ibus-install
-  just dict-editor-install
-  @echo "✓ PSKK installed successfully!"
+# Internal: Install IBus component XML
+_install-ibus-component:
+  @echo "  Registering IBus component..."
+  sudo cp packaging/pskk.xml /usr/share/ibus/component/
+  @echo "  ✓ IBus component registered"
+
+# Internal: Restart IBus daemon
+_restart-ibus:
+  @echo "  Restarting IBus..."
+  @ibus restart || echo "  ⚠ IBus not running - start it manually with 'ibus-daemon -drx'"
+
+# Uninstall PSKK from IBus (removes IBus integration + core components)
+ibus-uninstall:
+  @echo "=== Uninstalling PSKK from IBus ==="
+  just _uninstall-ibus-component
+  just _uninstall-ibus-engine
+  just core-uninstall
+  just _restart-ibus
+  @echo ""
+  @echo "✓ IBus uninstallation complete!"
+  @echo ""
+  @echo "Note: User configuration in ~/.config/pskk was preserved."
+  @echo "To remove user data, run: rm -rf ~/.config/pskk"
+
+# Internal: Remove IBus component XML
+_uninstall-ibus-component:
+  @echo "  Removing IBus component..."
+  sudo rm -f /usr/share/ibus/component/pskk.xml
+  @echo "  ✓ IBus component removed"
+
+# Internal: Remove IBus Python engine
+_uninstall-ibus-engine:
+  @echo "  Removing IBus engine..."
+  sudo rm -f /opt/pskk/libexec/ibus-engine-pskk.py
+  sudo rm -f /opt/pskk/libexec/pskk_pb2.py
+  sudo rm -f /opt/pskk/libexec/pskk_pb2_grpc.py
+  sudo rmdir /opt/pskk/libexec 2>/dev/null || true
+  @echo "  ✓ IBus engine removed"
+
+# ============================================================================
+# Core Uninstallation
+# ============================================================================
+
+# Uninstall core PSKK components (server, apps, data)
+core-uninstall:
+  @echo "=== Uninstalling PSKK Core Components ==="
+  just _uninstall-server
+  @echo "  Removing /opt/pskk directory..."
+  sudo rm -rf /opt/pskk
+  @echo "  ✓ Core components removed"
+  @echo "✓ Core uninstallation complete"
+
+# Internal: Remove gRPC server
+_uninstall-server:
+  @echo "  Stopping and removing pskk-server..."
+  @pkill pskk-server || true
+  sudo rm -f /opt/pskk/bin/pskk-server
+  sudo rmdir /opt/pskk/bin 2>/dev/null || true
+  @echo "  ✓ pskk-server removed"
+
+# ============================================================================
+# Development helpers for IBus
+# ============================================================================
+
+# Run IBus engine directly (for testing)
+ibus-run:
+  ./ibus-engine-pskk.py
+
+# Build gRPC server for development
+server-build:
+  cargo build --release --bin pskk-server
+
+# Run gRPC server directly
+server-run:
+  cargo run --bin pskk-server
+
+# Run gRPC server in development mode
+server-dev:
+  cargo run --bin pskk-server
 
 # Settings app
 settings-ui-install:
