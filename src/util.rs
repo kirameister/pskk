@@ -784,7 +784,6 @@ fn initialize_user_config_files() -> Result<Vec<String>, UtilError> {
 pub fn get_config_data() -> Result<(Value, Vec<String>), UtilError> {
     let user_config_dir = get_user_config_dir();
     let mut warnings = Vec::new();
-    let default_config = get_default_config_data()?;
 
     // Ensure the config directory exists
     if !user_config_dir.exists() {
@@ -792,6 +791,23 @@ pub fn get_config_data() -> Result<(Value, Vec<String>), UtilError> {
     }
 
     let config_path = user_config_dir.join("config.json");
+
+    // Try to load the default config. If the installed data files are missing,
+    // fall back to an empty object so the server can still start.
+    let default_config = match get_default_config_data() {
+        Ok(config) => config,
+        Err(err) => {
+            let msg = format!(
+                "Default config not found at {} ({}). Using empty default config.",
+                get_default_config_path().display(),
+                err
+            );
+            let _ = write_log(&msg);
+            warnings.push(msg);
+            Value::Object(serde_json::Map::new())
+        }
+    };
+
     if !config_path.exists() {
         write_json_value(&config_path, &default_config)?;
         

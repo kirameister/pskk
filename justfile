@@ -14,11 +14,12 @@ build:
 # Core Installation (IMF-agnostic)
 # ============================================================================
 
-# Install core PSKK components (server, gRPC stubs)
+# Install core PSKK components (server, gRPC stubs, data)
 core-install:
   @echo "=== Installing PSKK Core Components ==="
   just _install-grpc-stubs
   just _install-server
+  just _install-data
   @echo "✓ Core installation complete"
 
 # Internal: Generate and install gRPC stubs
@@ -35,6 +36,14 @@ _install-server:
   sudo mkdir -p /opt/pskk/bin
   sudo cp target/release/pskk-server /opt/pskk/bin/
   @echo "  ✓ pskk-server installed to /opt/pskk/bin/pskk-server"
+
+# Internal: Install data files (default config, layouts, kanchoku layouts)
+_install-data:
+  @echo "  Installing data files..."
+  sudo mkdir -p /opt/pskk/data
+  sudo cp -r data/* /opt/pskk/data/
+  sudo chmod -R a+rX /opt/pskk/data
+  @echo "  ✓ Data files installed to /opt/pskk/data"
 
 # ============================================================================
 # IBus-Specific Installation
