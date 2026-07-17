@@ -136,32 +136,35 @@ class PSKKEngine(IBus.Engine):
             logger.error(f"Failed to start pskk-server: {e}")
             return False
         
-    def connect_to_server(self):
+    def connect_to_server(self, max_retries=50, retry_delay=0.2):
         """Connect to the PSKK gRPC server, starting it if necessary"""
-        # Check if server is already running
-        if self._is_server_running():
-            logger.info("pskk-server is already running")
-        else:
+        # Already connected -- nothing to do
+        if self.stub:
+            return
+
+        # Start the server if it is not already running
+        if not self._is_server_running():
             logger.info("pskk-server not running, starting it...")
             if not self._start_server():
                 logger.error("Failed to start pskk-server")
                 return
-            
-            # Wait a bit more and retry connection
-            time.sleep(0.5)
-        
-        # Connect to the server
-        try:
-            self.channel = grpc.insecure_channel('localhost:50051')
-            self.stub = pskk_pb2_grpc.PSKKServiceStub(self.channel)
-            
-            # Verify connection
-            self.stub.GetMode(pskk_pb2.Empty(), timeout=1.0)
-            logger.info("✓ Connected to PSKK gRPC server at localhost:50051")
-            
-        except Exception as e:
-            logger.error(f"✗ Failed to connect to PSKK gRPC server: {e}")
-            logger.error("  The server may not be running properly")
+
+        # Retry until the server is actually accepting requests
+        for attempt in range(max_retries):
+            try:
+                self.channel = grpc.insecure_channel('localhost:50051')
+                self.stub = pskk_pb2_grpc.PSKKServiceStub(self.channel)
+
+                # Verify connection
+                self.stub.GetMode(pskk_pb2.Empty(), timeout=1.0)
+                logger.info("✓ Connected to PSKK gRPC server at localhost:50051")
+                return
+            except Exception as e:
+                logger.debug(f"✗ Connection attempt {attempt + 1}/{max_retries} failed: {e}")
+                time.sleep(retry_delay)
+
+        logger.error("✗ Failed to connect to PSKK gRPC server after retries")
+        self.stub = None
     
     def _create_properties(self):
         """Create the property menu for input mode switching"""
@@ -248,6 +251,7 @@ class PSKKEngine(IBus.Engine):
     def do_enable(self):
         """Called when the engine is enabled"""
         logger.info("Engine enabled")
+        self.connect_to_server()
     
     def do_disable(self):
         """Called when the engine is disabled"""
@@ -334,8 +338,10 @@ class PSKKEngine(IBus.Engine):
             logger.info(f"Modifier key event: {key_name}, is_pressed={is_pressed}")
         
         if not self.stub:
-            logger.warning("No gRPC connection, key not processed")
-            return False
+            logger.warning("No gRPC connection, attempting to reconnect")
+            self.connect_to_server()
+            if not self.stub:
+                return False
         
         try:
             # Create gRPC request
