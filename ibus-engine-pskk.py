@@ -81,6 +81,11 @@ class PSKKEngine(IBus.Engine):
     
     def _start_server(self):
         """Start the pskk-server process"""
+        # Avoid launching a duplicate if we already started one that is still alive
+        if self.server_process is not None and self.server_process.poll() is None:
+            logger.info("pskk-server process is already running, not starting another")
+            return True
+
         # Try to find the server binary
         # Resolve the script's actual location (follow symlinks)
         script_path = Path(__file__).resolve()
@@ -142,12 +147,15 @@ class PSKKEngine(IBus.Engine):
         if self.stub:
             return
 
-        # Start the server if it is not already running
+        # Start the server if it is not already running and we haven't already launched one
         if not self._is_server_running():
-            logger.info("pskk-server not running, starting it...")
-            if not self._start_server():
-                logger.error("Failed to start pskk-server")
-                return
+            if self.server_process is not None and self.server_process.poll() is None:
+                logger.info("pskk-server already launched, waiting for it to become ready")
+            else:
+                logger.info("pskk-server not running, starting it...")
+                if not self._start_server():
+                    logger.error("Failed to start pskk-server")
+                    return
 
         # Retry until the server is actually accepting requests
         for attempt in range(max_retries):
