@@ -15,6 +15,8 @@ pub fn engine_output_to_proto(output: RustEngineOutput) -> EngineOutput {
     eprintln!("  candidates: {}", output.candidates.len());
     eprintln!("  show_candidates: {}", output.show_candidates);
 
+    let status = output.status as i32;
+
     let marker_state = match output.marker_state {
         MarkerState::Idle => ProtoMarkerState::Idle,
         MarkerState::MarkerHeld => ProtoMarkerState::MarkerHeld,
@@ -55,5 +57,6 @@ pub fn engine_output_to_proto(output: RustEngineOutput) -> EngineOutput {
         current_mode: output.current_mode as i32,
         marker_state: marker_state as i32,
         engine_state: engine_state as i32,
+        status,
     }
 }

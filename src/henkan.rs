@@ -113,6 +113,12 @@ impl HenkanProcessor {
         self
     }
 
+    /// Load the dictionary into an existing processor.
+    pub fn load_dictionary(&self, dictionary: Dictionary) {
+        *self.dictionary.lock().unwrap() = dictionary;
+        *self.ready.lock().unwrap() = true;
+    }
+
     pub fn with_crf_model(
         mut self,
         feature_materials: CrfFeatureMaterials,

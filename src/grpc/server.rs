@@ -19,16 +19,12 @@ pub struct PSKKServiceImpl {
 
 impl PSKKServiceImpl {
     pub fn new() -> Result<Self, String> {
-        // Layout will be loaded by the engine from config
+        // Layout will be loaded by the engine from config.
+        // The kana-to-kanji dictionary is loaded in the background after the
+        // gRPC server has bound its port, so startup is not blocked.
         let simul = SimultaneousInputProcessor::new(None);
         let kanchoku = KanchokuProcessor::new(None);
-
-        // Load dictionary from JSON files
-        let dictionary_files = get_dictionary_files(None);
-        let dictionary = load_and_merge_dictionary_files(&dictionary_files)
-            .map_err(|e| format!("Failed to load dictionary: {}", e))?;
-
-        let henkan = HenkanProcessor::new().with_dictionary(dictionary);
+        let henkan = HenkanProcessor::new();
         let engine = PSKKEngine::new(simul, kanchoku, henkan)?;
 
         Ok(Self {
@@ -159,6 +155,27 @@ impl PskkService for PSKKServiceImpl {
 pub async fn run_server(addr: std::net::SocketAddr) -> Result<(), Box<dyn std::error::Error>> {
     let service = PSKKServiceImpl::new()
         .map_err(|e| format!("Failed to create service: {}", e))?;
+
+    // Load the kana-to-kanji dictionary in the background so the gRPC port
+    // is bound immediately. Requests that need the dictionary will return
+    // HENKAN_UNAVAILABLE until the load completes.
+    let engine = service.engine.clone();
+    tokio::task::spawn_blocking(move || {
+        let dictionary_files = get_dictionary_files(None);
+        match load_and_merge_dictionary_files(&dictionary_files) {
+            Ok(dictionary) => {
+                if let Ok(mut engine) = engine.lock() {
+                    engine.load_henkan_dictionary(dictionary);
+                    eprintln!("Dictionary loaded successfully");
+                } else {
+                    eprintln!("Failed to lock engine to load dictionary");
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to load dictionary: {}", e);
+            }
+        }
+    });
 
     Server::builder()
         .add_service(PskkServiceServer::new(service))

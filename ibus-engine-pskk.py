@@ -370,10 +370,23 @@ class PSKKEngine(IBus.Engine):
             
             # Send to server
             response = self.stub.ProcessKey(request)
-            
+
+            # If the server is still loading the kana-to-kanji dictionary,
+            # retry the same request silently until it is ready.
+            retries = 0
+            while response.status == pskk_pb2.ResponseStatus.HENKAN_UNAVAILABLE and retries < 100:
+                logger.debug("Henkan dictionary not ready yet; retrying ProcessKey...")
+                time.sleep(0.1)
+                response = self.stub.ProcessKey(request)
+                retries += 1
+
+            if response.status == pskk_pb2.ResponseStatus.HENKAN_UNAVAILABLE:
+                logger.error("Henkan dictionary still not ready after retries; dropping key")
+                return True  # Suppress the key as requested
+
             # Update UI based on response
             self._update_ui(response)
-            
+
             # Return whether the key was consumed
             return response.consumed
             

@@ -101,6 +101,14 @@ message DictionarySizeResponse {
   uint32 size = 1;
 }
 
+// Response status for operations that may depend on optional resources
+enum ResponseStatus {
+  // Operation completed normally
+  OK = 0;
+  // Henkan dictionary is still loading
+  HENKAN_UNAVAILABLE = 1;
+}
+
 // Engine output - everything the client needs to update UI
 message EngineOutput {
   // Text to commit to the application (empty string if none)
@@ -132,6 +140,9 @@ message EngineOutput {
 
   // Current engine state (input processing mode)
   EngineState engine_state = 10;
+
+  // Response status (e.g. while henkan dictionary is still loading)
+  ResponseStatus status = 11;
 }
 
 // A segment of preedit text

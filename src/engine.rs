@@ -1,4 +1,8 @@
-use crate::grpc::proto::{InputMode as ProtoInputMode, KeyModifiers as ProtoKeyModifiers};
+use crate::grpc::proto::{
+    InputMode as ProtoInputMode,
+    KeyModifiers as ProtoKeyModifiers,
+    ResponseStatus as ProtoResponseStatus,
+};
 use crate::henkan::{Candidate, HenkanProcessor};
 use crate::kanchoku::KanchokuProcessor;
 use crate::simultaneous_processor::SimultaneousInputProcessor;
@@ -58,6 +62,7 @@ pub struct EngineOutput {
     pub current_mode: ProtoInputMode,
     pub marker_state: MarkerState,
     pub engine_state: EngineState,
+    pub status: ProtoResponseStatus,
 }
 
 impl EngineOutput {
@@ -76,6 +81,7 @@ impl EngineOutput {
             },
             marker_state: MarkerState::Idle,
             engine_state: EngineState::Normal,
+            status: ProtoResponseStatus::Ok,
         }
     }
 
@@ -278,6 +284,19 @@ impl PSKKEngine {
             InputMode::Hiragana => ProtoInputMode::Hiragana,
         };
 
+        output
+    }
+
+    /// Load the kana-to-kanji dictionary into the engine after startup.
+    pub fn load_henkan_dictionary(&mut self, dictionary: crate::util::Dictionary) {
+        self.henkan_processor.load_dictionary(dictionary);
+    }
+
+    /// Build an EngineOutput that tells the client the henkan dictionary is still loading.
+    fn henkan_unavailable_output(&self) -> EngineOutput {
+        let mut output = self.build_preedit_output();
+        output.consumed = true;
+        output.status = ProtoResponseStatus::HenkanUnavailable;
         output
     }
 
@@ -766,6 +785,9 @@ impl PSKKEngine {
                 
                 // If in bunsetsu mode with preedit, trigger conversion and enter MarkerHeld
                 if self.engine_state == EngineState::Bunsetsu && !self.preedit_string.is_empty() {
+                    if !self.henkan_processor.is_ready() {
+                        return self.henkan_unavailable_output();
+                    }
                     debug!("Space pressed in bunsetsu mode, triggering conversion and entering MarkerHeld");
                     self.marker_state = MarkerState::MarkerHeld;
                     self.preedit_before_marker = self.preedit_string.clone();
@@ -868,6 +890,9 @@ impl PSKKEngine {
                     self.handle_down_arrow()
                 } else if self.engine_state == EngineState::Bunsetsu || self.engine_state == EngineState::ForcedPreedit {
                     // BUNSETSU or FORCED_PREEDIT state: trigger conversion
+                    if !self.henkan_processor.is_ready() {
+                        return self.henkan_unavailable_output();
+                    }
                     self.marker_state = MarkerState::Idle;
                     self.marker_first_key = None;
                     self.marker_keys_held.clear();
@@ -1092,6 +1117,9 @@ impl PSKKEngine {
             if self.engine_state == EngineState::Bunsetsu {
                 let yomi = self.preedit_string.clone();
                 let commit = if !yomi.is_empty() {
+                    if !self.henkan_processor.is_ready() {
+                        return self.henkan_unavailable_output();
+                    }
                     let candidates = self.henkan_processor.convert(&yomi).to_vec();
                     if let Some(first) = candidates.first() {
                         debug!("Immediate implicit conversion: '{}' → '{}'", yomi, first.surface);
@@ -1380,7 +1408,11 @@ impl PSKKEngine {
         if self.preedit_string.is_empty() {
             return EngineOutput::passthrough(self.mode);
         }
-        
+
+        if !self.henkan_processor.is_ready() {
+            return self.henkan_unavailable_output();
+        }
+
         // Use preedit_string which includes both hiragana and pending
         self.conversion_yomi = self.preedit_string.clone();
         self.engine_state = EngineState::Converting;

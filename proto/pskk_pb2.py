@@ -20,7 +20,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   name='pskk.proto',
   package='pskk',
   syntax='proto3',
-  serialized_pb=_b('\n\npskk.proto\x12\x04pskk\"\x07\n\x05\x45mpty\"i\n\x08KeyEvent\x12\x10\n\x08key_char\x18\x01 \x01(\t\x12\x10\n\x08key_name\x18\x02 \x01(\t\x12\x12\n\nis_pressed\x18\x03 \x01(\x08\x12%\n\tmodifiers\x18\x04 \x01(\x0b\x32\x12.pskk.KeyModifiers\"G\n\x0cKeyModifiers\x12\r\n\x05shift\x18\x01 \x01(\x08\x12\x0c\n\x04\x63trl\x18\x02 \x01(\x08\x12\x0b\n\x03\x61lt\x18\x03 \x01(\x08\x12\r\n\x05super\x18\x04 \x01(\x08\"/\n\x0eSetModeRequest\x12\x1d\n\x04mode\x18\x01 \x01(\x0e\x32\x0f.pskk.InputMode\"-\n\x0cModeResponse\x12\x1d\n\x04mode\x18\x01 \x01(\x0e\x32\x0f.pskk.InputMode\"%\n\x0e\x43onfigResponse\x12\x13\n\x0b\x63onfig_json\x18\x01 \x01(\t\"&\n\x16\x44ictionarySizeResponse\x12\x0c\n\x04size\x18\x01 \x01(\r\"\xd8\x02\n\x0c\x45ngineOutput\x12\x15\n\rcommit_string\x18\x01 \x01(\t\x12.\n\x10preedit_segments\x18\x02 \x03(\x0b\x32\x14.pskk.PreeditSegment\x12\x1a\n\x12preedit_cursor_pos\x18\x03 \x01(\r\x12#\n\ncandidates\x18\x04 \x03(\x0b\x32\x0f.pskk.Candidate\x12\x1c\n\x14\x63\x61ndidate_cursor_pos\x18\x05 \x01(\r\x12\x17\n\x0fshow_candidates\x18\x06 \x01(\x08\x12\x10\n\x08\x63onsumed\x18\x07 \x01(\x08\x12%\n\x0c\x63urrent_mode\x18\x08 \x01(\x0e\x32\x0f.pskk.InputMode\x12\'\n\x0cmarker_state\x18\t \x01(\x0e\x32\x11.pskk.MarkerState\x12\'\n\x0c\x65ngine_state\x18\n \x01(\x0e\x32\x11.pskk.EngineState\"3\n\x0ePreeditSegment\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x13\n\x0bis_selected\x18\x02 \x01(\x08\"-\n\tCandidate\x12\x0f\n\x07surface\x18\x01 \x01(\t\x12\x0f\n\x07reading\x18\x02 \x01(\t*+\n\tInputMode\x12\x10\n\x0c\x41LPHANUMERIC\x10\x00\x12\x0c\n\x08HIRAGANA\x10\x01*l\n\x0bMarkerState\x12\x08\n\x04IDLE\x10\x00\x12\x0f\n\x0bMARKER_HELD\x10\x01\x12\x11\n\rFIRST_PRESSED\x10\x02\x12\x12\n\x0e\x46IRST_RELEASED\x10\x03\x12\x1b\n\x17KANCHOKU_SECOND_PRESSED\x10\x04*K\n\x0b\x45ngineState\x12\n\n\x06NORMAL\x10\x00\x12\x0c\n\x08\x42UNSETSU\x10\x01\x12\x12\n\x0e\x46ORCED_PREEDIT\x10\x02\x12\x0e\n\nCONVERTING\x10\x03\x32\x8a\x03\n\x0bPSKKService\x12\x30\n\nProcessKey\x12\x0e.pskk.KeyEvent\x1a\x12.pskk.EngineOutput\x12\x33\n\x07SetMode\x12\x14.pskk.SetModeRequest\x1a\x12.pskk.EngineOutput\x12*\n\x07GetMode\x12\x0b.pskk.Empty\x1a\x12.pskk.ModeResponse\x12+\n\x08\x46ocusOut\x12\x0b.pskk.Empty\x1a\x12.pskk.EngineOutput\x12!\n\x05Reset\x12\x0b.pskk.Empty\x1a\x0b.pskk.Empty\x12.\n\tGetConfig\x12\x0b.pskk.Empty\x1a\x14.pskk.ConfigResponse\x12(\n\x0cReloadConfig\x12\x0b.pskk.Empty\x1a\x0b.pskk.Empty\x12>\n\x11GetDictionarySize\x12\x0b.pskk.Empty\x1a\x1c.pskk.DictionarySizeResponseb\x06proto3')
+  serialized_pb=_b('\n\npskk.proto\x12\x04pskk\"\x07\n\x05\x45mpty\"i\n\x08KeyEvent\x12\x10\n\x08key_char\x18\x01 \x01(\t\x12\x10\n\x08key_name\x18\x02 \x01(\t\x12\x12\n\nis_pressed\x18\x03 \x01(\x08\x12%\n\tmodifiers\x18\x04 \x01(\x0b\x32\x12.pskk.KeyModifiers\"G\n\x0cKeyModifiers\x12\r\n\x05shift\x18\x01 \x01(\x08\x12\x0c\n\x04\x63trl\x18\x02 \x01(\x08\x12\x0b\n\x03\x61lt\x18\x03 \x01(\x08\x12\r\n\x05super\x18\x04 \x01(\x08\"/\n\x0eSetModeRequest\x12\x1d\n\x04mode\x18\x01 \x01(\x0e\x32\x0f.pskk.InputMode\"-\n\x0cModeResponse\x12\x1d\n\x04mode\x18\x01 \x01(\x0e\x32\x0f.pskk.InputMode\"%\n\x0e\x43onfigResponse\x12\x13\n\x0b\x63onfig_json\x18\x01 \x01(\t\"&\n\x16\x44ictionarySizeResponse\x12\x0c\n\x04size\x18\x01 \x01(\r\"\xfe\x02\n\x0c\x45ngineOutput\x12\x15\n\rcommit_string\x18\x01 \x01(\t\x12.\n\x10preedit_segments\x18\x02 \x03(\x0b\x32\x14.pskk.PreeditSegment\x12\x1a\n\x12preedit_cursor_pos\x18\x03 \x01(\r\x12#\n\ncandidates\x18\x04 \x03(\x0b\x32\x0f.pskk.Candidate\x12\x1c\n\x14\x63\x61ndidate_cursor_pos\x18\x05 \x01(\r\x12\x17\n\x0fshow_candidates\x18\x06 \x01(\x08\x12\x10\n\x08\x63onsumed\x18\x07 \x01(\x08\x12%\n\x0c\x63urrent_mode\x18\x08 \x01(\x0e\x32\x0f.pskk.InputMode\x12\'\n\x0cmarker_state\x18\t \x01(\x0e\x32\x11.pskk.MarkerState\x12\'\n\x0c\x65ngine_state\x18\n \x01(\x0e\x32\x11.pskk.EngineState\x12$\n\x06status\x18\x0b \x01(\x0e\x32\x14.pskk.ResponseStatus\"3\n\x0ePreeditSegment\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x13\n\x0bis_selected\x18\x02 \x01(\x08\"-\n\tCandidate\x12\x0f\n\x07surface\x18\x01 \x01(\t\x12\x0f\n\x07reading\x18\x02 \x01(\t*+\n\tInputMode\x12\x10\n\x0c\x41LPHANUMERIC\x10\x00\x12\x0c\n\x08HIRAGANA\x10\x01*l\n\x0bMarkerState\x12\x08\n\x04IDLE\x10\x00\x12\x0f\n\x0bMARKER_HELD\x10\x01\x12\x11\n\rFIRST_PRESSED\x10\x02\x12\x12\n\x0e\x46IRST_RELEASED\x10\x03\x12\x1b\n\x17KANCHOKU_SECOND_PRESSED\x10\x04*K\n\x0b\x45ngineState\x12\n\n\x06NORMAL\x10\x00\x12\x0c\n\x08\x42UNSETSU\x10\x01\x12\x12\n\x0e\x46ORCED_PREEDIT\x10\x02\x12\x0e\n\nCONVERTING\x10\x03*0\n\x0eResponseStatus\x12\x06\n\x02OK\x10\x00\x12\x16\n\x12HENKAN_UNAVAILABLE\x10\x01\x32\x8a\x03\n\x0bPSKKService\x12\x30\n\nProcessKey\x12\x0e.pskk.KeyEvent\x1a\x12.pskk.EngineOutput\x12\x33\n\x07SetMode\x12\x14.pskk.SetModeRequest\x1a\x12.pskk.EngineOutput\x12*\n\x07GetMode\x12\x0b.pskk.Empty\x1a\x12.pskk.ModeResponse\x12+\n\x08\x46ocusOut\x12\x0b.pskk.Empty\x1a\x12.pskk.EngineOutput\x12!\n\x05Reset\x12\x0b.pskk.Empty\x1a\x0b.pskk.Empty\x12.\n\tGetConfig\x12\x0b.pskk.Empty\x1a\x14.pskk.ConfigResponse\x12(\n\x0cReloadConfig\x12\x0b.pskk.Empty\x1a\x0b.pskk.Empty\x12>\n\x11GetDictionarySize\x12\x0b.pskk.Empty\x1a\x1c.pskk.DictionarySizeResponseb\x06proto3')
 )
 
 _INPUTMODE = _descriptor.EnumDescriptor(
@@ -40,8 +40,8 @@ _INPUTMODE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=831,
-  serialized_end=874,
+  serialized_start=869,
+  serialized_end=912,
 )
 _sym_db.RegisterEnumDescriptor(_INPUTMODE)
 
@@ -75,8 +75,8 @@ _MARKERSTATE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=876,
-  serialized_end=984,
+  serialized_start=914,
+  serialized_end=1022,
 )
 _sym_db.RegisterEnumDescriptor(_MARKERSTATE)
 
@@ -106,12 +106,35 @@ _ENGINESTATE = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=986,
-  serialized_end=1061,
+  serialized_start=1024,
+  serialized_end=1099,
 )
 _sym_db.RegisterEnumDescriptor(_ENGINESTATE)
 
 EngineState = enum_type_wrapper.EnumTypeWrapper(_ENGINESTATE)
+_RESPONSESTATUS = _descriptor.EnumDescriptor(
+  name='ResponseStatus',
+  full_name='pskk.ResponseStatus',
+  filename=None,
+  file=DESCRIPTOR,
+  values=[
+    _descriptor.EnumValueDescriptor(
+      name='OK', index=0, number=0,
+      options=None,
+      type=None),
+    _descriptor.EnumValueDescriptor(
+      name='HENKAN_UNAVAILABLE', index=1, number=1,
+      options=None,
+      type=None),
+  ],
+  containing_type=None,
+  options=None,
+  serialized_start=1101,
+  serialized_end=1149,
+)
+_sym_db.RegisterEnumDescriptor(_RESPONSESTATUS)
+
+ResponseStatus = enum_type_wrapper.EnumTypeWrapper(_RESPONSESTATUS)
 ALPHANUMERIC = 0
 HIRAGANA = 1
 IDLE = 0
@@ -123,6 +146,8 @@ NORMAL = 0
 BUNSETSU = 1
 FORCED_PREEDIT = 2
 CONVERTING = 3
+OK = 0
+HENKAN_UNAVAILABLE = 1
 
 
 
@@ -455,6 +480,13 @@ _ENGINEOUTPUT = _descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None, file=DESCRIPTOR),
+    _descriptor.FieldDescriptor(
+      name='status', full_name='pskk.EngineOutput.status', index=10,
+      number=11, type=14, cpp_type=8, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None, file=DESCRIPTOR),
   ],
   extensions=[
   ],
@@ -468,7 +500,7 @@ _ENGINEOUTPUT = _descriptor.Descriptor(
   oneofs=[
   ],
   serialized_start=385,
-  serialized_end=729,
+  serialized_end=767,
 )
 
 
@@ -505,8 +537,8 @@ _PREEDITSEGMENT = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=731,
-  serialized_end=782,
+  serialized_start=769,
+  serialized_end=820,
 )
 
 
@@ -543,8 +575,8 @@ _CANDIDATE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=784,
-  serialized_end=829,
+  serialized_start=822,
+  serialized_end=867,
 )
 
 _KEYEVENT.fields_by_name['modifiers'].message_type = _KEYMODIFIERS
@@ -555,6 +587,7 @@ _ENGINEOUTPUT.fields_by_name['candidates'].message_type = _CANDIDATE
 _ENGINEOUTPUT.fields_by_name['current_mode'].enum_type = _INPUTMODE
 _ENGINEOUTPUT.fields_by_name['marker_state'].enum_type = _MARKERSTATE
 _ENGINEOUTPUT.fields_by_name['engine_state'].enum_type = _ENGINESTATE
+_ENGINEOUTPUT.fields_by_name['status'].enum_type = _RESPONSESTATUS
 DESCRIPTOR.message_types_by_name['Empty'] = _EMPTY
 DESCRIPTOR.message_types_by_name['KeyEvent'] = _KEYEVENT
 DESCRIPTOR.message_types_by_name['KeyModifiers'] = _KEYMODIFIERS
@@ -568,6 +601,7 @@ DESCRIPTOR.message_types_by_name['Candidate'] = _CANDIDATE
 DESCRIPTOR.enum_types_by_name['InputMode'] = _INPUTMODE
 DESCRIPTOR.enum_types_by_name['MarkerState'] = _MARKERSTATE
 DESCRIPTOR.enum_types_by_name['EngineState'] = _ENGINESTATE
+DESCRIPTOR.enum_types_by_name['ResponseStatus'] = _RESPONSESTATUS
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
 
 Empty = _reflection.GeneratedProtocolMessageType('Empty', (_message.Message,), dict(
@@ -648,8 +682,8 @@ _PSKKSERVICE = _descriptor.ServiceDescriptor(
   file=DESCRIPTOR,
   index=0,
   options=None,
-  serialized_start=1064,
-  serialized_end=1458,
+  serialized_start=1152,
+  serialized_end=1546,
   methods=[
   _descriptor.MethodDescriptor(
     name='ProcessKey',
