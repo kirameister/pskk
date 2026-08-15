@@ -589,7 +589,9 @@ impl PSKKEngine {
             }
         }
 
-        EngineOutput::passthrough(self.mode)
+        // For unhandled key releases (e.g. BackSpace release), preserve the
+        // current preedit/conversion state so the client does not hide it.
+        self.build_current_output_passthrough()
     }
 
     fn handle_enter(&mut self) -> EngineOutput {
@@ -657,18 +659,24 @@ impl PSKKEngine {
         if self.engine_state == EngineState::Converting {
             return self.cancel_conversion();
         }
-        
+
         if !self.preedit_string.is_empty() {
-            if !self.preedit_hiragana.is_empty() {
-                self.preedit_hiragana.pop();
+            // If there is pending (raw) input, remove one pending char first.
+            // Otherwise, remove the last confirmed kana and its associated ASCII.
+            if !self.preedit_pending.is_empty() {
+                self.preedit_pending.pop();
+            } else {
+                if !self.preedit_hiragana.is_empty() {
+                    self.preedit_hiragana.pop();
+                }
+                if !self.preedit_ascii.is_empty() {
+                    self.preedit_ascii.pop();
+                }
             }
-            if !self.preedit_ascii.is_empty() {
-                self.preedit_ascii.pop();
-            }
-            self.preedit_string = self.preedit_hiragana.clone();
+            self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
             return self.build_preedit_output();
         }
-        
+
         EngineOutput::passthrough(self.mode)
     }
 
@@ -1750,13 +1758,10 @@ mod tests {
             marker_keys_held: std::collections::HashSet::new(),
             marker_had_input: false,
             preedit_before_marker: String::new(),
-            in_forced_preedit: false,
             pure_kanchoku_held: false,
             pure_kanchoku_first_key: None,
-            bunsetsu_active: false,
-            in_conversion: false,
+            engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
-            converted: false,
         }
     }
 
@@ -1834,12 +1839,12 @@ mod tests {
         engine.process_key_event(Some('i'), "i", true, None);
         engine.process_key_event(Some(' '), "space", true, None);
 
-        assert!(engine.in_conversion);
+        assert_eq!(engine.engine_state, EngineState::Converting);
 
         let output = engine.process_key_event(None, "Return", true, None);
         assert!(output.consumed);
         assert_eq!(output.commit_string, Some("愛".to_string()));
-        assert!(!engine.in_conversion);
+        assert_ne!(engine.engine_state, EngineState::Converting);
         assert!(engine.preedit_string.is_empty());
     }
 
@@ -1852,11 +1857,11 @@ mod tests {
         engine.process_key_event(Some('i'), "i", true, None);
         engine.process_key_event(Some(' '), "space", true, None);
 
-        assert!(engine.in_conversion);
+        assert_eq!(engine.engine_state, EngineState::Converting);
 
         let output = engine.process_key_event(None, "Escape", true, None);
         assert!(output.consumed);
-        assert!(!engine.in_conversion);
+        assert_ne!(engine.engine_state, EngineState::Converting);
         assert_eq!(engine.preedit_string, "あい");
     }
 
@@ -1868,7 +1873,7 @@ mod tests {
         engine.process_key_event(Some('a'), "a", true, None);
         assert!(!engine.preedit_string.is_empty());
 
-        let modifiers = ProtoKeyModifiers { shift: false, ctrl: true, alt: false };
+        let modifiers = ProtoKeyModifiers { shift: false, ctrl: true, alt: false, super_: false };
         let output = engine.process_key_event(Some('c'), "c", true, Some(modifiers));
         assert!(!output.consumed, "Ctrl+C should pass through to application");
         assert!(output.commit_string.is_some(), "Should commit preedit before passing through");
