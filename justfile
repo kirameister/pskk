@@ -1,4 +1,4 @@
-set shell := ["zsh", "-cu"]
+set shell := ["bash", "-cu"]
 
 default:
   @just --list
@@ -153,6 +153,10 @@ server-run:
 server-dev:
   cargo run --bin pskk-server
 
+# Internal: Install the Tauri CLI (v2) once, if missing — required by every `cargo tauri` recipe
+_ensure-tauri-cli:
+  @if ! command -v cargo-tauri >/dev/null 2>&1 || ! cargo tauri --version 2>/dev/null | grep -q 'tauri-cli 2\.'; then echo "Installing tauri-cli..."; cargo install tauri-cli; fi
+
 # Settings app
 settings-ui-install:
   cd apps/settings/ui && npm install
@@ -161,9 +165,11 @@ settings-ui-build:
   cd apps/settings/ui && npm run build
 
 settings-tauri-build:
+  just _ensure-tauri-cli
   cd apps/settings/src-tauri && cargo tauri build
 
 settings-dev:
+  just _ensure-tauri-cli
   cd apps/settings/src-tauri && cargo tauri dev
 
 settings-check:
@@ -178,9 +184,11 @@ ime-tester-ui-build:
   cd apps/ime-tester/ui && npm run build
 
 ime-tester-dev:
+  just _ensure-tauri-cli
   cd apps/ime-tester && cargo tauri dev
 
 ime-tester-build:
+  just _ensure-tauri-cli
   cd apps/ime-tester && cargo tauri build
 
 # Dictionary editor app
@@ -191,9 +199,11 @@ dict-editor-ui-build:
   cd apps/dictionary-editor/ui && npm run build
 
 dict-editor-dev:
+  just _ensure-tauri-cli
   cd apps/dictionary-editor/src-tauri && cargo tauri dev
 
 dict-editor-build:
+  just _ensure-tauri-cli
   cd apps/dictionary-editor/src-tauri && cargo tauri build
 
 dict-editor-install:
@@ -212,6 +222,7 @@ install-deps:
 build-all:
   cargo build --release
   just settings-ui-build
+  just _ensure-tauri-cli
   just settings-tauri-build
   just ime-tester-ui-build
   just ime-tester-build
@@ -248,14 +259,17 @@ clean:
 
 # Package for distribution
 package-settings:
+  just _ensure-tauri-cli
   cd apps/settings/src-tauri && cargo tauri build
   @echo "Packages created in apps/settings/src-tauri/target/release/bundle/"
 
 package-ime-tester:
+  just _ensure-tauri-cli
   cd apps/ime-tester/src-tauri && cargo tauri build
   @echo "Packages created in apps/ime-tester/src-tauri/target/release/bundle/"
 
 package-dict-editor:
+  just _ensure-tauri-cli
   cd apps/dictionary-editor/src-tauri && cargo tauri build
   @echo "Packages created in apps/dictionary-editor/src-tauri/target/release/bundle/"
 
