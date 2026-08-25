@@ -18,15 +18,20 @@ build:
 core-install:
   @echo "=== Installing PSKK Core Components ==="
   just _install-grpc-stubs
+  just _ensure-skk-dictionaries
   just _install-server
   just _install-data
   @echo "✓ Core installation complete"
 
-# Internal: Generate and install gRPC stubs
+# Internal: Generate and install gRPC stubs (only when the .proto changed — avoids requiring grpcio-tools for plain installs)
 _install-grpc-stubs:
-  @echo "  Generating gRPC stubs..."
-  python3 -m grpc_tools.protoc -I./proto --python_out=./proto --grpc_python_out=./proto ./proto/pskk.proto
-  @echo "  ✓ gRPC stubs generated"
+  @if [ proto/pskk.proto -nt proto/pskk_pb2.py ] || [ proto/pskk.proto -nt proto/pskk_pb2_grpc.py ]; then \
+    echo "  Generating gRPC stubs..."; \
+    python3 -m grpc_tools.protoc -I./proto --python_out=./proto --grpc_python_out=./proto ./proto/pskk.proto; \
+    echo "  ✓ gRPC stubs generated"; \
+  else \
+    echo "  ✓ gRPC stubs are up to date (skipping regeneration)"; \
+  fi
 
 # Internal: Build and install gRPC server
 _install-server:
@@ -44,6 +49,27 @@ _install-data:
   sudo cp -r data/* /opt/pskk/data/
   sudo chmod -R a+rX /opt/pskk/data
   @echo "  ✓ Data files installed to /opt/pskk/data"
+
+# Internal: Download SKK dictionaries if missing (not shipped in the repo due to license).
+# Downloads into data/skk_dict/ so that _install-data copies them to /opt/pskk/data/skk_dict.
+_ensure-skk-dictionaries:
+  @if [ -f "data/skk_dict/SKK-JISYO.L" ]; then \
+    echo "  ✓ SKK dictionaries already present"; \
+  elif ! command -v curl >/dev/null 2>&1; then \
+    echo "  ⚠ curl not found - cannot download SKK dictionaries (henkan will have no dictionary)"; \
+  else \
+    echo "  Downloading SKK dictionaries to data/skk_dict/..."; \
+    mkdir -p data/skk_dict; \
+    for file in SKK-JISYO.L SKK-JISYO.M SKK-JISYO.ML SKK-JISYO.S; do \
+      echo "    Downloading $file..."; \
+      if curl -f -L -o "data/skk_dict/$file" "https://raw.githubusercontent.com/skk-dev/dict/master/$file"; then \
+        iconv -f EUC-JP -t UTF-8 "data/skk_dict/$file" > "data/skk_dict/$file.utf8" && mv "data/skk_dict/$file.utf8" "data/skk_dict/$file" || rm -f "data/skk_dict/$file.utf8"; \
+        echo "    ✓ $file downloaded"; \
+      else \
+        echo "    ⚠ Failed to download $file (skipping)"; \
+      fi; \
+    done; \
+  fi
 
 # ============================================================================
 # IBus-Specific Installation
@@ -64,8 +90,18 @@ ibus-install:
   @echo "  2. Go to Input Method tab and click Add"
   @echo "  3. Select Japanese → PSKK"
 
+# Internal: Install Python dependencies required by the IBus engine (grpc, protobuf, gi) if missing
+_ensure-ibus-python-deps:
+  @if ! python3 -c "import grpc, google.protobuf, gi" >/dev/null 2>&1; then \
+    echo "  Installing IBus engine Python dependencies (python3-grpcio, python3-protobuf, python3-gi)..."; \
+    sudo apt-get install -y python3-grpcio python3-protobuf python3-gi; \
+  else \
+    echo "  ✓ IBus engine Python dependencies present"; \
+  fi
+
 # Internal: Install IBus Python engine
 _install-ibus-engine:
+  just _ensure-ibus-python-deps
   @echo "  Installing IBus engine..."
   sudo mkdir -p /opt/pskk/libexec
   sudo cp ibus-engine-pskk.py /opt/pskk/libexec/
