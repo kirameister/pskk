@@ -14,13 +14,14 @@ build:
 # Core Installation (IMF-agnostic)
 # ============================================================================
 
-# Install core PSKK components (server, gRPC stubs, data)
+# Install core PSKK components (server, gRPC stubs, data, settings app)
 core-install:
   @echo "=== Installing PSKK Core Components ==="
   just _install-grpc-stubs
   just _ensure-skk-dictionaries
   just _install-server
   just _install-data
+  just settings-install
   @echo "✓ Core installation complete"
 
 # Internal: Generate and install gRPC stubs (only when the .proto changed — avoids requiring grpcio-tools for plain installs)
@@ -212,6 +213,16 @@ settings-check:
   cargo test
   cd apps/settings/ui && npm run build
 
+# Build and install the settings GUI app (UI dist is embedded at compile time)
+settings-install:
+  just settings-ui-install
+  just settings-ui-build
+  cd apps/settings/src-tauri && cargo build --release --features custom-protocol
+  sudo mkdir -p /opt/pskk/bin
+  sudo cp apps/settings/src-tauri/target/release/pskk-settings /opt/pskk/bin/
+  sudo ln -sf /opt/pskk/bin/pskk-settings /usr/local/bin/pskk-settings
+  @echo "✓ Settings app installed to /opt/pskk/bin/pskk-settings"
+
 # IME tester app
 ime-tester-ui-install:
   cd apps/ime-tester/ui && npm install
@@ -243,7 +254,7 @@ dict-editor-build:
   cd apps/dictionary-editor/src-tauri && cargo tauri build
 
 dict-editor-install:
-  cd apps/dictionary-editor/src-tauri && cargo build --release
+  cd apps/dictionary-editor/src-tauri && cargo build --release --features custom-protocol
   sudo mkdir -p /opt/pskk/bin
   sudo cp apps/dictionary-editor/src-tauri/target/release/pskk-dictionary-editor /opt/pskk/bin/
   @echo "✓ Dictionary editor installed to /opt/pskk/bin/pskk-dictionary-editor"
