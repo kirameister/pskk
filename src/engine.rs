@@ -124,6 +124,7 @@ pub struct PSKKEngine {
     marker_first_key: Option<char>,
     marker_second_key: Option<char>,
     marker_keys_held: std::collections::HashSet<String>,
+    pressed_keys: std::collections::HashSet<String>,
     marker_had_input: bool,
     preedit_before_marker: String,
     
@@ -226,6 +227,7 @@ impl PSKKEngine {
             marker_first_key: None,
             marker_second_key: None,
             marker_keys_held: std::collections::HashSet::new(),
+            pressed_keys: std::collections::HashSet::new(),
             marker_had_input: false,
             preedit_before_marker: String::new(),
             pure_kanchoku_held: false,
@@ -317,6 +319,13 @@ impl PSKKEngine {
             eprintln!("Super key detected, passing through");
             return EngineOutput::passthrough(self.mode);
         }
+
+        // Track key releases in every mode, so a key that was pressed in Hiragana
+        // mode but released after switching to Alphanumeric (where presses are not
+        // tracked) does not stay stuck as "held".
+        if !is_pressed {
+            self.pressed_keys.remove(key_name);
+        }
         // Check for mode switching keys first (before mode check)
         if is_pressed {
             // debug!("KEY PRESSED: '{}' (char: {:?})", key_name, key_char);
@@ -365,6 +374,17 @@ impl PSKKEngine {
         if self.mode == InputMode::Alphanumeric {
             eprintln!("  -> In Alphanumeric mode, passing through");
             return EngineOutput::passthrough(self.mode);
+        }
+
+        // Hiragana mode: suppress OS key-repeat events for character-input keys
+        // (a key pressed again without an intervening release). Editing keys such
+        // as BackSpace/Delete/arrows are excluded so holding them still repeats.
+        if is_pressed && Self::is_repeat_suppressed_key(key_name) {
+            if self.pressed_keys.contains(key_name) {
+                debug!("Key repeat detected for '{}', ignoring", key_name);
+                return self.build_repeat_output();
+            }
+            self.pressed_keys.insert(key_name.to_string());
         }
 
         eprintln!("  -> Processing in Hiragana mode");
@@ -416,6 +436,26 @@ impl PSKKEngine {
             // Everything else is not IME-relevant
             _ => false,
         }
+    }
+
+    /// Keys whose OS key-repeat should be suppressed in Hiragana mode.
+    /// Editing/navigation keys (BackSpace, Delete, arrows, ...) are excluded so
+    /// holding them keeps the native repeat behavior (e.g. holding BackSpace
+    /// deletes multiple characters).
+    fn is_repeat_suppressed_key(key_name: &str) -> bool {
+        !matches!(
+            key_name,
+            "space" | "Space"
+                | "Return" | "KP_Enter" | "Enter"
+                | "Escape"
+                | "BackSpace" | "Backspace" | "Delete"
+                | "Up" | "Down" | "Left" | "Right"
+                | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight"
+                | "Tab" | "ISO_Left_Tab"
+                | "Control_L" | "Control_R" | "Alt_L" | "Alt_R"
+                | "Shift_L" | "Shift_R" | "Super_L" | "Super_R"
+                | "Meta_L" | "Meta_R"
+        )
     }
     
     /// Check if we should commit current state and passthrough the key
@@ -1570,6 +1610,15 @@ impl PSKKEngine {
         output
     }
 
+    /// Output for a suppressed key-repeat event: consume it (so the app never
+    /// receives the repeated character) but keep the current preedit/conversion
+    /// UI visible.
+    fn build_repeat_output(&self) -> EngineOutput {
+        let mut output = self.build_current_output_passthrough();
+        output.consumed = true;
+        output
+    }
+
     fn build_conversion_output(&self) -> EngineOutput {
         let mut output = EngineOutput::empty(self.mode);
         output.consumed = true;
@@ -1628,6 +1677,7 @@ impl PSKKEngine {
         self.marker_state = MarkerState::Idle;
         self.marker_first_key = None;
         self.marker_keys_held.clear();
+        self.pressed_keys.clear();
         self.marker_had_input = false;
         self.preedit_before_marker.clear();
         self.pure_kanchoku_held = false;
@@ -1756,6 +1806,7 @@ mod tests {
             marker_first_key: None,
             marker_second_key: None,
             marker_keys_held: std::collections::HashSet::new(),
+            pressed_keys: std::collections::HashSet::new(),
             marker_had_input: false,
             preedit_before_marker: String::new(),
             pure_kanchoku_held: false,
