@@ -47,18 +47,22 @@ impl PskkService for PSKKServiceImpl {
             key_event.key_char.chars().next()
         };
 
-        let mut engine = self
-            .engine
-            .lock()
-            .map_err(|e| Status::internal(format!("Failed to lock engine: {}", e)))?;
+        let output = {
+            let mut engine = self
+                .engine
+                .lock()
+                .map_err(|e| Status::internal(format!("Failed to lock engine: {}", e)))?;
 
-        let output = engine.process_key_event(
-            key_char,
-            &key_event.key_name,
-            key_event.is_pressed,
-            key_event.modifiers,
-        );
+            engine.process_key_event(
+                key_char,
+                &key_event.key_name,
+                key_event.is_pressed,
+                key_event.modifiers,
+            )
+        };
 
+        // The engine mutex guard above is dropped before this write, so a blocked
+        // stderr (e.g. an undrained pipe) can no longer wedge every RPC.
         eprintln!("Key event: key_name='{}', is_pressed={}", key_event.key_name, key_event.is_pressed);
         Ok(Response::new(engine_output_to_proto(output)))
     }
