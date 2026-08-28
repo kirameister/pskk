@@ -22,6 +22,7 @@ core-install:
   just _install-server
   just _install-data
   just settings-install
+  just dict-editor-install
   @echo "✓ Core installation complete"
 
 # Internal: Generate and install gRPC stubs (only when the .proto changed — avoids requiring grpcio-tools for plain installs)
@@ -254,9 +255,12 @@ dict-editor-build:
   cd apps/dictionary-editor/src-tauri && cargo tauri build
 
 dict-editor-install:
+  just dict-editor-ui-install
+  just dict-editor-ui-build
   cd apps/dictionary-editor/src-tauri && cargo build --release --features custom-protocol
   sudo mkdir -p /opt/pskk/bin
   sudo cp apps/dictionary-editor/src-tauri/target/release/pskk-dictionary-editor /opt/pskk/bin/
+  sudo ln -sf /opt/pskk/bin/pskk-dictionary-editor /usr/local/bin/pskk-dictionary-editor
   @echo "✓ Dictionary editor installed to /opt/pskk/bin/pskk-dictionary-editor"
 
 # Install all dependencies
