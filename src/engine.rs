@@ -1012,6 +1012,7 @@ impl PSKKEngine {
             }
             self.marker_first_key = None;
             self.marker_second_key = None;
+            self.marker_keys_held.clear();
             self.marker_state = MarkerState::Idle;
             
             let mut output = EngineOutput::commit(commit, self.mode);
@@ -1026,6 +1027,7 @@ impl PSKKEngine {
             debug!("Entering forced preedit mode, clearing 'f' trigger from preedit");
             self.engine_state = EngineState::ForcedPreedit;
             self.marker_first_key = None;
+            self.marker_keys_held.clear();
             self.marker_state = MarkerState::Idle;
             
             // Restore preedit to state before marker (remove the 'f' trigger character)
@@ -1058,6 +1060,7 @@ impl PSKKEngine {
                     self.marker_first_key = None;
                     self.marker_second_key = None;
                     self.marker_had_input = false;
+                    self.marker_keys_held.clear();
                     self.marker_state = MarkerState::Idle;
                     
                     return self.build_preedit_output();
@@ -1073,6 +1076,7 @@ impl PSKKEngine {
                     self.marker_first_key = None;
                     self.marker_second_key = None;
                     self.marker_had_input = false;
+                    self.marker_keys_held.clear();
                     self.marker_state = MarkerState::Idle;
                     
                     return self.build_preedit_output();
@@ -1082,6 +1086,7 @@ impl PSKKEngine {
                 self.mark_bunsetsu_boundary(first_char);
                 self.marker_first_key = None;
                 self.marker_second_key = None;
+                self.marker_keys_held.clear();
                 self.marker_state = MarkerState::Idle;
                 return self.build_preedit_output();
             }
@@ -1090,6 +1095,7 @@ impl PSKKEngine {
         debug!("No action taken, returning consumed");
         self.marker_first_key = None;
         self.marker_had_input = false;
+        self.marker_keys_held.clear();
         self.marker_state = MarkerState::Idle;
         EngineOutput::consumed(self.mode)
     }
@@ -1418,6 +1424,12 @@ impl PSKKEngine {
     fn handle_character_release(&mut self, c: char) -> EngineOutput {
         debug!("handle_character_release: c='{}', marker_state={:?}, marker_keys_held={:?}",
                   c, self.marker_state, self.marker_keys_held);
+        
+        // Always remove the released key from the held set, regardless of marker
+        // state. A release can arrive after the marker already reset to Idle
+        // (e.g. space released before the stroke key); without this the key
+        // stays stuck in marker_keys_held and corrupts later marker flows.
+        self.marker_keys_held.remove(&c.to_string());
         
         // Track marker state transitions on key release
         if self.marker_state == MarkerState::FirstPressed {
