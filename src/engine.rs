@@ -6,7 +6,7 @@ use crate::grpc::proto::{
 use crate::henkan::{Candidate, HenkanProcessor};
 use crate::kanchoku::KanchokuProcessor;
 use crate::simultaneous_processor::SimultaneousInputProcessor;
-use crate::util::{get_config_data, get_layout_data};
+use crate::util::{get_config_data, get_layout_data, get_user_config_dir};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, trace};
 
@@ -213,6 +213,19 @@ impl PSKKEngine {
             KanchokuProcessor::new(Some(kanchoku_layout))
         };
 
+        // Load the pass-through (prefix/suffix) dictionary and its discount
+        // weight from config. A missing dictionary file yields an empty
+        // pass-through dictionary (no composed candidates).
+        let mut henkan_processor = henkan_processor;
+        let passthrough_discount = config
+            .get("passthrough_discount")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.09);
+        let passthrough_dict = crate::passthrough::PassThroughDictionary::load(
+            &get_user_config_dir().join("pass_through_dictionary.json"),
+        );
+        henkan_processor.load_passthrough_dictionary(passthrough_dict, passthrough_discount);
+
         Ok(Self {
             mode: InputMode::Alphanumeric,
             simul_processor,
@@ -257,6 +270,19 @@ impl PSKKEngine {
             .map_err(|e| format!("Failed to reload config: {}", e))?;
 
         self.config = config;
+
+        // Reload the pass-through dictionary and discount along with the config
+        let passthrough_discount = self
+            .config
+            .get("passthrough_discount")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.09);
+        let passthrough_dict = crate::passthrough::PassThroughDictionary::load(
+            &get_user_config_dir().join("pass_through_dictionary.json"),
+        );
+        self.henkan_processor
+            .load_passthrough_dictionary(passthrough_dict, passthrough_discount);
+
         info!("Config reloaded.");
 
         Ok(())

@@ -746,6 +746,28 @@ fn initialize_user_config_files() -> Result<Vec<String>, UtilError> {
         ));
     }
     
+    // Provision the default pass-through dictionary, but only when the user
+    // does not have one yet. Unlike the CRF model this file is user-editable
+    // (prefix/suffix entries), so it is never overwritten.
+    let passthrough_src = data_dir.join("pass_through_dictionary.json");
+    let passthrough_dst = user_config_dir.join("pass_through_dictionary.json");
+    if !passthrough_dst.exists() {
+        if passthrough_src.exists() {
+            fs::copy(&passthrough_src, &passthrough_dst)?;
+            warnings.push(format!(
+                "Copied pass_through_dictionary.json from {} to {}",
+                passthrough_src.display(),
+                passthrough_dst.display()
+            ));
+        } else {
+            write_json_value(&passthrough_dst, &json!({"prefix": {}, "suffix": {}}))?;
+            warnings.push(format!(
+                "Created empty pass_through_dictionary.json at {}",
+                passthrough_dst.display()
+            ));
+        }
+    }
+    
     // Create empty dictionaries directory for user SKK dictionaries
     let user_dicts_dir = get_user_dictionaries_dir();
     if !user_dicts_dir.exists() {
