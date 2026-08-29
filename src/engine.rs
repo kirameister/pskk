@@ -1300,6 +1300,41 @@ impl PSKKEngine {
                         return self.build_preedit_output();
                     }
                 }
+
+                // Some chords deliver their result in the *output* with an empty
+                // pending (e.g. か + o -> み in the default layout), which the
+                // pending-based check above misses. Detect those by re-checking
+                // the layout for the full pending+key combo and verifying the
+                // processor actually returned the chord's output. This also
+                // respects the simultaneous-input time window: a timed-out chord
+                // falls back to a different output and is correctly treated as
+                // non-simultaneous (so kanchoku can still fire).
+                if !self.preedit_pending.is_empty() {
+                    let chord_key = format!("{}{}", self.preedit_pending, c);
+                    let key_idx = chord_key.chars().count().saturating_sub(1);
+                    let chord_output = self
+                        .simul_processor
+                        .simultaneous_map
+                        .get(key_idx)
+                        .and_then(|bucket| bucket.get(&chord_key))
+                        .map(|entry| entry.output.clone());
+                    if let Some(chord_output) = chord_output {
+                        if !chord_output.is_empty()
+                            && simul_output.as_deref() == Some(chord_output.as_str())
+                            && simul_pending.as_deref() == Some("")
+                        {
+                            debug!("Simultaneous chord found: '{}' + '{}' → '{}' (in output)", first_char, c, chord_output);
+                            self.preedit_hiragana.push_str(&chord_output);
+                            self.preedit_ascii.push(first_char);
+                            self.preedit_ascii.push(c);
+                            self.preedit_pending.clear();
+                            self.preedit_string = self.preedit_hiragana.clone();
+
+                            self.marker_state = MarkerState::KanchokuSecondPressed;
+                            return self.build_preedit_output();
+                        }
+                    }
+                }
                 
                 debug!("No simultaneous input, attempting Kanchoku lookup");
                 // No simultaneous input - try Kanchoku lookup
@@ -1852,6 +1887,98 @@ mod tests {
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
         }
+    }
+
+    /// Engine with a layout where d+o / o+d form the chord み, and a kanchoku
+    /// layout where the same pairs map to 九 / 三 — used to verify that the
+    /// simultaneous chord wins over kanchoku under the marker.
+    fn create_chord_test_engine() -> PSKKEngine {
+        let layout = vec![
+            ("d".to_string(), "".to_string(), "か".to_string(), None),
+            ("o".to_string(), "".to_string(), "が".to_string(), None),
+            ("かo".to_string(), "み".to_string(), "".to_string(), None),
+            ("がd".to_string(), "み".to_string(), "".to_string(), None),
+        ];
+        let simul = SimultaneousInputProcessor::new(Some(layout));
+
+        let mut kanchoku_map: crate::kanchoku::KanchokuLayout = HashMap::new();
+        let mut d_second = HashMap::new();
+        d_second.insert('o', "九".to_string());
+        kanchoku_map.insert('d', d_second);
+        let mut o_second = HashMap::new();
+        o_second.insert('d', "三".to_string());
+        kanchoku_map.insert('o', o_second);
+        let kanchoku = KanchokuProcessor::new(Some(kanchoku_map));
+
+        let henkan = HenkanProcessor::new();
+
+        let config = serde_json::json!({
+            "enable_hiragana_key": ["Henkan", "Convert"],
+            "disable_hiragana_key": ["Muhenkan", "NonConvert"],
+        });
+
+        PSKKEngine {
+            mode: InputMode::Alphanumeric,
+            simul_processor: simul,
+            kanchoku_processor: kanchoku,
+            henkan_processor: henkan,
+            config,
+            preedit_string: String::new(),
+            preedit_hiragana: String::new(),
+            preedit_ascii: String::new(),
+            preedit_pending: String::new(),
+            marker_state: MarkerState::Idle,
+            marker_first_key: None,
+            marker_second_key: None,
+            marker_keys_held: std::collections::HashSet::new(),
+            pressed_keys: std::collections::HashSet::new(),
+            marker_had_input: false,
+            preedit_before_marker: String::new(),
+            pure_kanchoku_held: false,
+            pure_kanchoku_first_key: None,
+            engine_state: EngineState::Normal,
+            conversion_yomi: String::new(),
+        }
+    }
+
+    #[test]
+    fn chord_under_marker_beats_kanchoku_and_enters_bunsetsu() {
+        let mut engine = create_chord_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        // space + d + o: chord かo -> み must win over kanchoku d:o -> 九
+        engine.process_key_event(None, "space", true, None);
+        engine.process_key_event(Some('d'), "d", true, None);
+        let o = engine.process_key_event(Some('o'), "o", true, None);
+        assert!(o.commit_string.is_none(), "kanchoku must not fire for a chord");
+        let preedit = o.preedit_segments.iter().map(|s| s.text.clone()).collect::<String>();
+        assert_eq!(preedit, "み");
+
+        engine.process_key_event(Some('o'), "o", false, None);
+        engine.process_key_event(Some('d'), "d", false, None);
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(o.engine_state, EngineState::Bunsetsu, "space release must enter bunsetsu mode");
+        let preedit = o.preedit_segments.iter().map(|s| s.text.clone()).collect::<String>();
+        assert_eq!(preedit, "み");
+    }
+
+    #[test]
+    fn reverse_order_chord_also_wins() {
+        let mut engine = create_chord_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        // space + o + d: chord がd -> み must win over kanchoku o:d -> 三
+        engine.process_key_event(None, "space", true, None);
+        engine.process_key_event(Some('o'), "o", true, None);
+        let o = engine.process_key_event(Some('d'), "d", true, None);
+        assert!(o.commit_string.is_none());
+        let preedit = o.preedit_segments.iter().map(|s| s.text.clone()).collect::<String>();
+        assert_eq!(preedit, "み");
+
+        engine.process_key_event(Some('d'), "d", false, None);
+        engine.process_key_event(Some('o'), "o", false, None);
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(o.engine_state, EngineState::Bunsetsu);
     }
 
     #[test]
