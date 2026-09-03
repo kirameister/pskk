@@ -38,6 +38,7 @@ echo "  ✓ Desktop files removed"
 echo "Removing Fcitx 5 addon..."
 rm -f "${SYSTEM_FCITX5_ADDON_DIR}/pskk.conf"
 rm -f "${SYSTEM_FCITX5_INPUTMETHOD_DIR}/pskk.conf"
+rm -f "${SYSTEM_FCITX5_LIB_DIR}/pskk.so"
 rm -f "${SYSTEM_FCITX5_LIB_DIR}/libpskk.so"
 echo "  ✓ Fcitx 5 addon removed"
 

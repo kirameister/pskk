@@ -97,7 +97,8 @@ PSKK is also available as a native Fcitx 5 addon (`fcitx5/`, C++). See
 
 ```bash
 # Ubuntu/Debian prerequisites
-sudo apt install fcitx5 fcitx5-config-qt libfcitx5core-dev cmake
+sudo apt install fcitx5 fcitx5-config-qt cmake \
+                 libfcitx5core-dev libfcitx5utils-dev libfcitx5config-dev
 
 # Build and install
 just fcitx5-install

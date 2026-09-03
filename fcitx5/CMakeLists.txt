@@ -7,36 +7,94 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(GNUInstallDirs)
 
 # ---------------------------------------------------------------------------
-# Locate fcitx5 core (headers + library). Preferred route: pkg-config, which
-# the libfcitx5core-dev package ships. Fall back to manual search and honor
-# FCITX5_INCLUDE_DIR / FCITX5_LIBRARY overrides.
+# Locate fcitx5 (headers + libraries).
+#
+# Distros package the fcitx5 core under different names:
+#   Debian/Ubuntu : pkg-config modules Fcitx5Core / Fcitx5Utils / Fcitx5Config,
+#                   headers under /usr/include/Fcitx5/{Core,Utils,Config},
+#                   libraries libFcitx5Core.so / libFcitx5Utils.so
+#   other distros : may use a plain `fcitx5` module or a flat layout.
+#
+# So we try, in order:
+#   1. pkg-config module Fcitx5Core (then Fcitx5Utils/Fcitx5Config for the
+#      sibling include dirs), falling back to module `fcitx5`;
+#   2. a manual probe of the common header layouts;
+#   3. explicit -DFCITX5_* overrides are honored wherever applicable.
 # ---------------------------------------------------------------------------
+set(FCITX5_FOUND FALSE)
+
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
-  pkg_check_modules(FCITX5 QUIET IMPORTED_TARGET fcitx5)
+  pkg_check_modules(FCITX5_CORE QUIET IMPORTED_TARGET Fcitx5Core)
+  if(NOT FCITX5_CORE_FOUND)
+    pkg_check_modules(FCITX5_CORE QUIET IMPORTED_TARGET fcitx5)
+  endif()
+  if(FCITX5_CORE_FOUND)
+    # Optional sibling modules: they carry the include dirs (and link flags)
+    # for the fcitx-utils / fcitx-config headers used by the engine headers.
+    pkg_check_modules(FCITX5_UTILS QUIET IMPORTED_TARGET Fcitx5Utils)
+    pkg_check_modules(FCITX5_CONFIG QUIET IMPORTED_TARGET Fcitx5Config)
+    set(FCITX5_FOUND TRUE)
+  endif()
 endif()
 
 if(NOT FCITX5_FOUND)
-  find_path(FCITX5_INCLUDE_DIR fcitx/inputmethodengine.h
-            HINTS ${FCITX5_INCLUDE_DIR}
-            PATHS /usr/include/fcitx5 /usr/local/include/fcitx5
-                  /usr/include
-            PATH_SUFFIXES fcitx5)
-  find_library(FCITX5_LIBRARY NAMES fcitx5core
-               HINTS ${FCITX5_LIBRARY}
-               PATHS /usr/lib /usr/lib64 /usr/local/lib
-                     /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu)
-  if(FCITX5_INCLUDE_DIR AND FCITX5_LIBRARY)
-    set(FCITX5_FOUND TRUE)
-    set(FCITX5_INCLUDE_DIRS ${FCITX5_INCLUDE_DIR})
-    set(FCITX5_LIBRARIES ${FCITX5_LIBRARY})
+  # ---- manual probe -------------------------------------------------------
+  # Shape A (Debian/Ubuntu and upstream): <root>/Core/fcitx/inputmethodengine.h
+  # Shape B (flat layout):                 <root>/fcitx/inputmethodengine.h
+  set(_FCITX5_HEADER_ROOTS
+      /usr/include/Fcitx5 /usr/local/include/Fcitx5
+      /usr/include /usr/local/include)
+  set(FCITX5_INCLUDE_DIRS "")
+
+  foreach(_root ${_FCITX5_HEADER_ROOTS})
+    if(EXISTS "${_root}/Core/fcitx/inputmethodengine.h")
+      foreach(_sub Core Utils Config)
+        if(EXISTS "${_root}/${_sub}")
+          list(APPEND FCITX5_INCLUDE_DIRS "${_root}/${_sub}")
+        endif()
+      endforeach()
+    elseif(EXISTS "${_root}/fcitx/inputmethodengine.h")
+      list(APPEND FCITX5_INCLUDE_DIRS "${_root}")
+    endif()
+    if(FCITX5_INCLUDE_DIRS)
+      break()
+    endif()
+  endforeach()
+
+  if(FCITX5_INCLUDE_DIRS)
+    set(_FCITX5_ARCH_LIBDIRS
+        /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu
+        /usr/lib/arm-linux-gnueabihf /usr/lib/arm-linux-gnueabi
+        /usr/lib/riscv64-linux-gnu /usr/lib/powerpc64le-linux-gnu
+        /usr/lib/s390x-linux-gnu /usr/lib /usr/lib64
+        /usr/local/lib /usr/local/lib64)
+    find_library(FCITX5_CORE_LIBRARY
+                 NAMES Fcitx5Core fcitx5core
+                 HINTS ${FCITX5_CORE_LIBRARY}
+                 PATHS ${_FCITX5_ARCH_LIBDIRS})
+    find_library(FCITX5_UTILS_LIBRARY
+                 NAMES Fcitx5Utils fcitx5utils
+                 HINTS ${FCITX5_UTILS_LIBRARY}
+                 PATHS ${_FCITX5_ARCH_LIBDIRS})
+    if(FCITX5_CORE_LIBRARY)
+      set(FCITX5_LIBRARIES ${FCITX5_CORE_LIBRARY})
+      if(FCITX5_UTILS_LIBRARY)
+        list(APPEND FCITX5_LIBRARIES ${FCITX5_UTILS_LIBRARY})
+      endif()
+      set(FCITX5_FOUND TRUE)
+    endif()
   endif()
 endif()
 
 if(NOT FCITX5_FOUND)
   message(FATAL_ERROR
-    "fcitx5 core not found. Install libfcitx5core-dev (Debian/Ubuntu), "
-    "or pass -DFCITX5_INCLUDE_DIR=... -DFCITX5_LIBRARY=...")
+    "fcitx5 core not found. Install the fcitx5 development packages, e.g.\n"
+    "  Debian/Ubuntu: sudo apt install libfcitx5core-dev libfcitx5utils-dev libfcitx5config-dev\n"
+    "  Fedora:        sudo dnf install fcitx5-devel\n"
+    "  Arch:          sudo pacman -S fcitx5\n"
+    "or pass -DFCITX5_CORE_LIBRARY=/path/to/libFcitx5Core.so\n"
+    "       -DFCITX5_UTILS_LIBRARY=/path/to/libFcitx5Utils.so")
 endif()
 
 # ---------------------------------------------------------------------------
@@ -51,16 +109,31 @@ set_target_properties(pskk PROPERTIES
   CXX_STANDARD_REQUIRED ON)
 target_include_directories(pskk PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-if(FCITX5_FOUND AND TARGET PkgConfig::FCITX5)
-  target_link_libraries(pskk PRIVATE PkgConfig::FCITX5)
+if(TARGET PkgConfig::FCITX5_CORE)
+  target_link_libraries(pskk PRIVATE PkgConfig::FCITX5_CORE)
+  # pkg-config 'Requires' usually brings the sibling dirs in already, but
+  # append them explicitly when the sibling modules exist.
+  if(TARGET PkgConfig::FCITX5_UTILS)
+    target_link_libraries(pskk PRIVATE PkgConfig::FCITX5_UTILS)
+    target_include_directories(pskk PRIVATE ${FCITX5_UTILS_INCLUDE_DIRS})
+  endif()
+  if(TARGET PkgConfig::FCITX5_CONFIG)
+    target_include_directories(pskk PRIVATE ${FCITX5_CONFIG_INCLUDE_DIRS})
+  endif()
 else()
   target_include_directories(pskk PRIVATE ${FCITX5_INCLUDE_DIRS})
   target_link_libraries(pskk PRIVATE ${FCITX5_LIBRARIES})
 endif()
 
-# Hide non-exported symbols (fcitx addons should only export the factory).
+# fcitx resolves an addon library by the exact name "Library" + ".so"
+# (see fcitx5's addonloader.cpp: libname + FCITX_LIBRARY_SUFFIX), so the
+# shared library must be named pskk.so -- NOT libpskk.so. This mirrors how
+# upstream fcitx5-skk / fcitx5-mozc ship (skk.so, mozc.so, ...).
+# Also hide non-exported symbols (fcitx addons only export the factory).
 set_target_properties(pskk PROPERTIES CXX_VISIBILITY_PRESET hidden
-                                      VISIBILITY_INLINES_HIDDEN ON)
+                                      VISIBILITY_INLINES_HIDDEN ON
+                                      OUTPUT_NAME pskk
+                                      PREFIX "")
 
 # ---------------------------------------------------------------------------
 # Registration data (installed into the fcitx5 data directories)

@@ -163,7 +163,7 @@ if [ -f "packaging/pskk-settings.desktop" ]; then
 fi
 
 # Install Fcitx 5 addon (if built with: just fcitx5-build)
-if [ -d "fcitx5/build" ] && [ -f "fcitx5/build/libpskk.so" ]; then
+if [ -d "fcitx5/build" ] && [ -f "fcitx5/build/pskk.so" ]; then
     echo "Installing Fcitx 5 addon..."
     cmake --install fcitx5/build > /dev/null
     echo "  ✓ Fcitx 5 addon installed (restart fcitx5 to activate)"

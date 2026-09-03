@@ -169,13 +169,13 @@ fcitx5-install:
   @echo "  2. Search for PSKK and add it"
   @echo "  3. Switch to PSKK and type (Ctrl+J / Ctrl+\ toggles あ/A)"
 
-# Build the Fcitx 5 addon (requires cmake and libfcitx5core-dev)
+# Build the Fcitx 5 addon (requires cmake and the fcitx5 dev packages)
 fcitx5-build:
-  @echo "Building Fcitx 5 addon (requires cmake and libfcitx5core-dev)..."
-  @MULTIARCH="$$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || true)"; \
-    if [ -z "$$MULTIARCH" ]; then CMAKE_LIBDIR="lib"; else CMAKE_LIBDIR="lib/$$MULTIARCH"; fi; \
-    cmake -S fcitx5 -B fcitx5/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR="$$CMAKE_LIBDIR" && \
-    cmake --build fcitx5/build -j"$$(nproc)"
+  @echo "Building Fcitx 5 addon (requires cmake and the fcitx5 dev packages)..."
+  @MULTIARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || true)"; \
+    if [ -z "$MULTIARCH" ]; then CMAKE_LIBDIR="lib"; else CMAKE_LIBDIR="lib/$MULTIARCH"; fi; \
+    cmake -S fcitx5 -B fcitx5/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR="$CMAKE_LIBDIR" && \
+    cmake --build fcitx5/build -j"$(nproc)"
 
 # Restart Fcitx 5 (used after install/uninstall)
 _restart-fcitx5:
@@ -186,7 +186,10 @@ fcitx5-uninstall:
   @echo "=== Uninstalling PSKK from Fcitx 5 ==="
   @sudo rm -f /usr/share/fcitx5/addon/pskk.conf
   @sudo rm -f /usr/share/fcitx5/inputmethod/pskk.conf
-  @sudo rm -f /usr/lib/x86_64-linux-gnu/fcitx5/libpskk.so /usr/lib/aarch64-linux-gnu/fcitx5/libpskk.so /usr/lib/fcitx5/libpskk.so /usr/lib64/fcitx5/libpskk.so
+  @sudo rm -f /usr/lib/x86_64-linux-gnu/fcitx5/pskk.so /usr/lib/x86_64-linux-gnu/fcitx5/libpskk.so
+  @sudo rm -f /usr/lib/aarch64-linux-gnu/fcitx5/pskk.so /usr/lib/aarch64-linux-gnu/fcitx5/libpskk.so
+  @sudo rm -f /usr/lib/fcitx5/pskk.so /usr/lib/fcitx5/libpskk.so
+  @sudo rm -f /usr/lib64/fcitx5/pskk.so /usr/lib64/fcitx5/libpskk.so
   just _restart-fcitx5
   just core-uninstall
   @echo ""

@@ -9,7 +9,7 @@ engine core (the Rust `pskk-server`).
 
 ```
 IBus        ↔ ibus-engine-pskk.py (Python, gRPC)
-Fcitx 5     ↔ libpskk.so          (C++ addon, JSON/TCP)   ──►  pskk-server (Rust core)
+Fcitx 5     ↔ pskk.so             (C++ addon, JSON/TCP)   ──►  pskk-server (Rust core)
                                     ↕ auto-start / reconnect
 ```
 
@@ -28,11 +28,18 @@ framework should be active per desktop session; see [Switching](#switching-a-ses
 
 ```bash
 sudo apt install fcitx5 fcitx5-frontend-gtk3 fcitx5-frontend-gtk4 \
-                 fcitx5-frontend-qt5 fcitx5-config-qt \
-                 libfcitx5core-dev cmake
+                 fcitx5-frontend-qt5 fcitx5-config-qt cmake \
+                 libfcitx5core-dev libfcitx5utils-dev libfcitx5config-dev
 # Optionally replace the IBus frontends' GTK/Qt IM modules with Fcitx's
 # (see "Switching a session to Fcitx 5" below).
 ```
+
+Note: the engine headers pull in `<fcitx-utils/...>` and `<fcitx-config/...>`
+in addition to `<fcitx/...>`, hence the three `-dev` packages. CMake locates
+fcitx5 via pkg-config (`Fcitx5Core`/`Fcitx5Utils`/`Fcitx5Config`) and falls
+back to probing `/usr/include/Fcitx5/{Core,Utils,Config}` (the Debian/Ubuntu
+layout) or a flat `/usr/include` layout, honoring `-DFCITX5_CORE_LIBRARY=` /
+`-DFCITX5_UTILS_LIBRARY=` overrides.
 
 ## Building and installing
 
@@ -51,7 +58,13 @@ sudo ./packaging/install.sh
 |---------------------------------------|---------------------------------------------------------------------|
 | addon metadata `pskk.conf`            | `/usr/share/fcitx5/addon/pskk.conf`                                 |
 | input method entry `pskk.conf`        | `/usr/share/fcitx5/inputmethod/pskk.conf`                           |
-| engine library `libpskk.so`           | `/usr/lib/<multiarch>/fcitx5/libpskk.so` (Debian), else `/usr/lib/fcitx5/` |
+| engine library `pskk.so`              | `/usr/lib/<multiarch>/fcitx5/pskk.so` (Debian), else `/usr/lib/fcitx5/` |
+
+> **Naming matters**: fcitx loads an addon library by the exact name
+> `Library` + `.so` (see `addonloader.cpp`). `Library=pskk` therefore
+> requires the file to be named **`pskk.so`** — not `libpskk.so` (that is why
+> fcitx5-skk ships `skk.so`, fcitx5-mozc ships `mozc.so`, etc.). If an input
+> method shows "(Not available)", check for this first:
 
 Uninstall: `sudo just fcitx5-uninstall` (or `sudo ./packaging/uninstall.sh`).
 
@@ -129,7 +142,7 @@ g++ -std=c++17 -Ifcitx5/src fcitx5/src/pskkjson.cpp fcitx5/src/pskkclient.cpp \
 cargo build --bin pskk-server        # after changing the Rust engine/server
 pkill pskk-server || true            # addon auto-starts the new server next time
 
-just fcitx5-build                    # rebuild libpskk.so
+just fcitx5-build                    # rebuild pskk.so
 fcitx5-remote -r                     # restart Fcitx (reloads the addon)
 ```
 
@@ -142,10 +155,10 @@ Server discovery (same as the IBus client): if nothing listens on
 ### Compile-checking the addon without installing Fcitx
 
 The engine targets the fcitx5 API as of **5.1.x** (`InputMethodEngineV2`, the
-`fcitx::Action` menu model). With `libfcitx5core-dev` installed the normal
-cmake build covers this; without it, the sources can still be syntax-checked
-against fetched headers (see the commit message/history of `fcitx5/src` for
-the exact `-I` recipe used during development).
+`fcitx::Action` menu model). With the fcitx5 development packages installed
+the normal cmake build covers this; without them, the sources can still be
+syntax-checked against fetched headers (see the commit message/history of
+`fcitx5/src` for the exact `-I` recipe used during development).
 
 ## Behavioral parity with the IBus client
 
