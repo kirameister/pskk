@@ -339,7 +339,10 @@ void PskkEngine::render(fcitx::InputContext *ic, const EngineOutput &output) {
     if (mode != currentMode_.load()) {
         currentMode_.store(mode);
         updateModeActions(ic);
-        // Show the mode change like the IBus property icon update does.
+        // Refresh the mode indicator (tray/panel icon and label) and show the
+        // mode change like the IBus property icon update does. classicui
+        // repaints the current-IM indicator on StatusArea updates.
+        ic->updateUserInterface(fcitx::UserInterfaceComponent::StatusArea);
         instance_->showInputMethodInformation(ic);
     }
 
@@ -437,6 +440,18 @@ std::string PskkEngine::subMode(const fcitx::InputMethodEntry &entry,
     (void)entry;
     (void)inputContext;
     return currentMode_.load() == kHiragana ? "Hiragana" : "Alphanumeric";
+}
+
+std::string PskkEngine::subModeIconImpl(const fcitx::InputMethodEntry &entry,
+                                        fcitx::InputContext &inputContext) {
+    (void)entry;
+    (void)inputContext;
+    // Icon-theme icons installed by the addon (data/icons/hicolor). These are
+    // shown by fcitx's tray/status indicator (Instance::inputMethodIcon) and
+    // replace the static/default icon when the mode changes, mirroring the
+    // IBus client's "あ"/"A" property symbol.
+    return currentMode_.load() == kHiragana ? "pskk-hiragana"
+                                            : "pskk-alphanumeric";
 }
 
 std::string PskkEngine::subModeLabelImpl(const fcitx::InputMethodEntry &entry,

@@ -52,19 +52,26 @@ just fcitx5-install        # = core-install + fcitx5-build + cmake --install + f
 sudo ./packaging/install.sh
 ```
 
-`fcitx5-install` writes three artifacts (mirroring how fcitx5-skk installs):
+`fcitx5-install` writes these artifacts (mirroring how fcitx5-skk installs):
 
 | Artifact                              | Destination                                                          |
 |---------------------------------------|---------------------------------------------------------------------|
 | addon metadata `pskk.conf`            | `/usr/share/fcitx5/addon/pskk.conf`                                 |
 | input method entry `pskk.conf`        | `/usr/share/fcitx5/inputmethod/pskk.conf`                           |
 | engine library `pskk.so`              | `/usr/lib/<multiarch>/fcitx5/pskk.so` (Debian), else `/usr/lib/fcitx5/` |
+| mode icons `pskk-hiragana`/`pskk-alphanumeric` | `/usr/share/icons/hicolor/<size>x<size>/apps/*.png`          |
 
 > **Naming matters**: fcitx loads an addon library by the exact name
 > `Library` + `.so` (see `addonloader.cpp`). `Library=pskk` therefore
 > requires the file to be named **`pskk.so`** — not `libpskk.so` (that is why
 > fcitx5-skk ships `skk.so`, fcitx5-mozc ships `mozc.so`, etc.). If an input
 > method shows "(Not available)", check for this first:
+
+After installing (or updating) the icons, refresh the icon-theme cache once:
+
+```bash
+sudo gtk-update-icon-cache -f /usr/share/icons/hicolor
+```
 
 Uninstall: `sudo just fcitx5-uninstall` (or `sudo ./packaging/uninstall.sh`).
 
@@ -188,9 +195,12 @@ The addon deliberately mirrors `ibus-engine-pskk.py` 1:1:
   thread and marshal results onto the fcitx event loop.
 - **Candidate clicks**: not handled, exactly like the IBus client (selection
   is key-driven). Candidate words are `DisplayOnlyCandidateWord`s.
-- **Sub-mode indicator**: `あ`/`A` is reflected in the mode action, the
-  `showInputMethodInformation` popup and `subModeLabelImpl`; whether the label
-  shows inside the candidate panel depends on the UI addon (classicui etc.).
+- **Sub-mode indicator**: mirrors the IBus client's `あ`/`A` property symbol.
+  The engine reports `subModeIconImpl` (`pskk-hiragana` / `pskk-alphanumeric`
+  icons installed into the hicolor theme) and `subModeLabelImpl` (`あ`/`A`);
+  fcitx uses these for the tray/status indicator
+  (`Instance::inputMethodIcon/Label`). The engine fires a `StatusArea` UI
+  update on every mode change so the indicator repaints immediately.
 - **Client preedit**: when the application supports it (`CapabilityFlag::
   Preedit`, e.g. GTK/Qt frontends), preedit is rendered *inline* by the app
   with underline/highlight, exactly like other fcitx5 IMEs (fcitx5-skk/mozc).

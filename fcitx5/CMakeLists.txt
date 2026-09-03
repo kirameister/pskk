@@ -152,3 +152,9 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pskk.conf
         DESTINATION ${CMAKE_INSTALL_DATADIR}/fcitx5/inputmethod)
 
 install(TARGETS pskk LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/fcitx5)
+
+# Input-mode indicator icons (pskk-hiragana / pskk-alphanumeric) installed
+# into the hicolor icon theme. After installing, refresh the icon cache with:
+#   sudo gtk-update-icon-cache /usr/share/icons/hicolor
+install(DIRECTORY data/icons/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons)
