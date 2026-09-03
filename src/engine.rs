@@ -6,7 +6,7 @@ use crate::grpc::proto::{
 use crate::henkan::{Candidate, HenkanProcessor};
 use crate::kanchoku::KanchokuProcessor;
 use crate::simultaneous_processor::SimultaneousInputProcessor;
-use crate::util::{get_config_data, get_layout_data};
+use crate::util::{get_config_data, get_layout_data, get_user_config_dir};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, trace};
 
@@ -124,6 +124,7 @@ pub struct PSKKEngine {
     marker_first_key: Option<char>,
     marker_second_key: Option<char>,
     marker_keys_held: std::collections::HashSet<String>,
+    pressed_keys: std::collections::HashSet<String>,
     marker_had_input: bool,
     preedit_before_marker: String,
     
@@ -212,6 +213,19 @@ impl PSKKEngine {
             KanchokuProcessor::new(Some(kanchoku_layout))
         };
 
+        // Load the pass-through (prefix/suffix) dictionary and its discount
+        // weight from config. A missing dictionary file yields an empty
+        // pass-through dictionary (no composed candidates).
+        let mut henkan_processor = henkan_processor;
+        let passthrough_discount = config
+            .get("passthrough_discount")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.09);
+        let passthrough_dict = crate::passthrough::PassThroughDictionary::load(
+            &get_user_config_dir().join("pass_through_dictionary.json"),
+        );
+        henkan_processor.load_passthrough_dictionary(passthrough_dict, passthrough_discount);
+
         Ok(Self {
             mode: InputMode::Alphanumeric,
             simul_processor,
@@ -226,6 +240,7 @@ impl PSKKEngine {
             marker_first_key: None,
             marker_second_key: None,
             marker_keys_held: std::collections::HashSet::new(),
+            pressed_keys: std::collections::HashSet::new(),
             marker_had_input: false,
             preedit_before_marker: String::new(),
             pure_kanchoku_held: false,
@@ -255,6 +270,19 @@ impl PSKKEngine {
             .map_err(|e| format!("Failed to reload config: {}", e))?;
 
         self.config = config;
+
+        // Reload the pass-through dictionary and discount along with the config
+        let passthrough_discount = self
+            .config
+            .get("passthrough_discount")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.09);
+        let passthrough_dict = crate::passthrough::PassThroughDictionary::load(
+            &get_user_config_dir().join("pass_through_dictionary.json"),
+        );
+        self.henkan_processor
+            .load_passthrough_dictionary(passthrough_dict, passthrough_discount);
+
         info!("Config reloaded.");
 
         Ok(())
@@ -317,6 +345,13 @@ impl PSKKEngine {
             eprintln!("Super key detected, passing through");
             return EngineOutput::passthrough(self.mode);
         }
+
+        // Track key releases in every mode, so a key that was pressed in Hiragana
+        // mode but released after switching to Alphanumeric (where presses are not
+        // tracked) does not stay stuck as "held".
+        if !is_pressed {
+            self.pressed_keys.remove(key_name);
+        }
         // Check for mode switching keys first (before mode check)
         if is_pressed {
             // debug!("KEY PRESSED: '{}' (char: {:?})", key_name, key_char);
@@ -365,6 +400,17 @@ impl PSKKEngine {
         if self.mode == InputMode::Alphanumeric {
             eprintln!("  -> In Alphanumeric mode, passing through");
             return EngineOutput::passthrough(self.mode);
+        }
+
+        // Hiragana mode: suppress OS key-repeat events for character-input keys
+        // (a key pressed again without an intervening release). Editing keys such
+        // as BackSpace/Delete/arrows are excluded so holding them still repeats.
+        if is_pressed && Self::is_repeat_suppressed_key(key_name) {
+            if self.pressed_keys.contains(key_name) {
+                debug!("Key repeat detected for '{}', ignoring", key_name);
+                return self.build_repeat_output();
+            }
+            self.pressed_keys.insert(key_name.to_string());
         }
 
         eprintln!("  -> Processing in Hiragana mode");
@@ -416,6 +462,26 @@ impl PSKKEngine {
             // Everything else is not IME-relevant
             _ => false,
         }
+    }
+
+    /// Keys whose OS key-repeat should be suppressed in Hiragana mode.
+    /// Editing/navigation keys (BackSpace, Delete, arrows, ...) are excluded so
+    /// holding them keeps the native repeat behavior (e.g. holding BackSpace
+    /// deletes multiple characters).
+    fn is_repeat_suppressed_key(key_name: &str) -> bool {
+        !matches!(
+            key_name,
+            "space" | "Space"
+                | "Return" | "KP_Enter" | "Enter"
+                | "Escape"
+                | "BackSpace" | "Backspace" | "Delete"
+                | "Up" | "Down" | "Left" | "Right"
+                | "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight"
+                | "Tab" | "ISO_Left_Tab"
+                | "Control_L" | "Control_R" | "Alt_L" | "Alt_R"
+                | "Shift_L" | "Shift_R" | "Super_L" | "Super_R"
+                | "Meta_L" | "Meta_R"
+        )
     }
     
     /// Check if we should commit current state and passthrough the key
@@ -972,6 +1038,7 @@ impl PSKKEngine {
             }
             self.marker_first_key = None;
             self.marker_second_key = None;
+            self.marker_keys_held.clear();
             self.marker_state = MarkerState::Idle;
             
             let mut output = EngineOutput::commit(commit, self.mode);
@@ -981,11 +1048,16 @@ impl PSKKEngine {
             return output;
         }
         
-        // Check for forced preedit trigger key first (before bunsetsu logic)
-        if self.marker_first_key == Some('f') {
+        // Check for forced preedit trigger key first (before bunsetsu logic).
+        // Only a *single* tap of the trigger key (no second stroke) enters
+        // forced preedit. When the trigger key is the first of a two-stroke
+        // kanchoku pair (e.g. f + s -> 二), the pair must be handled as
+        // kanchoku instead of re-triggering the mode.
+        if self.marker_first_key == Some('f') && self.marker_second_key.is_none() {
             debug!("Entering forced preedit mode, clearing 'f' trigger from preedit");
             self.engine_state = EngineState::ForcedPreedit;
             self.marker_first_key = None;
+            self.marker_keys_held.clear();
             self.marker_state = MarkerState::Idle;
             
             // Restore preedit to state before marker (remove the 'f' trigger character)
@@ -1018,6 +1090,7 @@ impl PSKKEngine {
                     self.marker_first_key = None;
                     self.marker_second_key = None;
                     self.marker_had_input = false;
+                    self.marker_keys_held.clear();
                     self.marker_state = MarkerState::Idle;
                     
                     return self.build_preedit_output();
@@ -1033,6 +1106,7 @@ impl PSKKEngine {
                     self.marker_first_key = None;
                     self.marker_second_key = None;
                     self.marker_had_input = false;
+                    self.marker_keys_held.clear();
                     self.marker_state = MarkerState::Idle;
                     
                     return self.build_preedit_output();
@@ -1042,6 +1116,7 @@ impl PSKKEngine {
                 self.mark_bunsetsu_boundary(first_char);
                 self.marker_first_key = None;
                 self.marker_second_key = None;
+                self.marker_keys_held.clear();
                 self.marker_state = MarkerState::Idle;
                 return self.build_preedit_output();
             }
@@ -1050,6 +1125,7 @@ impl PSKKEngine {
         debug!("No action taken, returning consumed");
         self.marker_first_key = None;
         self.marker_had_input = false;
+        self.marker_keys_held.clear();
         self.marker_state = MarkerState::Idle;
         EngineOutput::consumed(self.mode)
     }
@@ -1228,6 +1304,41 @@ impl PSKKEngine {
                         return self.build_preedit_output();
                     }
                 }
+
+                // Some chords deliver their result in the *output* with an empty
+                // pending (e.g. か + o -> み in the default layout), which the
+                // pending-based check above misses. Detect those by re-checking
+                // the layout for the full pending+key combo and verifying the
+                // processor actually returned the chord's output. This also
+                // respects the simultaneous-input time window: a timed-out chord
+                // falls back to a different output and is correctly treated as
+                // non-simultaneous (so kanchoku can still fire).
+                if !self.preedit_pending.is_empty() {
+                    let chord_key = format!("{}{}", self.preedit_pending, c);
+                    let key_idx = chord_key.chars().count().saturating_sub(1);
+                    let chord_output = self
+                        .simul_processor
+                        .simultaneous_map
+                        .get(key_idx)
+                        .and_then(|bucket| bucket.get(&chord_key))
+                        .map(|entry| entry.output.clone());
+                    if let Some(chord_output) = chord_output {
+                        if !chord_output.is_empty()
+                            && simul_output.as_deref() == Some(chord_output.as_str())
+                            && simul_pending.as_deref() == Some("")
+                        {
+                            debug!("Simultaneous chord found: '{}' + '{}' → '{}' (in output)", first_char, c, chord_output);
+                            self.preedit_hiragana.push_str(&chord_output);
+                            self.preedit_ascii.push(first_char);
+                            self.preedit_ascii.push(c);
+                            self.preedit_pending.clear();
+                            self.preedit_string = self.preedit_hiragana.clone();
+
+                            self.marker_state = MarkerState::KanchokuSecondPressed;
+                            return self.build_preedit_output();
+                        }
+                    }
+                }
                 
                 debug!("No simultaneous input, attempting Kanchoku lookup");
                 // No simultaneous input - try Kanchoku lookup
@@ -1378,6 +1489,12 @@ impl PSKKEngine {
     fn handle_character_release(&mut self, c: char) -> EngineOutput {
         debug!("handle_character_release: c='{}', marker_state={:?}, marker_keys_held={:?}",
                   c, self.marker_state, self.marker_keys_held);
+        
+        // Always remove the released key from the held set, regardless of marker
+        // state. A release can arrive after the marker already reset to Idle
+        // (e.g. space released before the stroke key); without this the key
+        // stays stuck in marker_keys_held and corrupts later marker flows.
+        self.marker_keys_held.remove(&c.to_string());
         
         // Track marker state transitions on key release
         if self.marker_state == MarkerState::FirstPressed {
@@ -1570,6 +1687,15 @@ impl PSKKEngine {
         output
     }
 
+    /// Output for a suppressed key-repeat event: consume it (so the app never
+    /// receives the repeated character) but keep the current preedit/conversion
+    /// UI visible.
+    fn build_repeat_output(&self) -> EngineOutput {
+        let mut output = self.build_current_output_passthrough();
+        output.consumed = true;
+        output
+    }
+
     fn build_conversion_output(&self) -> EngineOutput {
         let mut output = EngineOutput::empty(self.mode);
         output.consumed = true;
@@ -1628,6 +1754,7 @@ impl PSKKEngine {
         self.marker_state = MarkerState::Idle;
         self.marker_first_key = None;
         self.marker_keys_held.clear();
+        self.pressed_keys.clear();
         self.marker_had_input = false;
         self.preedit_before_marker.clear();
         self.pure_kanchoku_held = false;
@@ -1756,6 +1883,7 @@ mod tests {
             marker_first_key: None,
             marker_second_key: None,
             marker_keys_held: std::collections::HashSet::new(),
+            pressed_keys: std::collections::HashSet::new(),
             marker_had_input: false,
             preedit_before_marker: String::new(),
             pure_kanchoku_held: false,
@@ -1763,6 +1891,206 @@ mod tests {
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
         }
+    }
+
+    /// Engine with a layout where d+o / o+d form the chord み, and a kanchoku
+    /// layout where the same pairs map to 九 / 三 — used to verify that the
+    /// simultaneous chord wins over kanchoku under the marker.
+    fn create_chord_test_engine() -> PSKKEngine {
+        let layout = vec![
+            ("d".to_string(), "".to_string(), "か".to_string(), None),
+            ("o".to_string(), "".to_string(), "が".to_string(), None),
+            ("かo".to_string(), "み".to_string(), "".to_string(), None),
+            ("がd".to_string(), "み".to_string(), "".to_string(), None),
+        ];
+        let simul = SimultaneousInputProcessor::new(Some(layout));
+
+        let mut kanchoku_map: crate::kanchoku::KanchokuLayout = HashMap::new();
+        let mut d_second = HashMap::new();
+        d_second.insert('o', "九".to_string());
+        kanchoku_map.insert('d', d_second);
+        let mut o_second = HashMap::new();
+        o_second.insert('d', "三".to_string());
+        kanchoku_map.insert('o', o_second);
+        let kanchoku = KanchokuProcessor::new(Some(kanchoku_map));
+
+        let henkan = HenkanProcessor::new();
+
+        let config = serde_json::json!({
+            "enable_hiragana_key": ["Henkan", "Convert"],
+            "disable_hiragana_key": ["Muhenkan", "NonConvert"],
+        });
+
+        PSKKEngine {
+            mode: InputMode::Alphanumeric,
+            simul_processor: simul,
+            kanchoku_processor: kanchoku,
+            henkan_processor: henkan,
+            config,
+            preedit_string: String::new(),
+            preedit_hiragana: String::new(),
+            preedit_ascii: String::new(),
+            preedit_pending: String::new(),
+            marker_state: MarkerState::Idle,
+            marker_first_key: None,
+            marker_second_key: None,
+            marker_keys_held: std::collections::HashSet::new(),
+            pressed_keys: std::collections::HashSet::new(),
+            marker_had_input: false,
+            preedit_before_marker: String::new(),
+            pure_kanchoku_held: false,
+            pure_kanchoku_first_key: None,
+            engine_state: EngineState::Normal,
+            conversion_yomi: String::new(),
+        }
+    }
+
+    #[test]
+    fn chord_under_marker_beats_kanchoku_and_enters_bunsetsu() {
+        let mut engine = create_chord_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        // space + d + o: chord かo -> み must win over kanchoku d:o -> 九
+        engine.process_key_event(None, "space", true, None);
+        engine.process_key_event(Some('d'), "d", true, None);
+        let o = engine.process_key_event(Some('o'), "o", true, None);
+        assert!(o.commit_string.is_none(), "kanchoku must not fire for a chord");
+        let preedit = o.preedit_segments.iter().map(|s| s.text.clone()).collect::<String>();
+        assert_eq!(preedit, "み");
+
+        engine.process_key_event(Some('o'), "o", false, None);
+        engine.process_key_event(Some('d'), "d", false, None);
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(o.engine_state, EngineState::Bunsetsu, "space release must enter bunsetsu mode");
+        let preedit = o.preedit_segments.iter().map(|s| s.text.clone()).collect::<String>();
+        assert_eq!(preedit, "み");
+    }
+
+    #[test]
+    fn reverse_order_chord_also_wins() {
+        let mut engine = create_chord_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        // space + o + d: chord がd -> み must win over kanchoku o:d -> 三
+        engine.process_key_event(None, "space", true, None);
+        engine.process_key_event(Some('o'), "o", true, None);
+        let o = engine.process_key_event(Some('d'), "d", true, None);
+        assert!(o.commit_string.is_none());
+        let preedit = o.preedit_segments.iter().map(|s| s.text.clone()).collect::<String>();
+        assert_eq!(preedit, "み");
+
+        engine.process_key_event(Some('d'), "d", false, None);
+        engine.process_key_event(Some('o'), "o", false, None);
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(o.engine_state, EngineState::Bunsetsu);
+    }
+
+    /// Engine with f -> ん and s -> と in the layout, and a kanchoku layout
+    /// where both f+s and s+s map to 二. 'f' is also the hardcoded forced-preedit
+    /// trigger key, so this exercises the conflict between the trigger and
+    /// two-stroke kanchoku pairs that start with 'f'.
+    fn create_trigger_kanchoku_test_engine() -> PSKKEngine {
+        let layout = vec![
+            ("f".to_string(), "".to_string(), "ん".to_string(), None),
+            ("s".to_string(), "".to_string(), "と".to_string(), None),
+        ];
+        let simul = SimultaneousInputProcessor::new(Some(layout));
+
+        let mut kanchoku_map: crate::kanchoku::KanchokuLayout = HashMap::new();
+        let mut f_second = HashMap::new();
+        f_second.insert('s', "二".to_string());
+        kanchoku_map.insert('f', f_second);
+        let mut s_second = HashMap::new();
+        s_second.insert('s', "二".to_string());
+        kanchoku_map.insert('s', s_second);
+        let kanchoku = KanchokuProcessor::new(Some(kanchoku_map));
+
+        let henkan = HenkanProcessor::new();
+
+        let config = serde_json::json!({
+            "enable_hiragana_key": ["Henkan", "Convert"],
+            "disable_hiragana_key": ["Muhenkan", "NonConvert"],
+        });
+
+        PSKKEngine {
+            mode: InputMode::Alphanumeric,
+            simul_processor: simul,
+            kanchoku_processor: kanchoku,
+            henkan_processor: henkan,
+            config,
+            preedit_string: String::new(),
+            preedit_hiragana: String::new(),
+            preedit_ascii: String::new(),
+            preedit_pending: String::new(),
+            marker_state: MarkerState::Idle,
+            marker_first_key: None,
+            marker_second_key: None,
+            marker_keys_held: std::collections::HashSet::new(),
+            pressed_keys: std::collections::HashSet::new(),
+            marker_had_input: false,
+            preedit_before_marker: String::new(),
+            pure_kanchoku_held: false,
+            pure_kanchoku_first_key: None,
+            engine_state: EngineState::Normal,
+            conversion_yomi: String::new(),
+        }
+    }
+
+    #[test]
+    fn kanchoku_pair_starting_with_trigger_key_keeps_preedit() {
+        let mut engine = create_trigger_kanchoku_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        // Enter forced preedit via a single f tap
+        engine.process_key_event(None, "space", true, None);
+        engine.process_key_event(Some('f'), "f", true, None);
+        engine.process_key_event(Some('f'), "f", false, None);
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(o.engine_state, EngineState::ForcedPreedit);
+
+        // Two-stroke kanchoku pair f + s -> 二 must stay in the preedit.
+        // Regression: the 'f' trigger check used to fire on space release and
+        // wipe the preedit.
+        engine.process_key_event(None, "space", true, None);
+        engine.process_key_event(Some('f'), "f", true, None);
+        engine.process_key_event(Some('f'), "f", false, None);
+        engine.process_key_event(Some('s'), "s", true, None);
+        engine.process_key_event(Some('s'), "s", false, None);
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(o.engine_state, EngineState::ForcedPreedit);
+        let preedit = o.preedit_segments.iter().map(|s| s.text.clone()).collect::<String>();
+        assert_eq!(preedit, "二");
+    }
+
+    #[test]
+    fn trigger_key_pair_works_in_normal_mode_too() {
+        let mut engine = create_trigger_kanchoku_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        // In normal mode (no forced preedit), space + f + s commits 二 at the
+        // second stroke and must not spuriously enter forced preedit on space
+        // release.
+        engine.process_key_event(None, "space", true, None);
+        engine.process_key_event(Some('f'), "f", true, None);
+        engine.process_key_event(Some('f'), "f", false, None);
+        let o = engine.process_key_event(Some('s'), "s", true, None);
+        assert_eq!(o.commit_string, Some("二".to_string()));
+        engine.process_key_event(Some('s'), "s", false, None);
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(o.engine_state, EngineState::Normal);
+    }
+
+    #[test]
+    fn single_f_tap_still_enters_forced_preedit() {
+        let mut engine = create_trigger_kanchoku_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        // A lone f tap (no second stroke) must still enter forced preedit.
+        engine.process_key_event(None, "space", true, None);
+        engine.process_key_event(Some('f'), "f", true, None);
+        engine.process_key_event(Some('f'), "f", false, None);
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(o.engine_state, EngineState::ForcedPreedit);
     }
 
     #[test]

@@ -162,6 +162,13 @@ if [ -f "packaging/pskk-settings.desktop" ]; then
     echo "  ✓ Desktop entry installed"
 fi
 
+# Install Fcitx 5 addon (if built with: just fcitx5-build)
+if [ -d "fcitx5/build" ] && [ -f "fcitx5/build/pskk.so" ]; then
+    echo "Installing Fcitx 5 addon..."
+    cmake --install fcitx5/build > /dev/null
+    echo "  ✓ Fcitx 5 addon installed (restart fcitx5 to activate)"
+fi
+
 echo ""
 echo "✓ Installation complete!"
 echo ""
@@ -171,5 +178,8 @@ echo "Next steps:"
 echo "  1. Run 'pskk-settings' to configure PSKK"
 echo "  2. Run 'ibus restart' to register the IBus engine"
 echo "  3. Add PSKK in IBus preferences (ibus-setup)"
+echo ""
+echo "  For Fcitx 5: restart fcitx5 (fcitx5-remote -r) and add PSKK"
+echo "  in fcitx5-configtool → Add Input Method"
 echo ""
 echo "To uninstall, run: sudo ${SCRIPT_DIR}/uninstall.sh"

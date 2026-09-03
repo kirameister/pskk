@@ -10,7 +10,7 @@ A modern Japanese Input Method Engine (IME) with support for multiple platforms.
 - ⚡ **Simultaneous Input** - Multi-key chord input support
 - 🔤 **Kanchoku (Direct Kanji Input)** - Two-stroke kanji input mode
 - 🎨 **Customizable Layouts** - Configurable input and kanchoku layouts
-- 🖥️ **Cross-Platform** - IBus (Linux), with planned support for Windows and macOS
+- 🖥️ **Cross-Platform** - IBus (Linux), Fcitx 5 (Linux), with planned support for Windows and macOS
 - ⚙️ **Settings App** - GUI configuration tool built with Tauri
 - 🧪 **IME Tester** - Platform-independent testing interface
 
@@ -90,6 +90,22 @@ In the IBus Preferences window:
   - Press `Enter` to confirm
   - Press `Escape` to cancel
 
+### Fcitx 5 (Linux)
+
+PSKK is also available as a native Fcitx 5 addon (`fcitx5/`, C++). See
+[FCITX_SETUP.md](FCITX_SETUP.md) for the full guide. Quick start:
+
+```bash
+# Ubuntu/Debian prerequisites
+sudo apt install fcitx5 fcitx5-config-qt cmake \
+                 libfcitx5core-dev libfcitx5utils-dev libfcitx5config-dev
+
+# Build and install
+just fcitx5-install
+
+# Enable in fcitx5-configtool → Add Input Method → PSKK
+```
+
 ### Settings App
 
 Configure PSKK using the GUI settings app:
@@ -139,9 +155,13 @@ pskk/
 │   ├── henkan.rs              # Kana-kanji conversion
 │   ├── kanchoku.rs            # Direct kanji input
 │   ├── simultaneous_processor.rs
+│   ├── grpc/                  # gRPC service (IBus client)
+│   ├── json/                  # JSON/TCP service (Fcitx 5 addon)
 │   ├── katsuyou.rs            # Verb conjugation
 │   ├── settings.rs            # Configuration management
 │   └── util.rs                # Utilities
+├── ibus-engine-pskk.py        # IBus engine client (Python)
+├── fcitx5/                    # Fcitx 5 addon (C++ engine + CMake)
 ├── apps/
 │   ├── settings/              # Settings GUI (Tauri)
 │   └── ime-tester/            # IME testing app (Tauri)
@@ -229,6 +249,8 @@ sudo ./packaging/install.sh
 
 - [Engine Adapter Interface](ENGINE_ADAPTER_INTERFACE.md) - Core IME engine API
 - [Deployment Guide](DEPLOYMENT.md) - Detailed deployment instructions
+- [IBus Setup](IBUS_SETUP.md) - Installing/using PSKK with IBus
+- [Fcitx 5 Setup](FCITX_SETUP.md) - Installing/using PSKK with Fcitx 5
 - [Rust Implementation Status](RUST_IMPLEMENTATION_STATUS.md) - Porting progress
 
 ## License

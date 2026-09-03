@@ -1,0 +1,12 @@
+[Addon]
+Name=PSKK
+Comment=PSKK - Japanese Input Method with Kanchoku support
+Category=InputMethod
+Version=0.1.0
+Library=pskk
+Type=SharedLibrary
+OnDemand=True
+Configurable=False
+
+[Addon/Dependencies]
+0=core:5.1.0

@@ -1,3 +1,4 @@
+use crate::passthrough::PassThroughDictionary;
 use crate::util::{
     crf_compute_emission_scores, crf_nbest_viterbi, labels_to_bunsetsu, tokenize_line,
     BunsetsuSegment, CrfFeatureMaterials, Dictionary, NBestPath, StateFeatureWeights,
@@ -12,10 +13,19 @@ pub struct Candidate {
     pub surface: String,
     pub reading: String,
     pub count: i32,
+    /// Ordering score. For exact dictionary matches this equals `count`; for
+    /// mixed (pass-through) candidates it is the average of the component
+    /// weights multiplied by the configured discount.
+    #[serde(default)]
+    pub score: f64,
     #[serde(default)]
     pub passthrough: bool,
     #[serde(default)]
     pub bunsetsu_mode: bool,
+    /// True when the candidate combines pass-through kana (prefix/suffix)
+    /// with a real kanji conversion of the middle chunk (e.g. お店, 店です).
+    #[serde(default)]
+    pub mixed: bool,
 }
 
 impl Candidate {
@@ -24,8 +34,10 @@ impl Candidate {
             surface,
             reading,
             count,
+            score: count as f64,
             passthrough: false,
             bunsetsu_mode: false,
+            mixed: false,
         }
     }
 
@@ -34,8 +46,10 @@ impl Candidate {
             surface: reading.clone(),
             reading,
             count: 0,
+            score: 0.0,
             passthrough: true,
             bunsetsu_mode: false,
+            mixed: false,
         }
     }
 
@@ -44,8 +58,22 @@ impl Candidate {
             surface,
             reading,
             count: 0,
+            score: 0.0,
             passthrough: false,
             bunsetsu_mode: true,
+            mixed: false,
+        }
+    }
+
+    pub fn mixed(surface: String, reading: String, score: f64) -> Self {
+        Self {
+            surface,
+            reading,
+            count: score.round() as i32,
+            score,
+            passthrough: false,
+            bunsetsu_mode: false,
+            mixed: true,
         }
     }
 }
@@ -78,6 +106,9 @@ pub struct HenkanProcessor {
     state_features: Option<StateFeatureWeights>,
     transitions: Option<TransitionWeights>,
     labels: Vec<String>,
+
+    passthrough_dictionary: PassThroughDictionary,
+    passthrough_discount: f64,
 }
 
 impl HenkanProcessor {
@@ -104,7 +135,20 @@ impl HenkanProcessor {
                 "B-P".to_string(),
                 "I-P".to_string(),
             ],
+            passthrough_dictionary: PassThroughDictionary::default(),
+            passthrough_discount: 0.09,
         }
+    }
+
+    /// Load the pass-through (prefix/suffix) dictionary and the discount weight
+    /// used to score composed candidates.
+    pub fn load_passthrough_dictionary(
+        &mut self,
+        dictionary: PassThroughDictionary,
+        discount: f64,
+    ) {
+        self.passthrough_dictionary = dictionary;
+        self.passthrough_discount = discount;
     }
 
     pub fn with_dictionary(self, dictionary: Dictionary) -> Self {
@@ -166,6 +210,7 @@ impl HenkanProcessor {
                     ));
                 }
             }
+            drop(dict);
         } else {
             self.has_whole_word_match = false;
             drop(dict);
@@ -186,7 +231,85 @@ impl HenkanProcessor {
             }
         }
 
+        // Prefix/suffix pass-through candidates: always offered alongside the
+        // exact-match (and CRF) candidates. The configured discount weight keeps
+        // them below exact matches by default.
+        let mixed = self.build_mixed_candidates(reading);
+        if !mixed.is_empty() {
+            self.merge_candidates(mixed);
+        }
+
         &self.candidates
+    }
+
+    /// Build composed candidates from the pass-through dictionary: yomi split
+    /// as [prefix] mid [suffix] where prefix/suffix are pass-through entries
+    /// and `mid` is a single reading in the kana-to-kanji dictionary.
+    fn build_mixed_candidates(&self, reading: &str) -> Vec<Candidate> {
+        let decompositions = self.passthrough_dictionary.decompose(reading);
+        if decompositions.is_empty() {
+            return Vec::new();
+        }
+
+        let dict = self.dictionary.lock().unwrap();
+        let mut out = Vec::new();
+
+        for d in decompositions {
+            let Some(mid_candidates) = dict.get(&d.mid) else {
+                continue;
+            };
+
+            let component_count =
+                usize::from(d.prefix.is_some()) + 1 + usize::from(d.suffix.is_some());
+
+            for (mid_surface, &mid_count) in mid_candidates {
+                let mut weight_sum = mid_count as f64;
+                if let Some(p) = &d.prefix {
+                    if let Some(w) = self.passthrough_dictionary.prefix.get(p) {
+                        weight_sum += w;
+                    }
+                }
+                if let Some(s) = &d.suffix {
+                    if let Some(w) = self.passthrough_dictionary.suffix.get(s) {
+                        weight_sum += w;
+                    }
+                }
+
+                let score = (weight_sum / component_count as f64) * self.passthrough_discount;
+                let surface = format!(
+                    "{}{}{}",
+                    d.prefix.as_deref().unwrap_or(""),
+                    mid_surface,
+                    d.suffix.as_deref().unwrap_or("")
+                );
+                out.push(Candidate::mixed(surface, reading.to_string(), score));
+            }
+        }
+
+        out
+    }
+
+    /// Merge candidates with the freshly built mixed candidates: deduplicate by
+    /// surface (keeping the highest score) and sort by score descending so
+    /// exact matches (raw counts) rank above composed candidates. If any real
+    /// (non-passthrough) candidate exists, the raw-kana fallback is dropped.
+    fn merge_candidates(&mut self, mixed: Vec<Candidate>) {
+        let mut by_surface: HashMap<String, Candidate> = HashMap::new();
+        for c in self.candidates.drain(..).chain(mixed) {
+            let keep_existing = by_surface
+                .get(&c.surface)
+                .map(|existing| existing.score >= c.score)
+                .unwrap_or(false);
+            if !keep_existing {
+                by_surface.insert(c.surface.clone(), c);
+            }
+        }
+        let mut merged: Vec<Candidate> = by_surface.into_values().collect();
+        if merged.iter().any(|c| !c.passthrough) {
+            merged.retain(|c| !c.passthrough);
+        }
+        merged.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        self.candidates = merged;
     }
 
     pub fn get_candidates(&self) -> &[Candidate] {
@@ -575,5 +698,110 @@ mod tests {
         assert!(processor.get_candidates().is_empty());
         assert_eq!(processor.selected_index, 0);
         assert!(!processor.is_bunsetsu_mode());
+    }
+
+    fn dict_with(entries: &[(&str, &str, i32)]) -> Dictionary {
+        let mut dict = Dictionary::new();
+        for (reading, surface, count) in entries {
+            dict.entry(reading.to_string())
+                .or_default()
+                .insert(surface.to_string(), *count);
+        }
+        dict
+    }
+
+    fn pass_with(prefix: &[(&str, f64)], suffix: &[(&str, f64)]) -> crate::passthrough::PassThroughDictionary {
+        use crate::passthrough::PassThroughDictionary;
+        let mut d = PassThroughDictionary::default();
+        for (k, v) in prefix {
+            d.prefix.insert(k.to_string(), *v);
+        }
+        for (k, v) in suffix {
+            d.suffix.insert(k.to_string(), *v);
+        }
+        d
+    }
+
+    #[test]
+    fn mixed_candidates_rank_below_exact_matches() {
+        // User's example: おみせ -> 御店 (exact, count 1) vs お店 (お + みせ, all weights 1)
+        let mut processor =
+            HenkanProcessor::new().with_dictionary(dict_with(&[("みせ", "店", 1), ("おみせ", "御店", 1)]));
+        processor.load_passthrough_dictionary(pass_with(&[("お", 1.0)], &[]), 0.09);
+
+        let candidates = processor.convert("おみせ").to_vec();
+
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].surface, "御店");
+        assert_eq!(candidates[0].score, 1.0);
+        assert!(!candidates[0].mixed);
+        assert_eq!(candidates[1].surface, "お店");
+        assert!((candidates[1].score - 0.09).abs() < 1e-9);
+        assert!(candidates[1].mixed);
+    }
+
+    #[test]
+    fn suffix_pass_through_candidate() {
+        let mut processor = HenkanProcessor::new().with_dictionary(dict_with(&[("みせ", "店", 1)]));
+        processor.load_passthrough_dictionary(pass_with(&[], &[("です", 1.0)]), 0.09);
+
+        let candidates = processor.convert("みせです").to_vec();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].surface, "店です");
+        assert!((candidates[0].score - 0.09).abs() < 1e-9);
+        assert!(candidates[0].mixed);
+    }
+
+    #[test]
+    fn prefix_and_suffix_combined() {
+        let mut processor = HenkanProcessor::new().with_dictionary(dict_with(&[("みせ", "店", 1)]));
+        processor.load_passthrough_dictionary(pass_with(&[("お", 1.0)], &[("です", 1.0)]), 0.09);
+
+        let candidates = processor.convert("おみせです").to_vec();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].surface, "お店です");
+        // (1 + 1 + 1) / 3 * 0.09
+        assert!((candidates[0].score - 0.09).abs() < 1e-9);
+        assert!(candidates[0].mixed);
+    }
+
+    #[test]
+    fn exact_match_wins_dedup_by_surface() {
+        // おかね exists exactly (お金, count 100) and as お + かね(金) -> dedup to exact
+        let mut processor =
+            HenkanProcessor::new().with_dictionary(dict_with(&[("かね", "金", 1), ("おかね", "お金", 100)]));
+        processor.load_passthrough_dictionary(pass_with(&[("お", 1.0)], &[]), 0.09);
+
+        let candidates = processor.convert("おかね").to_vec();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].surface, "お金");
+        assert_eq!(candidates[0].score, 100.0);
+        assert!(!candidates[0].mixed);
+    }
+
+    #[test]
+    fn short_mid_produces_no_mixed_candidate() {
+        // mid would be い (1 kana) -> excluded by MIN_MID_LEN
+        let mut processor = HenkanProcessor::new().with_dictionary(dict_with(&[("い", "井", 1)]));
+        processor.load_passthrough_dictionary(pass_with(&[("お", 1.0)], &[]), 0.09);
+
+        let candidates = processor.convert("おい").to_vec();
+
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].passthrough);
+    }
+
+    #[test]
+    fn no_passthrough_dictionary_produces_no_mixed_candidates() {
+        let mut processor =
+            HenkanProcessor::new().with_dictionary(dict_with(&[("みせ", "店", 1), ("おみせ", "御店", 1)]));
+        // default empty pass-through dictionary
+        let candidates = processor.convert("おみせ").to_vec();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].surface, "御店");
     }
 }

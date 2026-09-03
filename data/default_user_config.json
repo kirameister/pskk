@@ -40,6 +40,10 @@
     "conversion_keys_": "Each key-combo to convert the preedit string into respective character representation",
     "conversion_keys_ja": "Preedit (未確定) の文字列を対応する文字種に変換するためのキーコンボです",
 
+    "passthrough_discount": 0.09,
+    "passthrough_discount_": "Discount weight applied to the average of component weights when composing prefix/suffix pass-through candidates (e.g. お+店). Lower values rank mixed candidates below exact dictionary matches.",
+    "passthrough_discount_ja": "接頭辞/接尾辞パススルー候補（例: お+店）のスコアに掛ける割引係数。小さいほど完全一致候補が上位に表示されます。",
+
     "kanchoku_bunsetsu_marker": ["space"],
     "kanchoku_bunsetsu_marker_": "Key used for typing kanchoku (漢直) strokes while held, and marking the start of bunsetsu (文節) when tapped.",
     "kanchoku_bunsetsu_marker_ja": "漢直の入力と文節の始まりをマークするためのキー -- 押下中に漢直入力を行うことができるとともに、押下中にキーを一つ押して離すことで文節の始まりをマークします。",

@@ -116,11 +116,16 @@ class PSKKEngine(IBus.Engine):
         
         try:
             logger.info(f"Starting pskk-server: {server_binary}")
-            # Start the server process in the background
+            # Start the server process in the background.
+            # stdout/stderr are discarded (DEVNULL) instead of PIPE: the server
+            # writes eprintln noise on every key event, and an undrained pipe
+            # fills up and blocks the server mid-request (freezing the whole
+            # IME). The server's real diagnostics go to ~/.config/pskk/pskk.log
+            # via tracing, so nothing of value is lost.
             self.server_process = subprocess.Popen(
                 [server_binary],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 start_new_session=True  # Detach from parent
             )
             
@@ -130,8 +135,10 @@ class PSKKEngine(IBus.Engine):
             # Check if it's running
             if self.server_process.poll() is not None:
                 # Process exited immediately
-                stderr = self.server_process.stderr.read().decode('utf-8')
-                logger.error(f"Server failed to start: {stderr}")
+                stderr = b""
+                if self.server_process.stderr is not None:
+                    stderr = self.server_process.stderr.read()
+                logger.error(f"Server failed to start: {stderr.decode('utf-8', 'replace')}")
                 return False
             
             logger.info("pskk-server started successfully")
