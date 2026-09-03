@@ -1,0 +1,6 @@
+[InputMethod]
+Name=PSKK
+LangCode=ja
+Addon=pskk
+Label=PSKK
+Configurable=False
