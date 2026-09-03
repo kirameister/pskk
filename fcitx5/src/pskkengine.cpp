@@ -27,6 +27,7 @@
 #include <fcitx/text.h>
 #include <fcitx/userinterface.h>
 #include <fcitx/userinterfacemanager.h>
+#include <fcitx-utils/capabilityflags.h>
 #include <fcitx-utils/key.h>
 #include <fcitx-utils/keysym.h>
 
@@ -236,7 +237,14 @@ void PskkEngine::keyEvent(const fcitx::InputMethodEntry &entry,
     }
 
     if (processKeyWithRetry(ic, input)) {
-        keyEvent.filter();  // consumed by the engine
+        // Consumed by the engine. Use filterAndAccept(), not filter(): with
+        // clients that enable CapabilityFlag::KeyEventOrderFix (GTK/Qt IM
+        // modules), instance.cpp re-forwards any key event that is NOT
+        // accepted while ordered events (e.g. a commit) are pending - which
+        // made every keystroke reach the application as plain ASCII in
+        // addition to the preedit. Reference engines (fcitx5-skk/mozc) mark
+        // handled keys with filterAndAccept() for the same reason.
+        keyEvent.filterAndAccept();
     }
 }
 
@@ -256,6 +264,14 @@ void PskkEngine::render(fcitx::InputContext *ic, const EngineOutput &output) {
 
     fcitx::InputPanel &panel = ic->inputPanel();
     panel.reset();
+
+    // Inline (client-side) preedit is the normal fcitx5 behaviour: when the
+    // application supports it (CapabilityFlag::Preedit, e.g. GTK/Qt IM
+    // modules), the preedit is rendered by the app itself with underline. The
+    // floating window (panel preedit) is only the fallback for clients that
+    // cannot render preedit inline. This mirrors fcitx5-skk.
+    const bool clientPreeditSupported =
+        ic->capabilityFlags().test(fcitx::CapabilityFlag::Preedit);
 
     if (!output.preeditSegments.empty()) {
         fcitx::Text text;
@@ -285,7 +301,18 @@ void PskkEngine::render(fcitx::InputContext *ic, const EngineOutput &output) {
             }
         }
         text.setCursor(static_cast<int>(byteCursor));
-        panel.setPreedit(text);
+
+        if (clientPreeditSupported) {
+            panel.setClientPreedit(text);
+            ic->updatePreedit();
+        } else {
+            panel.setPreedit(text);
+        }
+    } else if (clientPreeditSupported) {
+        // No preedit anymore: push an empty client preedit so the app clears
+        // its inline composition (e.g. after a commit).
+        panel.setClientPreedit(fcitx::Text());
+        ic->updatePreedit();
     }
 
     if (output.showCandidates && !output.candidates.empty()) {

@@ -191,8 +191,12 @@ The addon deliberately mirrors `ibus-engine-pskk.py` 1:1:
 - **Sub-mode indicator**: `あ`/`A` is reflected in the mode action, the
   `showInputMethodInformation` popup and `subModeLabelImpl`; whether the label
   shows inside the candidate panel depends on the UI addon (classicui etc.).
-- **Client preedit** (composition inside the app via surrounding text) is not
-  used; preedit is drawn in the fcitx input panel, like IBus's own preedit.
+- **Client preedit**: when the application supports it (`CapabilityFlag::
+  Preedit`, e.g. GTK/Qt frontends), preedit is rendered *inline* by the app
+  with underline/highlight, exactly like other fcitx5 IMEs (fcitx5-skk/mozc).
+  Only clients without inline-preedit support fall back to the floating panel
+  window. Caveat: not every toolkit renders the full fcitx5 preedit styling;
+  GTK3 underlines but may ignore some advanced format flags.
 - **Shared engine state**: `pskk-server` keeps one global engine instance for
   all clients (same design as IBus). Typing in two windows concurrently shares
   preedit state; per-window state would require keying by input context.
