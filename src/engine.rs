@@ -1048,8 +1048,12 @@ impl PSKKEngine {
             return output;
         }
         
-        // Check for forced preedit trigger key first (before bunsetsu logic)
-        if self.marker_first_key == Some('f') {
+        // Check for forced preedit trigger key first (before bunsetsu logic).
+        // Only a *single* tap of the trigger key (no second stroke) enters
+        // forced preedit. When the trigger key is the first of a two-stroke
+        // kanchoku pair (e.g. f + s -> 二), the pair must be handled as
+        // kanchoku instead of re-triggering the mode.
+        if self.marker_first_key == Some('f') && self.marker_second_key.is_none() {
             debug!("Entering forced preedit mode, clearing 'f' trigger from preedit");
             self.engine_state = EngineState::ForcedPreedit;
             self.marker_first_key = None;
@@ -1979,6 +1983,114 @@ mod tests {
         engine.process_key_event(Some('o'), "o", false, None);
         let o = engine.process_key_event(None, "space", false, None);
         assert_eq!(o.engine_state, EngineState::Bunsetsu);
+    }
+
+    /// Engine with f -> ん and s -> と in the layout, and a kanchoku layout
+    /// where both f+s and s+s map to 二. 'f' is also the hardcoded forced-preedit
+    /// trigger key, so this exercises the conflict between the trigger and
+    /// two-stroke kanchoku pairs that start with 'f'.
+    fn create_trigger_kanchoku_test_engine() -> PSKKEngine {
+        let layout = vec![
+            ("f".to_string(), "".to_string(), "ん".to_string(), None),
+            ("s".to_string(), "".to_string(), "と".to_string(), None),
+        ];
+        let simul = SimultaneousInputProcessor::new(Some(layout));
+
+        let mut kanchoku_map: crate::kanchoku::KanchokuLayout = HashMap::new();
+        let mut f_second = HashMap::new();
+        f_second.insert('s', "二".to_string());
+        kanchoku_map.insert('f', f_second);
+        let mut s_second = HashMap::new();
+        s_second.insert('s', "二".to_string());
+        kanchoku_map.insert('s', s_second);
+        let kanchoku = KanchokuProcessor::new(Some(kanchoku_map));
+
+        let henkan = HenkanProcessor::new();
+
+        let config = serde_json::json!({
+            "enable_hiragana_key": ["Henkan", "Convert"],
+            "disable_hiragana_key": ["Muhenkan", "NonConvert"],
+        });
+
+        PSKKEngine {
+            mode: InputMode::Alphanumeric,
+            simul_processor: simul,
+            kanchoku_processor: kanchoku,
+            henkan_processor: henkan,
+            config,
+            preedit_string: String::new(),
+            preedit_hiragana: String::new(),
+            preedit_ascii: String::new(),
+            preedit_pending: String::new(),
+            marker_state: MarkerState::Idle,
+            marker_first_key: None,
+            marker_second_key: None,
+            marker_keys_held: std::collections::HashSet::new(),
+            pressed_keys: std::collections::HashSet::new(),
+            marker_had_input: false,
+            preedit_before_marker: String::new(),
+            pure_kanchoku_held: false,
+            pure_kanchoku_first_key: None,
+            engine_state: EngineState::Normal,
+            conversion_yomi: String::new(),
+        }
+    }
+
+    #[test]
+    fn kanchoku_pair_starting_with_trigger_key_keeps_preedit() {
+        let mut engine = create_trigger_kanchoku_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        // Enter forced preedit via a single f tap
+        engine.process_key_event(None, "space", true, None);
+        engine.process_key_event(Some('f'), "f", true, None);
+        engine.process_key_event(Some('f'), "f", false, None);
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(o.engine_state, EngineState::ForcedPreedit);
+
+        // Two-stroke kanchoku pair f + s -> 二 must stay in the preedit.
+        // Regression: the 'f' trigger check used to fire on space release and
+        // wipe the preedit.
+        engine.process_key_event(None, "space", true, None);
+        engine.process_key_event(Some('f'), "f", true, None);
+        engine.process_key_event(Some('f'), "f", false, None);
+        engine.process_key_event(Some('s'), "s", true, None);
+        engine.process_key_event(Some('s'), "s", false, None);
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(o.engine_state, EngineState::ForcedPreedit);
+        let preedit = o.preedit_segments.iter().map(|s| s.text.clone()).collect::<String>();
+        assert_eq!(preedit, "二");
+    }
+
+    #[test]
+    fn trigger_key_pair_works_in_normal_mode_too() {
+        let mut engine = create_trigger_kanchoku_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        // In normal mode (no forced preedit), space + f + s commits 二 at the
+        // second stroke and must not spuriously enter forced preedit on space
+        // release.
+        engine.process_key_event(None, "space", true, None);
+        engine.process_key_event(Some('f'), "f", true, None);
+        engine.process_key_event(Some('f'), "f", false, None);
+        let o = engine.process_key_event(Some('s'), "s", true, None);
+        assert_eq!(o.commit_string, Some("二".to_string()));
+        engine.process_key_event(Some('s'), "s", false, None);
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(o.engine_state, EngineState::Normal);
+    }
+
+    #[test]
+    fn single_f_tap_still_enters_forced_preedit() {
+        let mut engine = create_trigger_kanchoku_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        // A lone f tap (no second stroke) must still enter forced preedit.
+        engine.process_key_event(None, "space", true, None);
+        engine.process_key_event(Some('f'), "f", true, None);
+        engine.process_key_event(Some('f'), "f", false, None);
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(o.engine_state, EngineState::ForcedPreedit);
     }
 
     #[test]
