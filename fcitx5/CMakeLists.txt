@@ -1,7 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
 project(pskk-fcitx5 VERSION 0.1.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+# fcitx5's public headers require C++20 on newer releases (Fedora/Arch ship
+# headers using std::span / std::string_view::starts_with etc.), while older
+# releases (Ubuntu 24.04, 5.1.7) are C++17-clean. C++20 satisfies both.
+# Override with -DPSKK_CXX_STANDARD=17 only if you must build against a
+# pre-C++20 toolchain AND an old fcitx5 that is C++17-compatible.
+set(PSKK_CXX_STANDARD 20 CACHE STRING
+    "C++ standard used to build the fcitx5 addon (fcitx5 >= 5.1.9-ish headers need 20)")
+set(CMAKE_CXX_STANDARD ${PSKK_CXX_STANDARD})
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(GNUInstallDirs)
@@ -105,7 +112,7 @@ add_library(pskk SHARED
   src/pskkclient.cpp
   src/pskkengine.cpp)
 set_target_properties(pskk PROPERTIES
-  CXX_STANDARD 17
+  CXX_STANDARD ${PSKK_CXX_STANDARD}
   CXX_STANDARD_REQUIRED ON)
 target_include_directories(pskk PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
