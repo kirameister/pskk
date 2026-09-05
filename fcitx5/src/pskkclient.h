@@ -11,6 +11,7 @@
 #ifndef PSKK_FCITX5_PSKKCLIENT_H_
 #define PSKK_FCITX5_PSKKCLIENT_H_
 
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -105,9 +106,12 @@ private:
     void closeLocked();
     bool sendAndReceiveLocked(const Json &request, Json *response,
                               std::string *error);
+    bool spawnAllowedLocked() const;
+    void spawnServerLocked();
 
     int fd_ = -1;
-    bool spawnAttempted_ = false;
+    bool everSpawned_ = false;
+    std::chrono::steady_clock::time_point lastSpawnAttempt_{};
     mutable std::mutex mutex_;
 };
 

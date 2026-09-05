@@ -196,35 +196,12 @@ bool PskkClient::ensureConnected(int maxAttempts, int delayMs) {
             return true;
     }
 
-    // No: try to start one (only once per client lifetime).
-    if (!spawnAttempted_) {
-        spawnAttempted_ = true;
-        Endpoint ep = defaultEndpoint();
-        for (const std::string &candidate : serverCandidates()) {
-            if (!hasExecutable(candidate))
-                continue;
-            pid_t pid = fork();
-            if (pid < 0)
-                continue;  // fork failed; keep searching? No - try next binary
-            if (pid == 0) {
-                // Child: detach and run the server with no stdio attached.
-                setsid();
-                int devnull = open("/dev/null", O_RDWR);
-                if (devnull >= 0) {
-                    dup2(devnull, STDIN_FILENO);
-                    dup2(devnull, STDOUT_FILENO);
-                    dup2(devnull, STDERR_FILENO);
-                    if (devnull > STDERR_FILENO)
-                        close(devnull);
-                }
-                char *args[] = {const_cast<char *>(candidate.c_str()), nullptr};
-                execv(candidate.c_str(), args);
-                _exit(127);
-            }
-            // Parent: remember we spawned it, then poll for the listener.
-            (void)pid;
-            break;
-        }
+    // No: (re)start one. The addon is long-lived, so spawning is not limited
+    // to "once per process": when the connection is gone (e.g. the server was
+    // pkill'ed) the next ensureConnected() will spawn again. Only the rate is
+    // throttled so a dead server is not respawned in a tight loop.
+    if (spawnAllowedLocked()) {
+        spawnServerLocked();
     }
 
     for (int attempt = 0; attempt < maxAttempts; ++attempt) {
@@ -235,6 +212,46 @@ bool PskkClient::ensureConnected(int maxAttempts, int delayMs) {
             std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
     }
     return false;
+}
+
+bool PskkClient::spawnAllowedLocked() const {
+    const auto now = std::chrono::steady_clock::now();
+    if (!everSpawned_)
+        return true;
+    // Throttle respawns: at most one spawn attempt every 1.5 s, so a server
+    // that dies (e.g. pkill) is restarted quickly, but a server that crashes
+    // on startup is not respawned in a tight loop.
+    return now - lastSpawnAttempt_ > std::chrono::milliseconds(1500);
+}
+
+void PskkClient::spawnServerLocked() {
+    everSpawned_ = true;
+    lastSpawnAttempt_ = std::chrono::steady_clock::now();
+    for (const std::string &candidate : serverCandidates()) {
+        if (!hasExecutable(candidate))
+            continue;
+        pid_t pid = fork();
+        if (pid < 0)
+            continue;  // fork failed; try the next candidate
+        if (pid == 0) {
+            // Child: detach and run the server with no stdio attached.
+            setsid();
+            int devnull = open("/dev/null", O_RDWR);
+            if (devnull >= 0) {
+                dup2(devnull, STDIN_FILENO);
+                dup2(devnull, STDOUT_FILENO);
+                dup2(devnull, STDERR_FILENO);
+                if (devnull > STDERR_FILENO)
+                    close(devnull);
+            }
+            char *args[] = {const_cast<char *>(candidate.c_str()), nullptr};
+            execv(candidate.c_str(), args);
+            _exit(127);
+        }
+        // Parent: we spawned it; poll for the listener in the retry loop.
+        (void)pid;
+        break;
+    }
 }
 
 bool PskkClient::connectLocked(std::string *error) {
