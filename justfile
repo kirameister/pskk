@@ -173,7 +173,9 @@ fcitx5-install:
 fcitx5-build:
   @echo "Building Fcitx 5 addon (requires cmake and the fcitx5 dev packages)..."
   @MULTIARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || true)"; \
-    if [ -z "$MULTIARCH" ]; then CMAKE_LIBDIR="lib"; else CMAKE_LIBDIR="lib/$MULTIARCH"; fi; \
+    if [ -n "$MULTIARCH" ]; then CMAKE_LIBDIR="lib/$MULTIARCH"; \
+    elif [ -d /usr/lib64 ]; then CMAKE_LIBDIR="lib64"; \
+    else CMAKE_LIBDIR="lib"; fi; \
     cmake -S fcitx5 -B fcitx5/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR="$CMAKE_LIBDIR" && \
     cmake --build fcitx5/build -j"$(nproc)"
 

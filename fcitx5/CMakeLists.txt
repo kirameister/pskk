@@ -163,5 +163,13 @@ install(TARGETS pskk LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/fcitx5)
 # Input-mode indicator icons (pskk-hiragana / pskk-alphanumeric) installed
 # into the hicolor icon theme. After installing, refresh the icon cache with:
 #   sudo gtk-update-icon-cache /usr/share/icons/hicolor
-install(DIRECTORY data/icons/
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons)
+# (Skip only if the icons are missing, e.g. a partial checkout - regenerate
+#  them with: python3 fcitx5/tools/gen_icons.py)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/data/icons")
+  install(DIRECTORY data/icons/
+          DESTINATION ${CMAKE_INSTALL_DATADIR}/icons)
+else()
+  message(WARNING
+    "fcitx5/data/icons not found - the あ/A mode-indicator icons will not be "
+    "installed. Run 'python3 fcitx5/tools/gen_icons.py' to regenerate them.")
+endif()

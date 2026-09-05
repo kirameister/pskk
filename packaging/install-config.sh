@@ -17,12 +17,14 @@ export SYSTEM_BIN_DIR="/usr/local/bin"
 export SYSTEM_IBUS_COMPONENT_DIR="/usr/share/ibus/component"
 export SYSTEM_APPLICATIONS_DIR="/usr/share/applications"
 
-# Fcitx 5 integration paths (multiarch-aware on Debian/Ubuntu)
+# Fcitx 5 integration paths (Debian multiarch / Fedora lib64 / plain lib)
 export SYSTEM_FCITX5_ADDON_DIR="/usr/share/fcitx5/addon"
 export SYSTEM_FCITX5_INPUTMETHOD_DIR="/usr/share/fcitx5/inputmethod"
 _FCITX5_MULTIARCH="$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || true)"
 if [ -n "${_FCITX5_MULTIARCH}" ]; then
     export SYSTEM_FCITX5_LIB_DIR="/usr/lib/${_FCITX5_MULTIARCH}/fcitx5"
+elif [ -d "/usr/lib64" ]; then
+    export SYSTEM_FCITX5_LIB_DIR="/usr/lib64/fcitx5"
 else
     export SYSTEM_FCITX5_LIB_DIR="/usr/lib/fcitx5"
 fi
