@@ -14,7 +14,7 @@ build:
 # Core Installation (IMF-agnostic)
 # ============================================================================
 
-# Install core PSKK components (server, gRPC stubs, data, settings app)
+# Install core PSKK components (server, gRPC stubs, data, GUI apps)
 core-install:
   @echo "=== Installing PSKK Core Components ==="
   just _install-grpc-stubs
@@ -23,6 +23,7 @@ core-install:
   just _install-data
   just settings-install
   just dict-editor-install
+  just ime-tester-install
   @echo "✓ Core installation complete"
 
 # Internal: Generate and install gRPC stubs (only when the .proto changed — avoids requiring grpcio-tools for plain installs)
@@ -288,6 +289,15 @@ ime-tester-dev:
 ime-tester-build:
   just _ensure-tauri-cli
   cd apps/ime-tester && cargo tauri build
+
+ime-tester-install:
+  just ime-tester-ui-install
+  just ime-tester-ui-build
+  cd apps/ime-tester/src-tauri && cargo build --release --features custom-protocol
+  sudo mkdir -p /opt/pskk/bin
+  sudo cp apps/ime-tester/src-tauri/target/release/pskk-ime-tester /opt/pskk/bin/
+  sudo ln -sf /opt/pskk/bin/pskk-ime-tester /usr/local/bin/pskk-ime-tester
+  @echo "✓ IME tester installed to /opt/pskk/bin/pskk-ime-tester"
 
 # Dictionary editor app
 dict-editor-ui-install:

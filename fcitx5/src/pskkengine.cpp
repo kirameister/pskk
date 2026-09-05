@@ -77,6 +77,7 @@ PskkEngine::PskkEngine(fcitx::Instance *instance)
     alphanumericAction_ = std::make_unique<fcitx::SimpleAction>();
     settingsAction_ = std::make_unique<fcitx::SimpleAction>();
     dictionaryEditorAction_ = std::make_unique<fcitx::SimpleAction>();
+    imeTesterAction_ = std::make_unique<fcitx::SimpleAction>();
     menu_ = std::make_unique<fcitx::Menu>();
 
     modeAction_->setShortText("あ");
@@ -87,12 +88,14 @@ PskkEngine::PskkEngine(fcitx::Instance *instance)
     alphanumericAction_->setChecked(false);
     settingsAction_->setShortText("Settings");
     dictionaryEditorAction_->setShortText("Dictionary Editor");
+    imeTesterAction_->setShortText("IME Tester");
 
     modeAction_->setMenu(menu_.get());
     menu_->addAction(hiraganaAction_.get());
     menu_->addAction(alphanumericAction_.get());
     menu_->addAction(settingsAction_.get());
     menu_->addAction(dictionaryEditorAction_.get());
+    menu_->addAction(imeTesterAction_.get());
 
     instance_->userInterfaceManager().registerAction("pskk-input-mode",
                                                      modeAction_.get());
@@ -104,6 +107,8 @@ PskkEngine::PskkEngine(fcitx::Instance *instance)
                                                      settingsAction_.get());
     instance_->userInterfaceManager().registerAction(
         "pskk-dictionary-editor", dictionaryEditorAction_.get());
+    instance_->userInterfaceManager().registerAction(
+        "pskk-ime-tester", imeTesterAction_.get());
 
     hiraganaAction_->connect<fcitx::SimpleAction::Activated>(
         [this](fcitx::InputContext *ic) { setServerMode(kHiragana, ic); });
@@ -114,6 +119,10 @@ PskkEngine::PskkEngine(fcitx::Instance *instance)
     dictionaryEditorAction_->connect<fcitx::SimpleAction::Activated>(
         [this](fcitx::InputContext * /*ic*/) {
             launch("/opt/pskk/bin/pskk-dictionary-editor");
+        });
+    imeTesterAction_->connect<fcitx::SimpleAction::Activated>(
+        [this](fcitx::InputContext * /*ic*/) {
+            launch("/opt/pskk/bin/pskk-ime-tester");
         });
 
     // Connect to pskk-server in the background (auto-starting it if needed),
@@ -143,6 +152,7 @@ PskkEngine::~PskkEngine() {
         warmupThread_.join();
 
     instance_->userInterfaceManager().unregisterAction(dictionaryEditorAction_.get());
+    instance_->userInterfaceManager().unregisterAction(imeTesterAction_.get());
     instance_->userInterfaceManager().unregisterAction(settingsAction_.get());
     instance_->userInterfaceManager().unregisterAction(alphanumericAction_.get());
     instance_->userInterfaceManager().unregisterAction(hiraganaAction_.get());

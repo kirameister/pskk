@@ -237,6 +237,16 @@ class PSKKEngine(IBus.Engine):
         )
         prop_list.append(dict_editor_prop)
         
+        # IME Tester property
+        ime_tester_prop = IBus.Property(
+            key='IMETester',
+            prop_type=IBus.PropType.NORMAL,
+            label=IBus.Text.new_from_string('IME Tester'),
+            symbol=IBus.Text.new_from_string('🧪'),
+            tooltip=IBus.Text.new_from_string('Open PSKK IME Tester')
+        )
+        prop_list.append(ime_tester_prop)
+        
         return prop_list
     
     def do_focus_in(self):
@@ -286,6 +296,8 @@ class PSKKEngine(IBus.Engine):
             self._open_settings()
         elif prop_name == 'DictionaryEditor':
             self._open_dictionary_editor()
+        elif prop_name == 'IMETester':
+            self._open_ime_tester()
     
     def _set_mode(self, mode):
         """Set input mode via gRPC"""
@@ -315,6 +327,13 @@ class PSKKEngine(IBus.Engine):
             subprocess.Popen(['/opt/pskk/bin/pskk-dictionary-editor'])
         except Exception as e:
             logger.error(f"Failed to open dictionary editor: {e}")
+    
+    def _open_ime_tester(self):
+        """Open PSKK IME tester application"""
+        try:
+            subprocess.Popen(['/opt/pskk/bin/pskk-ime-tester'])
+        except Exception as e:
+            logger.error(f"Failed to open IME tester: {e}")
     
     def do_process_key_event(self, keyval, keycode, state):
         """
