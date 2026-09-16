@@ -53,10 +53,13 @@ just install-deps
 # Build everything
 just build-all
 
-# Install to /opt/pskk (requires sudo)
-sudo just install-system
+# Install for your input method framework.
+# The recipes run sudo internally for the privileged steps - do NOT prefix them with sudo,
+# otherwise user-session steps such as 'ibus restart' fail and root-owned files are left
+# behind in the checkout.
+just ibus-install      # or: just fcitx5-install
 
-# Or use the install script
+# Or use the full install script (this one does require sudo)
 sudo ./packaging/install.sh
 ```
 
@@ -134,8 +137,8 @@ cargo tauri dev
 ## Uninstallation
 
 ```bash
-# Using just
-sudo just uninstall-system
+# Using just (no sudo - the recipes run sudo internally)
+just ibus-uninstall    # or: just fcitx5-uninstall
 
 # Or using the uninstall script
 sudo ./packaging/uninstall.sh

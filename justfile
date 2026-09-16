@@ -10,12 +10,27 @@ test:
 build:
   cargo build --release
 
+# Internal: Refuse to run install/uninstall recipes as root. Every privileged step already calls
+# sudo on its own, so wrapping the whole recipe in sudo only breaks things: user-session commands
+# such as `ibus restart` fail (root has no XDG_RUNTIME_DIR / session D-Bus), and root-owned build
+# artifacts are left behind in the source tree.
+_assert-not-root:
+  @if [ "$(id -u)" -eq 0 ]; then \
+    echo "✗ Do not run this recipe as root or with sudo." >&2; \
+    echo "  Privileged steps already use sudo internally. Running as root would:" >&2; \
+    echo "    - break user-session steps such as 'ibus restart' (no session D-Bus)" >&2; \
+    echo "    - leave root-owned files in the source tree and under /opt/pskk" >&2; \
+    echo "  Re-run it without sudo, e.g.:  just ibus-install" >&2; \
+    exit 1; \
+  fi
+
 # ============================================================================
 # Core Installation (IMF-agnostic)
 # ============================================================================
 
 # Install core PSKK components (server, gRPC stubs, data, GUI apps)
 core-install:
+  @just _assert-not-root
   @echo "=== Installing PSKK Core Components ==="
   just _install-grpc-stubs
   just _ensure-skk-dictionaries
@@ -26,14 +41,51 @@ core-install:
   just ime-tester-install
   @echo "✓ Core installation complete"
 
-# Internal: Generate and install gRPC stubs (only when the .proto changed — avoids requiring grpcio-tools for plain installs)
+# Internal: Make sure the checked-in Python gRPC stubs can be imported by the installed protobuf
+# runtime. protobuf >= 4.x refuses gencode produced by protoc < 3.20 ("Descriptors cannot be created
+# directly"), so a stale pskk_pb2.py breaks the IBus engine at import time. Old-style gencode is
+# recognised by its direct _descriptor.EnumValueDescriptor()/FileDescriptor() construction.
+# File mtimes are deliberately NOT the trigger: a fresh git checkout stamps every file with almost
+# the same timestamp, which made the old mtime check silently skip regeneration and install stubs
+# that no modern protobuf runtime can import.
 _install-grpc-stubs:
-  @if [ proto/pskk.proto -nt proto/pskk_pb2.py ] || [ proto/pskk.proto -nt proto/pskk_pb2_grpc.py ]; then \
-    echo "  Generating gRPC stubs..."; \
-    python3 -m grpc_tools.protoc -I./proto --python_out=./proto --grpc_python_out=./proto ./proto/pskk.proto; \
-    echo "  ✓ gRPC stubs generated"; \
+  @regen=0; \
+  if [ ! -f proto/pskk_pb2.py ] || grep -q "_descriptor.EnumValueDescriptor(" proto/pskk_pb2.py; then \
+    echo "  gRPC stubs are missing or use pre-3.20 protobuf gencode - regenerating"; \
+    regen=1; \
+  elif [ proto/pskk.proto -nt proto/pskk_pb2.py ] && command -v protoc >/dev/null 2>&1; then \
+    echo "  proto/pskk.proto is newer than the generated stubs - regenerating"; \
+    regen=1; \
   else \
-    echo "  ✓ gRPC stubs are up to date (skipping regeneration)"; \
+    echo "  ✓ gRPC stubs are up to date"; \
+  fi; \
+  if [ "$regen" -eq 1 ]; then just _regen-grpc-stubs; fi
+
+# Internal: Regenerate the Python gRPC stubs. Prefers grpcio-tools (regenerates both files); falls
+# back to the system protoc for pskk_pb2.py only, because pskk_pb2_grpc.py does not depend on the
+# protobuf gencode version and can stay as checked in.
+_regen-grpc-stubs:
+  @if python3 -c "import grpc_tools" >/dev/null 2>&1; then \
+    echo "  Generating gRPC stubs with grpcio-tools..."; \
+    python3 -m grpc_tools.protoc -I./proto --python_out=./proto --grpc_python_out=./proto ./proto/pskk.proto; \
+  elif command -v protoc >/dev/null 2>&1; then \
+    echo "  grpcio-tools not found - regenerating pskk_pb2.py with the system protoc..."; \
+    echo "    note: pskk_pb2_grpc.py is only rewritten by grpcio-tools; run ./generate_python_grpc.sh"; \
+    echo "          after adding or removing RPCs so the stub picks up the new methods."; \
+    protoc -I./proto --python_out=./proto ./proto/pskk.proto; \
+  else \
+    echo "  ✗ Cannot regenerate the gRPC stubs: neither grpcio-tools nor protoc is installed." >&2; \
+    echo "    Install one of the following and retry:" >&2; \
+    echo "      sudo apt install python3-grpcio-tools   # Debian/Ubuntu (regenerates both files)" >&2; \
+    echo "      sudo apt install protobuf-compiler      # Debian/Ubuntu (pskk_pb2.py only)" >&2; \
+    echo "      pip3 install --user grpcio-tools" >&2; \
+    exit 1; \
+  fi; \
+  if grep -q "_descriptor.EnumValueDescriptor(" proto/pskk_pb2.py; then \
+    echo "  ✗ Generated pskk_pb2.py still uses pre-3.20 gencode - is your protoc older than 3.20?" >&2; \
+    exit 1; \
+  else \
+    echo "  ✓ gRPC stubs generated"; \
   fi
 
 # Internal: Build and install gRPC server
@@ -80,6 +132,7 @@ _ensure-skk-dictionaries:
 
 # Install PSKK for IBus (includes core + IBus integration)
 ibus-install:
+  @just _assert-not-root
   @echo "=== Installing PSKK for IBus ==="
   just core-install
   just _install-ibus-engine
@@ -110,6 +163,14 @@ _install-ibus-engine:
   sudo cp ibus-engine-pskk.py /opt/pskk/libexec/
   sudo chmod +x /opt/pskk/libexec/ibus-engine-pskk.py
   sudo cp proto/pskk_pb2.py proto/pskk_pb2_grpc.py /opt/pskk/libexec/
+  @if python3 -c "import sys; sys.path.insert(0, '/opt/pskk/libexec'); import pskk_pb2, pskk_pb2_grpc" >/dev/null 2>&1; then \
+    echo "  ✓ Installed gRPC stubs import correctly"; \
+  else \
+    echo "  ✗ The installed gRPC stubs cannot be imported by this Python/protobuf runtime:" >&2; \
+    python3 -c "import sys; sys.path.insert(0, '/opt/pskk/libexec'); import pskk_pb2" || true; \
+    echo "    Regenerate and reinstall them:  just _regen-grpc-stubs && just _install-ibus-engine" >&2; \
+    exit 1; \
+  fi
   @echo "  ✓ IBus engine installed"
 
 # Internal: Install IBus component XML
@@ -118,13 +179,25 @@ _install-ibus-component:
   sudo cp packaging/pskk.xml /usr/share/ibus/component/
   @echo "  ✓ IBus component registered"
 
-# Internal: Restart IBus daemon
+# Internal: Restart the IBus daemon. This is a *user session* command - it needs the desktop
+# session D-Bus, so it cannot work when run as root or from a shell without a session bus.
 _restart-ibus:
   @echo "  Restarting IBus..."
-  @ibus restart || echo "  ⚠ IBus not running - start it manually with 'ibus-daemon -drx'"
+  @if [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || { [ -n "${XDG_RUNTIME_DIR:-}" ] && [ -S "${XDG_RUNTIME_DIR}/bus" ]; }; then \
+    if ibus restart; then \
+      echo "  ✓ IBus restarted"; \
+    else \
+      echo "  ⚠ IBus not running - start it manually with 'ibus-daemon -drx'"; \
+    fi; \
+  else \
+    echo "  ⚠ No user session D-Bus found (XDG_RUNTIME_DIR unset or has no bus socket)."; \
+    echo "    IBus was not restarted. Run 'ibus restart' from your desktop session,"; \
+    echo "    or log out and back in, to pick up the new engine."; \
+  fi
 
 # Uninstall PSKK from IBus (removes IBus integration + core components)
 ibus-uninstall:
+  @just _assert-not-root
   @echo "=== Uninstalling PSKK from IBus ==="
   just _uninstall-ibus-component
   just _uninstall-ibus-engine
@@ -157,6 +230,7 @@ _uninstall-ibus-engine:
 
 # Install PSKK for Fcitx 5 (includes core + Fcitx 5 addon)
 fcitx5-install:
+  @just _assert-not-root
   @echo "=== Installing PSKK for Fcitx 5 ==="
   just core-install
   just fcitx5-build
@@ -186,6 +260,7 @@ _restart-fcitx5:
 
 # Uninstall PSKK from Fcitx 5 (removes Fcitx 5 integration + core components)
 fcitx5-uninstall:
+  @just _assert-not-root
   @echo "=== Uninstalling PSKK from Fcitx 5 ==="
   @sudo rm -f /usr/share/fcitx5/addon/pskk.conf
   @sudo rm -f /usr/share/fcitx5/inputmethod/pskk.conf
@@ -207,6 +282,7 @@ fcitx5-uninstall:
 
 # Uninstall core PSKK components (server, apps, data)
 core-uninstall:
+  @just _assert-not-root
   @echo "=== Uninstalling PSKK Core Components ==="
   just _uninstall-server
   @echo "  Removing /opt/pskk directory..."

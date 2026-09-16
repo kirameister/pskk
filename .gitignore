@@ -3,3 +3,5 @@ target/
 **/dist/
 **/.vite/
 fcitx5/build/
+__pycache__/
+*.py[cod]
