@@ -196,6 +196,64 @@ Or run the engine directly to see output:
 ./ibus-engine-pskk.py
 ```
 
+### Diagnosing key-order / timing problems (blue "key trace")
+
+Symptoms like *"the bunsetsu marker only starts if I hold space long enough before
+typing"* are usually about the **order and spacing of key events**, not about a missing
+feature. Enable the opt-in key trace to see exactly what the engine received:
+
+```bash
+# add "trace_keys": true to your user config (created on first run)
+$EDITOR ~/.config/pskk/config.json     # { ..., "trace_keys": true }
+
+# restart both sides so they pick it up
+pkill pskk-server
+ibus restart
+```
+
+Every key event then produces a pair of `KEYTRACE` lines, one from the IBus client
+(`src=client`, as delivered by the desktop) and one pair from the engine
+(`src=server`, `in` = as received, `out` = what it decided):
+
+```
+KEYTRACE src=client seq=1 phase=in  t=1789628329656 dt_ms=0.0 key='space' pressed=True
+KEYTRACE src=server seq=1 phase=in  t=1789628329656 dt_ms=0 rel_ms=0.0 key='space' pressed=true marker=Idle engine=Normal
+KEYTRACE src=server seq=2 phase=out t=1789628329656 dt_ms=0 rel_ms=0.1 key='space' pressed=true marker=MarkerHeld engine=Normal consumed=true
+KEYTRACE src=client seq=2 phase=in  t=1789628329670 dt_ms=14.0 key='a' pressed=True
+KEYTRACE src=server seq=3 phase=in  t=1789628329670 dt_ms=0 rel_ms=14.2 key='a' pressed=true marker=MarkerHeld engine=Normal
+...
+KEYTRACE src=server seq=8 phase=out t=1789628329657 dt_ms=0 rel_ms=0.8 key='space' pressed=false marker=Idle engine=Bunsetsu
+```
+
+How to read it:
+
+- `t=` is epoch milliseconds in both processes, so you can sort both traces together and
+  see the true order. If the `key='a'` line comes **before** `key='space'` in the client
+  trace, the reversal already happened in the keyboard/IBus and the engine never gets the
+  chance to treat `a` as the marker's first key.
+- `dt_ms` is the gap since the previous traced event in that process — useful to tell a
+  chord (single-digit ms) from a deliberate hold (hundreds of ms).
+- The engine's `out` lines show `marker=` and `engine=` after the decision. Bunsetsu mode
+  is entered on the **space release** whose `out` line shows `marker=Idle engine=Bunsetsu`.
+  If the space release instead shows `commit=' '`, the release was treated as a plain
+  space tap and the marker was dropped.
+- `phase=retry` (client only) means the engine answered `HENKAN_UNAVAILABLE` and the
+  client is stalling the IBus main loop 100 ms per attempt waiting for the dictionary.
+  A long run of those means the kana→kanji dictionary never loaded.
+
+Both traces are written to `~/.config/pskk/pskk.log` (the server also writes there via
+`tracing`), and the client additionally logs to stderr/journald:
+
+```bash
+tail -f ~/.config/pskk/pskk.log | grep KEYTRACE
+```
+
+Set `PSKK_TRACE_KEYS=0` (or remove `trace_keys`) to turn it back off.
+
+If no `src=server` lines appear, the server's log level is filtering them out; the trace
+logs at INFO, so make sure `logging_level` in `config.json` is `INFO` or `DEBUG`, or start
+the server with `RUST_LOG=pskk=info pskk-server`.
+
 ## Development Workflow
 
 1. **Make changes to Rust engine** (`src/engine.rs`, etc.)

@@ -8,6 +8,8 @@ import gi
 gi.require_version('IBus', '1.0')
 from gi.repository import IBus, GLib
 import grpc
+import json
+import os
 import sys
 import logging
 import subprocess
@@ -34,6 +36,63 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('pskk-ibus')
+
+
+# ---------------------------------------------------------------------------
+# Opt-in key-event trace.
+#
+# Diagnostic aid for key-order/timing problems (e.g. "the bunsetsu marker only
+# starts if I hold space long enough"). When enabled, every key event logs an
+# `in` line (as delivered by IBus) and an `out` line (what the engine decided).
+# Lines go to stderr and are appended to the same file the server logs to
+# (~/.config/pskk/pskk.log), so the two traces can be compared by their `t`
+# (epoch ms) field to see whether the order was already wrong when the event
+# left IBus, or only later on the server side.
+#
+# Enable with "trace_keys": true in ~/.config/pskk/config.json, or by setting
+# PSKK_TRACE_KEYS=1 in the environment (which overrides the config).
+# ---------------------------------------------------------------------------
+def _key_trace_enabled():
+    env = os.environ.get('PSKK_TRACE_KEYS')
+    if env is not None:
+        return env not in ('', '0', 'false', 'False', 'off')
+    try:
+        with open(Path.home() / '.config' / 'pskk' / 'config.json') as f:
+            return bool(json.load(f).get('trace_keys'))
+    except Exception:
+        return False
+
+
+_KEY_TRACE = _key_trace_enabled()
+_key_trace_seq = 0
+_key_trace_last = None
+_key_trace_file = None
+if _KEY_TRACE:
+    try:
+        _key_trace_file = open(Path.home() / '.config' / 'pskk' / 'pskk.log',
+                               'a', buffering=1)
+    except Exception:
+        _key_trace_file = None
+
+
+def key_trace(phase, **fields):
+    """Emit one key-event trace line (no-op unless tracing is enabled)."""
+    global _key_trace_seq, _key_trace_last
+    if not _KEY_TRACE:
+        return
+    _key_trace_seq += 1
+    now = time.monotonic() * 1000.0
+    dt = 0.0 if _key_trace_last is None else now - _key_trace_last
+    _key_trace_last = now
+    extra = ' '.join(f'{k}={v!r}' for k, v in fields.items())
+    line = (f'KEYTRACE src=client seq={_key_trace_seq} phase={phase} '
+            f't={int(time.time() * 1000)} dt_ms={dt:.1f} {extra}')
+    if _key_trace_file is not None:
+        try:
+            _key_trace_file.write(line + '\n')
+        except Exception:
+            pass
+    logger.info(line)
 
 
 class PSKKEngine(IBus.Engine):
@@ -346,6 +405,8 @@ class PSKKEngine(IBus.Engine):
         # Convert IBus key event to PSKK KeyEvent
         key_char = chr(keyval) if 32 <= keyval < 127 else ""
         key_name = IBus.keyval_name(keyval) or str(keyval)
+
+        key_trace('in', key=key_name, pressed=is_pressed, char=key_char)
         
         # Track Super key state manually (IBus doesn't include it in modifier mask immediately)
         if key_name in ['Super_L', 'Super_R']:
@@ -402,13 +463,24 @@ class PSKKEngine(IBus.Engine):
             retries = 0
             while response.status == pskk_pb2.ResponseStatus.HENKAN_UNAVAILABLE and retries < 100:
                 logger.debug("Henkan dictionary not ready yet; retrying ProcessKey...")
+                key_trace('retry', key=key_name, pressed=is_pressed, attempt=retries + 1)
                 time.sleep(0.1)
                 response = self.stub.ProcessKey(request)
                 retries += 1
 
             if response.status == pskk_pb2.ResponseStatus.HENKAN_UNAVAILABLE:
                 logger.error("Henkan dictionary still not ready after retries; dropping key")
+                key_trace('out', key=key_name, pressed=is_pressed, dropped=True,
+                          retries=retries)
                 return True  # Suppress the key as requested
+
+            key_trace('out', key=key_name, pressed=is_pressed,
+                      status=pskk_pb2.ResponseStatus.Name(response.status),
+                      consumed=response.consumed,
+                      marker=pskk_pb2.MarkerState.Name(response.marker_state),
+                      engine=pskk_pb2.EngineState.Name(response.engine_state),
+                      commit=response.commit_string,
+                      preedit=''.join(seg.text for seg in response.preedit_segments))
 
             # Update UI based on response
             self._update_ui(response)

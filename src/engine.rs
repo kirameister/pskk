@@ -8,6 +8,9 @@ use crate::kanchoku::KanchokuProcessor;
 use crate::simultaneous_processor::SimultaneousInputProcessor;
 use crate::util::{get_config_data, get_layout_data, get_user_config_dir};
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, trace};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,6 +141,40 @@ pub struct PSKKEngine {
     config: serde_json::Value,
 }
 
+// ---------------------------------------------------------------------------
+// Opt-in key-event trace
+//
+// Diagnostic aid for key-order/timing problems (e.g. "the bunsetsu marker only
+// works if I hold space long enough"). When enabled, every key event logs an
+// `in` line (as received by the engine) and an `out` line (the engine's
+// decision). The lines carry a wall-clock timestamp `t` (epoch ms, directly
+// comparable with the IBus client's trace) plus `dt_ms`, the gap since the
+// previous traced event in this process, so the real order and spacing of the
+// events can be read off the log.
+//
+// Enable with `"trace_keys": true` in ~/.config/pskk/config.json, or with the
+// PSKK_TRACE_KEYS env var (which overrides the config).
+// ---------------------------------------------------------------------------
+static TRACE_ORIGIN: OnceLock<Instant> = OnceLock::new();
+static TRACE_SEQ: AtomicU64 = AtomicU64::new(0);
+static TRACE_LAST_MS: AtomicU64 = AtomicU64::new(0);
+static TRACE_ENV: OnceLock<Option<bool>> = OnceLock::new();
+
+fn trace_env_override() -> Option<bool> {
+    *TRACE_ENV.get_or_init(|| {
+        std::env::var("PSKK_TRACE_KEYS")
+            .ok()
+            .map(|v| !matches!(v.as_str(), "" | "0" | "false" | "False" | "off"))
+    })
+}
+
+fn epoch_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
 impl PSKKEngine {
     fn mode_switch_key_matches(configured: &str, incoming: &str) -> bool {
         if configured == incoming {
@@ -150,6 +187,41 @@ impl PSKKEngine {
                 | ("NonConvert", "Muhenkan")
                 | ("Muhenkan", "NonConvert")
         )
+    }
+
+    /// Whether the opt-in key-event trace is enabled (env var beats config).
+    fn trace_enabled(&self) -> bool {
+        trace_env_override().unwrap_or_else(|| {
+            self.config
+                .get("trace_keys")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
+    }
+
+    /// Emit one line of the key-event trace; see the statics above.
+    fn key_trace(&self, phase: &str, key_name: &str, is_pressed: bool, detail: &str) {
+        let origin = TRACE_ORIGIN.get_or_init(Instant::now);
+        let rel_ms = origin.elapsed().as_secs_f64() * 1000.0;
+        let rel_u = rel_ms as u64;
+        let prev = TRACE_LAST_MS.swap(rel_u, Ordering::Relaxed);
+        let seq = TRACE_SEQ.fetch_add(1, Ordering::Relaxed) + 1;
+        info!(
+            target: "pskk::keytrace",
+            "KEYTRACE src=server seq={} phase={} t={} dt_ms={} rel_ms={:.1} key='{}' pressed={} marker={:?} engine={:?} preedit='{}' pending='{}' {}",
+            seq,
+            phase,
+            epoch_ms(),
+            rel_u.saturating_sub(prev),
+            rel_ms,
+            key_name,
+            is_pressed,
+            self.marker_state,
+            self.engine_state,
+            self.preedit_string,
+            self.preedit_pending,
+            detail
+        );
     }
 
     pub fn new(
@@ -328,7 +400,35 @@ impl PSKKEngine {
         output
     }
 
+    /// Entry point for key events. Emits the opt-in key-event trace around the
+    /// real handler so that every early return is captured.
     pub fn process_key_event(
+        &mut self,
+        key_char: Option<char>,
+        key_name: &str,
+        is_pressed: bool,
+        modifiers: Option<ProtoKeyModifiers>,
+    ) -> EngineOutput {
+        let trace = self.trace_enabled();
+        if trace {
+            self.key_trace("in", key_name, is_pressed, "");
+        }
+
+        let output = self.process_key_event_inner(key_char, key_name, is_pressed, modifiers);
+
+        if trace {
+            let commit = output.commit_string.as_deref().unwrap_or("");
+            let detail = format!(
+                "consumed={} status={:?} commit='{}'",
+                output.consumed, output.status, commit
+            );
+            self.key_trace("out", key_name, is_pressed, &detail);
+        }
+
+        output
+    }
+
+    fn process_key_event_inner(
         &mut self,
         key_char: Option<char>,
         key_name: &str,
