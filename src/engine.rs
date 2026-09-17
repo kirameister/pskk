@@ -1944,52 +1944,109 @@ impl PSKKEngine {
     }
     
     // Conversion methods for Ctrl+K/J/L commands
+    /// Replace the visible preedit with `text`, staying in the normal (Idle)
+    /// editing state, so the converted text stays editable in the preedit
+    /// buffer instead of being committed to the application.
+    /// Fold the pending (unconfirmed) input into the confirmed preedit.
+    ///
+    /// Pending input only exists while the user could still complete a
+    /// simultaneous-input chord: the newest key is not part of
+    /// `preedit_hiragana` until the next key arrives. Once a command acts on
+    /// the preedit it has to be part of it, so the conversion keys call this
+    /// before converting.
+    fn flush_pending(&mut self) {
+        if self.preedit_pending.is_empty() {
+            return;
+        }
+        self.preedit_hiragana.push_str(&self.preedit_pending);
+        self.preedit_pending.clear();
+        self.preedit_string = self.preedit_hiragana.clone();
+    }
+
+    fn replace_preedit(&mut self, text: String) -> EngineOutput {
+        if text.is_empty() {
+            // Nothing to put in the preedit - keep it as it is rather than
+            // clearing the buffer.
+            return self.build_preedit_output();
+        }
+
+        if self.engine_state == EngineState::Converting {
+            // A conversion key supersedes the candidate conversion.
+            self.engine_state = EngineState::Normal;
+            self.conversion_yomi.clear();
+            self.henkan_processor.reset();
+        }
+
+        self.preedit_string = text.clone();
+        self.preedit_hiragana = text;
+        self.preedit_pending.clear();
+        self.build_preedit_output()
+    }
+
     fn convert_to_katakana(&mut self) -> EngineOutput {
         if self.preedit_string.is_empty() {
             return EngineOutput::passthrough(self.mode);
         }
-        
-        // Convert hiragana to katakana
-        let katakana = self.preedit_hiragana.chars().map(|c| {
-            if c >= 'ぁ' && c <= 'ん' {
-                // Hiragana to Katakana conversion (add 0x60)
-                char::from_u32(c as u32 + 0x60).unwrap_or(c)
-            } else {
-                c
-            }
-        }).collect::<String>();
-        
-        self.reset_state();
-        EngineOutput::commit(katakana, self.mode)
+        self.flush_pending();
+
+        // Convert hiragana to katakana.
+        let katakana = self
+            .preedit_hiragana
+            .chars()
+            .map(|c| {
+                if c >= 'ぁ' && c <= 'ん' {
+                    // Hiragana to Katakana conversion (add 0x60)
+                    char::from_u32(c as u32 + 0x60).unwrap_or(c)
+                } else {
+                    c
+                }
+            })
+            .collect::<String>();
+
+        self.replace_preedit(katakana)
     }
-    
+
     fn convert_to_hiragana(&mut self) -> EngineOutput {
         if self.preedit_string.is_empty() {
             return EngineOutput::passthrough(self.mode);
         }
-        
-        // Preedit is already in hiragana, just commit it
-        let commit = self.preedit_hiragana.clone();
-        self.reset_state();
-        EngineOutput::commit(commit, self.mode)
+        self.flush_pending();
+
+        // Katakana back to hiragana, so the conversion keys can be used as a
+        // toggle over the same preedit.
+        let hiragana = self
+            .preedit_hiragana
+            .chars()
+            .map(|c| {
+                if c >= 'ァ' && c <= 'ン' {
+                    // Katakana to Hiragana conversion (subtract 0x60)
+                    char::from_u32(c as u32 - 0x60).unwrap_or(c)
+                } else {
+                    c
+                }
+            })
+            .collect::<String>();
+
+        self.replace_preedit(hiragana)
     }
-    
+
     fn convert_to_ascii(&mut self) -> EngineOutput {
         if self.preedit_string.is_empty() {
             return EngineOutput::passthrough(self.mode);
         }
-        
-        // Commit the ASCII representation
-        let commit = self.preedit_ascii.clone();
-        self.reset_state();
-        EngineOutput::commit(commit, self.mode)
+        self.flush_pending();
+
+        // Show the keystrokes behind the current preedit, in the preedit.
+        let ascii = self.preedit_ascii.clone();
+        self.replace_preedit(ascii)
     }
-    
+
     fn convert_to_zenkaku(&mut self) -> EngineOutput {
         if self.preedit_string.is_empty() {
             return EngineOutput::passthrough(self.mode);
         }
-        
+        self.flush_pending();
+
         // Convert ASCII to full-width (zenkaku)
         let zenkaku = self.preedit_ascii.chars().map(|c| {
             if c >= '!' && c <= '~' {
@@ -2001,9 +2058,8 @@ impl PSKKEngine {
                 c
             }
         }).collect::<String>();
-        
-        self.reset_state();
-        EngineOutput::commit(zenkaku, self.mode)
+
+        self.replace_preedit(zenkaku)
     }
 }
 
@@ -2425,9 +2481,10 @@ mod tests {
         });
         engine.process_key_event(Some('a'), "a", true, None);
         let o = engine.process_key_event(Some('l'), "l", true, Some(ctrl.clone()));
+        assert_eq!(o.commit_string, None, "Control+l must not commit");
         assert_eq!(
-            o.commit_string,
-            Some("ア".to_string()),
+            preedit_text(&o),
+            "ア",
             "Control+l must convert the preedit to katakana"
         );
 
@@ -2443,9 +2500,10 @@ mod tests {
         });
         engine.process_key_event(Some('a'), "a", true, None);
         let o = engine.process_key_event(Some(';'), "semicolon", true, Some(ctrl.clone()));
+        assert_eq!(o.commit_string, None, "Control+; must not commit");
         assert_eq!(
-            o.commit_string,
-            Some("a".to_string()),
+            preedit_text(&o),
+            "a",
             "Control+; must convert the preedit to ascii"
         );
 
@@ -2459,11 +2517,11 @@ mod tests {
         });
         engine.process_key_event(Some('a'), "a", true, None);
         let o = engine.process_key_event(Some('L'), "L", true, Some(ctrl_shift));
-        assert_eq!(
-            o.commit_string,
-            Some("あ".to_string()),
-            "Control+Shift+L must convert the preedit to hiragana"
-        );
+        // An unmatched Ctrl/Alt combo would commit the preedit and pass the key
+        // through, so "no commit and consumed" proves the binding matched.
+        assert_eq!(o.commit_string, None, "Control+Shift+L must not commit");
+        assert!(o.consumed);
+        assert_eq!(preedit_text(&o), "あ");
 
         // Canonical spellings (what the packaged defaults use) keep working.
         let mut engine = create_test_engine();
@@ -2476,7 +2534,79 @@ mod tests {
         });
         engine.process_key_event(Some('a'), "a", true, None);
         let o = engine.process_key_event(Some('k'), "k", true, Some(ctrl));
-        assert_eq!(o.commit_string, Some("ア".to_string()));
+        assert_eq!(o.commit_string, None);
+        assert_eq!(preedit_text(&o), "ア");
+    }
+
+    /// Engine whose layout keeps each kana in `preedit_pending` until the next
+    /// key arrives, like the shipped shingeta layout.
+    fn create_kana_pending_engine() -> PSKKEngine {
+        let mut engine = create_test_engine();
+        engine.simul_processor = SimultaneousInputProcessor::new(Some(vec![
+            ("a".to_string(), "".to_string(), "の".to_string(), None),
+            ("s".to_string(), "".to_string(), "と".to_string(), None),
+            ("d".to_string(), "".to_string(), "か".to_string(), None),
+            ("f".to_string(), "".to_string(), "ん".to_string(), None),
+        ]));
+        engine.config["conversion_keys"] = serde_json::json!({
+            "to_katakana": ["Ctrl+l"],
+            "to_hiragana": ["Ctrl+j"],
+            "to_ascii": ["Ctrl+;"],
+            "to_zenkaku": ["Ctrl+Shift+L"],
+        });
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine
+    }
+
+    fn preedit_text(output: &EngineOutput) -> String {
+        output
+            .preedit_segments
+            .iter()
+            .map(|s| s.text.clone())
+            .collect()
+    }
+
+    /// Regression: the conversion keys read `preedit_hiragana`, which excludes
+    /// the newest kana while it still sits in `preedit_pending`, and then
+    /// committed the result. Ctrl+L on "のとかん" therefore produced a committed
+    /// "ノトカ": the last letter was dropped from the preedit *and* the whole
+    /// text left the buffer.
+    #[test]
+    fn conversion_keys_convert_the_whole_preedit_in_place() {
+        let ctrl = ProtoKeyModifiers {
+            shift: false,
+            ctrl: true,
+            alt: false,
+            super_: false,
+        };
+        let mut engine = create_kana_pending_engine();
+
+        for (c, name) in [('a', "a"), ('s', "s"), ('d', "d"), ('f', "f")] {
+            engine.process_key_event(Some(c), name, true, None);
+            engine.process_key_event(Some(c), name, false, None);
+        }
+        assert_eq!(engine.preedit_string, "のとかん", "pending kana must show");
+
+        // Ctrl+L (to_katakana): everything is converted, nothing is committed.
+        let o = engine.process_key_event(Some('l'), "l", true, Some(ctrl.clone()));
+        assert_eq!(o.commit_string, None, "conversion must not commit the text");
+        assert_eq!(
+            o.engine_state,
+            EngineState::Normal,
+            "must stay in Idle mode"
+        );
+        assert_eq!(preedit_text(&o), "ノトカン");
+
+        // The pending kana was folded into the confirmed preedit first: it is
+        // no longer "waiting to be completed" once a conversion was asked for.
+        assert!(engine.preedit_pending.is_empty(), "pending must be resolved");
+        assert_eq!(engine.preedit_hiragana, "ノトカン");
+
+        // Ctrl+J (to_hiragana) toggles back over the same preedit.
+        let o = engine.process_key_event(Some('j'), "j", true, Some(ctrl));
+        assert_eq!(o.commit_string, None);
+        assert_eq!(o.engine_state, EngineState::Normal);
+        assert_eq!(preedit_text(&o), "のとかん");
     }
 
     #[test]
