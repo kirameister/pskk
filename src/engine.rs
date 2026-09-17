@@ -1169,7 +1169,15 @@ impl PSKKEngine {
             return self.build_preedit_output();
         }
         
-        if self.marker_first_key.is_some() && self.marker_keys_held.is_empty() {
+        // Decide as soon as the marker is released; do not additionally wait for
+        // the character keys to be released. Key events can arrive in any order,
+        // so fast typing often releases the marker *before* the character keys
+        // (observed in the field: space up ~30 ms before the last key up).
+        // Requiring `marker_keys_held` to be empty silently dropped bunsetsu
+        // mode in exactly that case. A resolved pair (`marker_second_key`) has
+        // already produced its preedit by now, and for a single key there is
+        // nothing left to wait for once the marker itself is up.
+        if self.marker_first_key.is_some() {
             if let Some(first_char) = self.marker_first_key {
                 // Check if Kanchoku/simultaneous was already processed (second key exists)
                 if self.marker_second_key.is_some() {
@@ -2083,6 +2091,67 @@ mod tests {
         engine.process_key_event(Some('o'), "o", false, None);
         let o = engine.process_key_event(None, "space", false, None);
         assert_eq!(o.engine_state, EngineState::Bunsetsu);
+    }
+
+    /// Regression: releasing the marker (space) *before* the character keys of a
+    /// resolved chord have been released is ordinary fast typing - the events
+    /// can arrive in any order - but it used to drop bunsetsu mode because
+    /// `handle_marker_release_decision` insists on `marker_keys_held` being
+    /// empty even when the pair has already been resolved.
+    #[test]
+    fn space_release_before_chord_keys_enters_bunsetsu() {
+        let mut engine = create_chord_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        engine.process_key_event(None, "space", true, None);
+        engine.process_key_event(Some('d'), "d", true, None);
+        let o = engine.process_key_event(Some('o'), "o", true, None);
+        assert!(o.commit_string.is_none(), "kanchoku must not fire for a chord");
+        let preedit = o.preedit_segments.iter().map(|s| s.text.clone()).collect::<String>();
+        assert_eq!(preedit, "み");
+
+        // Field order: the marker is released between the two key releases
+        // (t up, space up, o up in the original report).
+        engine.process_key_event(Some('d'), "d", false, None);
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(
+            o.engine_state,
+            EngineState::Bunsetsu,
+            "space release must still enter bunsetsu mode when chord keys are held"
+        );
+        let preedit = o.preedit_segments.iter().map(|s| s.text.clone()).collect::<String>();
+        assert_eq!(preedit, "み");
+
+        // The late key release must not corrupt the state.
+        let o = engine.process_key_event(Some('o'), "o", false, None);
+        assert_eq!(o.engine_state, EngineState::Bunsetsu);
+    }
+
+    /// Same race as above but for a single (non-chord) key: the marker can be
+    /// released before the character key, and the bunsetsu boundary must still
+    /// be marked.
+    #[test]
+    fn space_release_before_single_key_enters_bunsetsu() {
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        engine.process_key_event(None, "space", true, None);
+        let o = engine.process_key_event(Some('a'), "a", true, None);
+        let preedit = o.preedit_segments.iter().map(|s| s.text.clone()).collect::<String>();
+        assert_eq!(preedit, "あ");
+
+        // Space released while 'a' is still held.
+        let o = engine.process_key_event(None, "space", false, None);
+        assert_eq!(
+            o.engine_state,
+            EngineState::Bunsetsu,
+            "space release must still enter bunsetsu mode when the key is held"
+        );
+
+        let o = engine.process_key_event(Some('a'), "a", false, None);
+        assert_eq!(o.engine_state, EngineState::Bunsetsu);
+        let preedit = o.preedit_segments.iter().map(|s| s.text.clone()).collect::<String>();
+        assert_eq!(preedit, "あ");
     }
 
     /// Engine with f -> ん and s -> と in the layout, and a kanchoku layout
