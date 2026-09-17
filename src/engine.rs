@@ -848,6 +848,9 @@ impl PSKKEngine {
             // Otherwise, remove the last confirmed kana and its associated ASCII.
             if !self.preedit_pending.is_empty() {
                 self.preedit_pending.pop();
+                // The pending kana's key stroke was recorded in `preedit_ascii`
+                // when it was typed, so drop it together with the kana.
+                self.preedit_ascii.pop();
             } else {
                 if !self.preedit_hiragana.is_empty() {
                     self.preedit_hiragana.pop();
@@ -1323,6 +1326,15 @@ impl PSKKEngine {
     }
 
     fn handle_character_input(&mut self, c: char, _has_shift: bool) -> EngineOutput {
+        // `preedit_ascii` records the raw key characters that make up the
+        // preedit, which is what `to_ascii`/`to_zenkaku` render. It has to be
+        // appended here, once per key press: a key press only flushes the
+        // *previous* kana (in kana-direct layouts) or resolves the previous
+        // prefix (in romaji layouts), so recording it at flush time used to
+        // skip the first key of every preedit and shift the rest by one
+        // ("のとかん" typed as a s d f converted to "sdf" instead of "asdf").
+        self.preedit_ascii.push(c);
+
         // Track marker state but don't block character processing
         if self.marker_state == MarkerState::MarkerHeld {
             self.marker_first_key = Some(c);
@@ -1348,7 +1360,6 @@ impl PSKKEngine {
                 if let Some(ref out) = output {
                     if !out.is_empty() {
                         self.preedit_hiragana.push_str(out);
-                        self.preedit_ascii.push(c);
                     }
                 }
                 self.preedit_pending = pending.unwrap_or_default();
@@ -1392,7 +1403,6 @@ impl PSKKEngine {
                 if let Some(ref out) = output {
                     if !out.is_empty() {
                         self.preedit_hiragana.push_str(out);
-                        self.preedit_ascii.push(c);
                     }
                 }
                 self.preedit_pending = pending.unwrap_or_default();
@@ -1425,7 +1435,6 @@ impl PSKKEngine {
             if let Some(ref out) = output {
                 if !out.is_empty() {
                     self.preedit_hiragana.push_str(out);
-                    self.preedit_ascii.push(c);
                     debug!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
                 }
             }
@@ -1462,8 +1471,6 @@ impl PSKKEngine {
                     if !pending_result.is_empty() && simul_output.as_ref().map_or(true, |o| o.is_empty()) {
                         debug!("Simultaneous input found: '{}' + '{}' → '{}' (in pending)", first_char, c, pending_result);
                         self.preedit_hiragana.push_str(pending_result);
-                        self.preedit_ascii.push(first_char);
-                        self.preedit_ascii.push(c);
                         self.preedit_pending.clear();
                         self.preedit_string = self.preedit_hiragana.clone();
                         
@@ -1496,8 +1503,6 @@ impl PSKKEngine {
                         {
                             debug!("Simultaneous chord found: '{}' + '{}' → '{}' (in output)", first_char, c, chord_output);
                             self.preedit_hiragana.push_str(&chord_output);
-                            self.preedit_ascii.push(first_char);
-                            self.preedit_ascii.push(c);
                             self.preedit_pending.clear();
                             self.preedit_string = self.preedit_hiragana.clone();
 
@@ -1581,7 +1586,6 @@ impl PSKKEngine {
             if let Some(ref out) = output {
                 if !out.is_empty() {
                     self.preedit_hiragana.push_str(out);
-                    self.preedit_ascii.push(c);
                     debug!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
                 }
             }
@@ -1609,7 +1613,6 @@ impl PSKKEngine {
             if let Some(ref out) = output {
                 if !out.is_empty() {
                     self.preedit_hiragana.push_str(out);
-                    self.preedit_ascii.push(c);
                 }
             }
             self.preedit_pending = pending.unwrap_or_default();
@@ -1637,7 +1640,6 @@ impl PSKKEngine {
         if let Some(ref out) = output {
             if !out.is_empty() {
                 self.preedit_hiragana.push_str(out);
-                self.preedit_ascii.push(c);
                 debug!("Updated preedit_hiragana: '{}'", self.preedit_hiragana);
             }
         }
@@ -2565,6 +2567,52 @@ mod tests {
             .iter()
             .map(|s| s.text.clone())
             .collect()
+    }
+
+    /// Regression: `preedit_ascii` used to be appended only when a key press
+    /// *flushed* a kana, so the key that produced the flushed kana was never
+    /// recorded and every remaining entry was shifted by one. Converting
+    /// "のとかん" (typed a s d f) therefore produced "sdf" instead of "asdf".
+    #[test]
+    fn ascii_conversion_keeps_every_keystroke() {
+        let ctrl = ProtoKeyModifiers {
+            shift: false,
+            ctrl: true,
+            alt: false,
+            super_: false,
+        };
+        let mut engine = create_kana_pending_engine();
+        for (c, name) in [('a', "a"), ('s', "s"), ('d', "d"), ('f', "f")] {
+            engine.process_key_event(Some(c), name, true, None);
+            engine.process_key_event(Some(c), name, false, None);
+        }
+        assert_eq!(engine.preedit_ascii, "asdf");
+
+        let o = engine.process_key_event(Some(';'), "semicolon", true, Some(ctrl));
+        assert_eq!(o.commit_string, None);
+        assert_eq!(preedit_text(&o), "asdf");
+    }
+
+    /// Backspace has to drop the pending kana's key stroke as well, otherwise
+    /// the ascii buffer drifts ahead of the kana it describes.
+    #[test]
+    fn backspace_drops_the_pending_keystroke_too() {
+        let mut engine = create_kana_pending_engine();
+        engine.process_key_event(Some('a'), "a", true, None);
+        engine.process_key_event(Some('s'), "s", true, None);
+        assert_eq!(engine.preedit_hiragana, "の");
+        assert_eq!(engine.preedit_pending, "と");
+        assert_eq!(engine.preedit_ascii, "as");
+
+        // Removes the pending kana (と) and the key stroke that produced it.
+        engine.process_key_event(None, "BackSpace", true, None);
+        assert_eq!(engine.preedit_pending, "");
+        assert_eq!(engine.preedit_ascii, "a");
+
+        // Removes the confirmed kana (の) and its key stroke.
+        engine.process_key_event(None, "BackSpace", true, None);
+        assert_eq!(engine.preedit_hiragana, "");
+        assert_eq!(engine.preedit_ascii, "");
     }
 
     /// Regression: the conversion keys read `preedit_hiragana`, which excludes
