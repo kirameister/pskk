@@ -941,6 +941,42 @@ impl PSKKEngine {
         })
     }
 
+    /// Key(s) that start forced-preedit mode when tapped as the *single* first
+    /// key of a marker sequence. Read from `forced_preedit_trigger_key`
+    /// (default `["f"]`; an empty list disables the trigger).
+    ///
+    /// Entries are the same key strings the settings UI records from
+    /// `event.key`, so a plain character such as "f" is the normal case. Only
+    /// single-character entries can be matched, because the marker records its
+    /// first key as a char: modifier combos and named keys ("Shift+F",
+    /// "Space") are ignored with a debug message.
+    fn forced_preedit_trigger_chars(&self) -> Vec<char> {
+        let default_entries = vec![serde_json::Value::String("f".to_string())];
+        let entries = self
+            .config
+            .get("forced_preedit_trigger_key")
+            .and_then(|v| v.as_array())
+            .unwrap_or(&default_entries);
+
+        entries
+            .iter()
+            .filter_map(|v| v.as_str())
+            .filter_map(|spec| {
+                let mut chars = spec.trim().chars();
+                match (chars.next(), chars.next()) {
+                    (Some(c), None) => Some(c),
+                    _ => {
+                        debug!(
+                            "Ignoring forced_preedit_trigger_key entry '{}': only single-character keys are supported",
+                            spec
+                        );
+                        None
+                    }
+                }
+            })
+            .collect()
+    }
+
     fn handle_space_press(&mut self, _key_char: Option<char>) -> EngineOutput {
         match self.marker_state {
             MarkerState::Idle => {
@@ -1149,24 +1185,32 @@ impl PSKKEngine {
         }
         
         // Check for forced preedit trigger key first (before bunsetsu logic).
-        // Only a *single* tap of the trigger key (no second stroke) enters
+        // Only a *single* tap of a trigger key (no second stroke) enters
         // forced preedit. When the trigger key is the first of a two-stroke
         // kanchoku pair (e.g. f + s -> 二), the pair must be handled as
         // kanchoku instead of re-triggering the mode.
-        if self.marker_first_key == Some('f') && self.marker_second_key.is_none() {
-            debug!("Entering forced preedit mode, clearing 'f' trigger from preedit");
-            self.engine_state = EngineState::ForcedPreedit;
-            self.marker_first_key = None;
-            self.marker_keys_held.clear();
-            self.marker_state = MarkerState::Idle;
-            
-            // Restore preedit to state before marker (remove the 'f' trigger character)
-            self.preedit_string = self.preedit_before_marker.clone();
-            self.preedit_hiragana = self.preedit_before_marker.clone();
-            self.preedit_pending.clear();
-            self.preedit_ascii.clear();
-            
-            return self.build_preedit_output();
+        // The trigger key(s) come from `forced_preedit_trigger_key` in config.
+        if let Some(trigger_char) = self.marker_first_key {
+            let is_trigger = self.marker_second_key.is_none()
+                && self.forced_preedit_trigger_chars().contains(&trigger_char);
+            if is_trigger {
+                debug!(
+                    "Entering forced preedit mode, clearing '{}' trigger from preedit",
+                    trigger_char
+                );
+                self.engine_state = EngineState::ForcedPreedit;
+                self.marker_first_key = None;
+                self.marker_keys_held.clear();
+                self.marker_state = MarkerState::Idle;
+
+                // Restore preedit to state before marker (remove the trigger character)
+                self.preedit_string = self.preedit_before_marker.clone();
+                self.preedit_hiragana = self.preedit_before_marker.clone();
+                self.preedit_pending.clear();
+                self.preedit_ascii.clear();
+
+                return self.build_preedit_output();
+            }
         }
         
         // Decide as soon as the marker is released; do not additionally wait for
@@ -2155,9 +2199,10 @@ mod tests {
     }
 
     /// Engine with f -> ん and s -> と in the layout, and a kanchoku layout
-    /// where both f+s and s+s map to 二. 'f' is also the hardcoded forced-preedit
-    /// trigger key, so this exercises the conflict between the trigger and
-    /// two-stroke kanchoku pairs that start with 'f'.
+    /// where both f+s and s+s map to 二. This engine's config omits
+    /// `forced_preedit_trigger_key`, so the default trigger ('f') applies:
+    /// that exercises the conflict between the trigger and two-stroke kanchoku
+    /// pairs that start with 'f'.
     fn create_trigger_kanchoku_test_engine() -> PSKKEngine {
         let layout = vec![
             ("f".to_string(), "".to_string(), "ん".to_string(), None),
@@ -2260,6 +2305,80 @@ mod tests {
         engine.process_key_event(Some('f'), "f", false, None);
         let o = engine.process_key_event(None, "space", false, None);
         assert_eq!(o.engine_state, EngineState::ForcedPreedit);
+    }
+
+    /// Test engine in Hiragana mode with an explicit
+    /// `forced_preedit_trigger_key` config value.
+    fn create_forced_preedit_engine(trigger_keys: serde_json::Value) -> PSKKEngine {
+        let mut engine = create_test_engine();
+        engine.config["forced_preedit_trigger_key"] = trigger_keys;
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine
+    }
+
+    /// Press and release `c` as its own key event pair.
+    fn tap_char(engine: &mut PSKKEngine, c: char) {
+        let name = c.to_string();
+        engine.process_key_event(Some(c), &name, true, None);
+        engine.process_key_event(Some(c), &name, false, None);
+    }
+
+    /// Tap `trigger` as the marker's single first key and report the state the
+    /// space release leaves the engine in.
+    fn state_after_trigger_gap(trigger_keys: serde_json::Value, key: char) -> EngineState {
+        let mut engine = create_forced_preedit_engine(trigger_keys);
+        engine.process_key_event(None, "space", true, None);
+        tap_char(&mut engine, key);
+        engine.process_key_event(None, "space", false, None).engine_state
+    }
+
+    #[test]
+    fn forced_preedit_trigger_key_is_read_from_config() {
+        assert_eq!(
+            state_after_trigger_gap(serde_json::json!(["q"]), 'q'),
+            EngineState::ForcedPreedit
+        );
+    }
+
+    #[test]
+    fn configured_trigger_key_replaces_the_default() {
+        // 'f' is only the default; with a configured trigger it is an ordinary
+        // key and simply marks a bunsetsu boundary.
+        assert_eq!(
+            state_after_trigger_gap(serde_json::json!(["q"]), 'f'),
+            EngineState::Bunsetsu
+        );
+    }
+
+    #[test]
+    fn multiple_forced_preedit_trigger_keys_are_supported() {
+        let keys = serde_json::json!(["f", "q"]);
+        assert_eq!(
+            state_after_trigger_gap(keys.clone(), 'f'),
+            EngineState::ForcedPreedit
+        );
+        assert_eq!(
+            state_after_trigger_gap(keys, 'q'),
+            EngineState::ForcedPreedit
+        );
+    }
+
+    #[test]
+    fn empty_forced_preedit_trigger_key_disables_the_trigger() {
+        assert_eq!(
+            state_after_trigger_gap(serde_json::json!([]), 'f'),
+            EngineState::Bunsetsu
+        );
+    }
+
+    #[test]
+    fn non_single_character_trigger_entries_are_ignored() {
+        // Modifier combos are not supported for this trigger yet; such an entry
+        // must not silently match a plain 'f'.
+        assert_eq!(
+            state_after_trigger_gap(serde_json::json!(["Shift+F"]), 'f'),
+            EngineState::Bunsetsu
+        );
     }
 
     #[test]
