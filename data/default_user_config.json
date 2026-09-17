@@ -1,5 +1,6 @@
 {
-    "available_keys_": "For the list of available keys, see https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_code_values",
+    "available_keys_": "Keybindings are written as [Modifier+]*Key, e.g. Ctrl+Shift+L, Ctrl+;, Shift+Space. Modifiers: Ctrl, Alt, Shift, Super (any order; Control, Meta, Cmd and Win are accepted as aliases). The key is the character it produces ('k', 'l', ';', ':', uppercase when Shift is held), or a name for keys without a character: Space, Enter, Escape, Tab, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, F1-F24. Older spellings (IBus/X11 keyval names such as 'semicolon' or 'Return', MDN codes such as 'KeyL') are still read, and are rewritten to this form when the settings are saved.",
+    "available_keys_ja": "キーバインドは [修飾キー+]*キー の形式で記述します（例: Ctrl+Shift+L, Ctrl+;, Shift+Space）。修飾キーは Ctrl, Alt, Shift, Super（順不同。Control, Meta, Cmd, Win も別名として受理します）。キー部分は、そのキーが生成する文字（'k', 'l', ';', ':'。Shift 押下時は大文字）を指定します。文字を生成しないキーは名前で指定します: Space, Enter, Escape, Tab, Backspace, Delete, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, F1〜F24。旧形式（IBus/X11 の keyval 名 'semicolon' や 'Return'、MDN コード 'KeyL' など）も読み込み時には受理され、設定保存時にこの形式へ書き換えられます。",
 
     "logging_level": "DEBUG",
     "logging_level_": "Level of the runtime logging",
@@ -32,9 +33,9 @@
     "dictionaries_ja": "辞書の設定（重みつき）。形式: {パス: 重み}。重みが高いほど、マージ時の優先度が高くなります。システム辞書はフルパス、ユーザー辞書は ${config_dir}/dictionaries/ 内のファイル名を使用します。",
 
     "conversion_keys": {
-        "to_katakana": ["Ctrl+K"],
-        "to_hiragana": ["Ctrl+J"],
-        "to_ascii": ["Ctrl+L"],
+        "to_katakana": ["Ctrl+k"],
+        "to_hiragana": ["Ctrl+j"],
+        "to_ascii": ["Ctrl+l"],
         "to_zenkaku": ["Ctrl+Shift+L"]
     },
     "conversion_keys_": "Each key-combo to convert the preedit string into respective character representation",
@@ -52,13 +53,13 @@
     "bunsetsu_prediction_n_best_": "Maximum number of bunsetsu-split predictions from CRF model",
     "bunsetsu_prediction_n_best_ja": "CRF により予想された文節区切り候補の最大数",
 
-    "bunsetsu_prediction_cycle_key": ["Shift+space"],
+    "bunsetsu_prediction_cycle_key": ["Shift+Space"],
     "bunsetsu_prediction_cycle_key_": "Key used for cyclying through the bunsetsu-split candidates proivded by CRF",
     "bunsetsu_prediction_cycle_key_ja": "CRF により予想された文節の区切り候補を切り替えるキー",
 
     "user_dictionary_editor_trigger": ["Ctrl+Shift+R"],
 
-    "force_commit_key": ["Ctrl+O"],
+    "force_commit_key": ["Ctrl+o"],
     "force_commit_key_": "Key to commit preedit as-is without kanji conversion. If buffer is empty, passes key to application.",
     "force_commit_key_ja": "漢字変換せずに現在のプリエディットをそのまま確定するキー。バッファが空の場合、キーはアプリケーションに渡されます。"
 }

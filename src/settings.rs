@@ -267,10 +267,16 @@ pub fn validate_keybindings(
         if action_id.is_empty() || key_value.is_empty() {
             continue;
         }
+        // Store canonical spellings so that "Control+l" (written by the
+        // settings UI from KeyboardEvent) and "Ctrl+l" are recognised as the
+        // same key, both for de-duplication and for conflict detection.
+        // Strings that are not keybindings are kept verbatim.
+        let key_value =
+            crate::keybinding::normalize(key_value).unwrap_or_else(|| key_value.clone());
         deduped
             .entry(action_id.clone())
             .or_default()
-            .insert(key_value.clone());
+            .insert(key_value);
     }
 
     let mut normalized: HashMap<String, Vec<String>> = deduped
@@ -555,6 +561,90 @@ mod tests {
         ]);
         assert_eq!(bindings["to_hiragana"], vec!["F6".to_string()]);
         assert_eq!(conflicts["F6"].len(), 2);
+    }
+
+    #[test]
+    fn canonicalizes_keybindings_before_saving() {
+        let (bindings, conflicts) = validate_keybindings(&[
+            ("to_katakana".to_string(), "Control+l".to_string()),
+            ("to_ascii".to_string(), "Ctrl+l".to_string()),
+        ]);
+        // Both spellings describe the same key, so they normalise to the same
+        // canonical string and are reported as a conflict.
+        assert_eq!(bindings["to_katakana"], vec!["Ctrl+l".to_string()]);
+        assert_eq!(bindings["to_ascii"], vec!["Ctrl+l".to_string()]);
+        assert_eq!(conflicts["Ctrl+l"].len(), 2);
+    }
+
+    #[test]
+    fn legacy_framework_key_names_do_not_survive_a_save() {
+        let (bindings, _) = validate_keybindings(&[
+            ("to_ascii".to_string(), "Control+semicolon".to_string()),
+            ("to_hiragana".to_string(), "Control+Shift+Up".to_string()),
+            ("force_commit_key".to_string(), "Ctrl+BackSpace".to_string()),
+        ]);
+        assert_eq!(bindings["to_ascii"], vec!["Ctrl+;".to_string()]);
+        assert_eq!(
+            bindings["to_hiragana"],
+            vec!["Ctrl+Shift+ArrowUp".to_string()]
+        );
+        assert_eq!(
+            bindings["force_commit_key"],
+            vec!["Ctrl+Backspace".to_string()]
+        );
+    }
+
+    #[test]
+    fn unrecognised_keybindings_are_kept_verbatim() {
+        let (bindings, _) =
+            validate_keybindings(&[("to_ascii".to_string(), "NotAKey".to_string())]);
+        assert_eq!(bindings["to_ascii"], vec!["NotAKey".to_string()]);
+    }
+
+    /// The packaged defaults must already be in canonical form: otherwise
+    /// saving the settings rewrites them, and two spellings of the same key can
+    /// ship side by side.
+    #[test]
+    fn default_config_keybindings_are_canonical() {
+        let config: Value = serde_json::from_str(include_str!("../data/default_user_config.json"))
+            .expect("default_user_config.json must be valid JSON");
+
+        // `enable_hiragana_key` / `disable_hiragana_key` name special IMF keys
+        // ("Henkan", "Muhenkan"), not character keybindings, so they are not
+        // part of the canonical binding format.
+        let mut specs: Vec<&str> = Vec::new();
+        for key in [
+            "forced_preedit_trigger_key",
+            "kanchoku_pure_trigger_key",
+            "bunsetsu_prediction_cycle_key",
+            "user_dictionary_editor_trigger",
+            "force_commit_key",
+        ] {
+            for value in config[key].as_array().into_iter().flatten() {
+                specs.push(value.as_str().expect("keybindings are strings"));
+            }
+        }
+        for action in ["to_katakana", "to_hiragana", "to_ascii", "to_zenkaku"] {
+            for value in config["conversion_keys"][action]
+                .as_array()
+                .into_iter()
+                .flatten()
+            {
+                specs.push(value.as_str().expect("keybindings are strings"));
+            }
+        }
+
+        assert!(
+            !specs.is_empty(),
+            "expected to find keybindings in the default config"
+        );
+        for spec in specs {
+            assert_eq!(
+                crate::keybinding::normalize(spec).as_deref(),
+                Some(spec),
+                "default config keybinding {spec:?} is not in canonical form"
+            );
+        }
     }
 
     #[test]

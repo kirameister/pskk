@@ -5,6 +5,7 @@ use crate::grpc::proto::{
 };
 use crate::henkan::{Candidate, HenkanProcessor};
 use crate::kanchoku::KanchokuProcessor;
+use crate::keybinding::{KeyBinding, Modifiers};
 use crate::simultaneous_processor::SimultaneousInputProcessor;
 use crate::util::{get_config_data, get_layout_data, get_user_config_dir};
 use serde::{Deserialize, Serialize};
@@ -656,8 +657,18 @@ impl PSKKEngine {
         }
         
         if is_pressed && (has_ctrl || has_alt) {
+            // `super_` is always false here: Super combos are passed through to
+            // the system above, before command handling. Bindings that mention
+            // Super are still parsed and normalised, they are simply not
+            // dispatched yet.
+            let modifiers = Modifiers {
+                ctrl: has_ctrl,
+                alt: has_alt,
+                shift: has_shift,
+                super_: false,
+            };
             // Try to handle as PSKK command
-            if let Some(output) = self.handle_modifier_combo(key_name, has_shift, has_ctrl, has_alt) {
+            if let Some(output) = self.handle_modifier_combo(key_char, key_name, modifiers) {
                 return output;
             }
             
@@ -853,31 +864,23 @@ impl PSKKEngine {
 
     fn handle_modifier_combo(
         &mut self,
+        key_char: Option<char>,
         key_name: &str,
-        has_shift: bool,
-        has_ctrl: bool,
-        has_alt: bool,
+        modifiers: Modifiers,
     ) -> Option<EngineOutput> {
-        // Build the key combo string (e.g., "Ctrl+K", "Ctrl+Shift+L")
-        let mut combo = String::new();
-        if has_ctrl {
-            combo.push_str("Ctrl+");
-        }
-        if has_shift {
-            combo.push_str("Shift+");
-        }
-        if has_alt {
-            combo.push_str("Alt+");
-        }
-        combo.push_str(key_name);
-        
-        debug!("Checking modifier combo: {}", combo);
+        // Bindings are compared in PSKK's IMF-agnostic canonical form (see
+        // `crate::keybinding`): the key is identified by the character it
+        // produces wherever one exists, and modifiers are compared as a set,
+        // so `Control+l` (settings UI / KeyboardEvent), `Ctrl+l` (canonical)
+        // and any framework spelling of the same key all refer to each other.
+        let event = KeyBinding::from_event(key_char, key_name, modifiers)?;
+        debug!("Checking keybinding: {}", event.canonical());
         
         // Check conversion_keys config
         if let Some(conversion_keys) = self.config.get("conversion_keys").and_then(|v| v.as_object()) {
             // to_katakana (default: Ctrl+K)
             if let Some(keys) = conversion_keys.get("to_katakana").and_then(|v| v.as_array()) {
-                if self.matches_key_combo(&combo, keys) {
+                if self.matches_key_binding(&event, keys) {
                     debug!("Matched to_katakana");
                     return Some(self.convert_to_katakana());
                 }
@@ -885,7 +888,7 @@ impl PSKKEngine {
             
             // to_hiragana (default: Ctrl+J)
             if let Some(keys) = conversion_keys.get("to_hiragana").and_then(|v| v.as_array()) {
-                if self.matches_key_combo(&combo, keys) {
+                if self.matches_key_binding(&event, keys) {
                     debug!("Matched to_hiragana");
                     return Some(self.convert_to_hiragana());
                 }
@@ -893,7 +896,7 @@ impl PSKKEngine {
             
             // to_ascii (default: Ctrl+L)
             if let Some(keys) = conversion_keys.get("to_ascii").and_then(|v| v.as_array()) {
-                if self.matches_key_combo(&combo, keys) {
+                if self.matches_key_binding(&event, keys) {
                     debug!("Matched to_ascii");
                     return Some(self.convert_to_ascii());
                 }
@@ -901,7 +904,7 @@ impl PSKKEngine {
             
             // to_zenkaku (default: Ctrl+Shift+L)
             if let Some(keys) = conversion_keys.get("to_zenkaku").and_then(|v| v.as_array()) {
-                if self.matches_key_combo(&combo, keys) {
+                if self.matches_key_binding(&event, keys) {
                     debug!("Matched to_zenkaku");
                     return Some(self.convert_to_zenkaku());
                 }
@@ -910,7 +913,7 @@ impl PSKKEngine {
         
         // Check force_commit_key (default: Ctrl+O)
         if let Some(keys) = self.config.get("force_commit_key").and_then(|v| v.as_array()) {
-            if self.matches_key_combo(&combo, keys) {
+            if self.matches_key_binding(&event, keys) {
                 debug!("Matched force_commit_key");
                 if !self.preedit_string.is_empty() {
                     let commit = self.preedit_string.clone();
@@ -924,7 +927,7 @@ impl PSKKEngine {
         
         // Check user_dictionary_editor_trigger (default: Ctrl+Shift+R)
         if let Some(keys) = self.config.get("user_dictionary_editor_trigger").and_then(|v| v.as_array()) {
-            if self.matches_key_combo(&combo, keys) {
+            if self.matches_key_binding(&event, keys) {
                 debug!("Matched user_dictionary_editor_trigger");
                 // TODO: Implement dictionary editor trigger
                 // For now, just passthrough
@@ -936,13 +939,14 @@ impl PSKKEngine {
         None
     }
     
-    fn matches_key_combo(&self, combo: &str, config_keys: &[serde_json::Value]) -> bool {
+    /// Does the incoming key event match any of the configured bindings?
+    /// Legacy spellings (`Control+semicolon`, `BackSpace`) are handled by the
+    /// parser, so configs written before the canonical format still work.
+    fn matches_key_binding(&self, event: &KeyBinding, config_keys: &[serde_json::Value]) -> bool {
         config_keys.iter().any(|v| {
-            if let Some(key_str) = v.as_str() {
-                key_str.eq_ignore_ascii_case(combo)
-            } else {
-                false
-            }
+            v.as_str()
+                .and_then(KeyBinding::parse)
+                .map_or(false, |binding| binding.matches(event))
         })
     }
 
@@ -2389,6 +2393,90 @@ mod tests {
             state_after_trigger_gap(serde_json::json!(["Shift+F"]), 'f'),
             EngineState::Bunsetsu
         );
+    }
+
+    /// Regression: the settings UI writes keybindings from `KeyboardEvent`
+    /// (`Control+l`, `Control+;`, `Control+Shift+L`) while the engine used to
+    /// build `Ctrl+<IBus keyval name>`. The two never compared equal, so
+    /// UI-configured conversion keys silently did nothing - Ctrl+L committed
+    /// the hiragana unchanged instead of converting it to katakana.
+    #[test]
+    fn ui_style_conversion_bindings_are_matched() {
+        let ctrl = ProtoKeyModifiers {
+            shift: false,
+            ctrl: true,
+            alt: false,
+            super_: false,
+        };
+        let ctrl_shift = ProtoKeyModifiers {
+            shift: true,
+            ctrl: true,
+            alt: false,
+            super_: false,
+        };
+
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine.config["conversion_keys"] = serde_json::json!({
+            "to_katakana": ["Control+l"],
+            "to_hiragana": [],
+            "to_ascii": [],
+            "to_zenkaku": [],
+        });
+        engine.process_key_event(Some('a'), "a", true, None);
+        let o = engine.process_key_event(Some('l'), "l", true, Some(ctrl.clone()));
+        assert_eq!(
+            o.commit_string,
+            Some("ア".to_string()),
+            "Control+l must convert the preedit to katakana"
+        );
+
+        // IBus reports the ';' key as the "semicolon" keyval; the binding is
+        // written with the character.
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine.config["conversion_keys"] = serde_json::json!({
+            "to_katakana": [],
+            "to_hiragana": [],
+            "to_ascii": ["Control+;"],
+            "to_zenkaku": [],
+        });
+        engine.process_key_event(Some('a'), "a", true, None);
+        let o = engine.process_key_event(Some(';'), "semicolon", true, Some(ctrl.clone()));
+        assert_eq!(
+            o.commit_string,
+            Some("a".to_string()),
+            "Control+; must convert the preedit to ascii"
+        );
+
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine.config["conversion_keys"] = serde_json::json!({
+            "to_katakana": [],
+            "to_hiragana": ["Control+Shift+L"],
+            "to_ascii": [],
+            "to_zenkaku": [],
+        });
+        engine.process_key_event(Some('a'), "a", true, None);
+        let o = engine.process_key_event(Some('L'), "L", true, Some(ctrl_shift));
+        assert_eq!(
+            o.commit_string,
+            Some("あ".to_string()),
+            "Control+Shift+L must convert the preedit to hiragana"
+        );
+
+        // Canonical spellings (what the packaged defaults use) keep working.
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine.config["conversion_keys"] = serde_json::json!({
+            "to_katakana": ["Ctrl+K"],
+            "to_hiragana": [],
+            "to_ascii": [],
+            "to_zenkaku": [],
+        });
+        engine.process_key_event(Some('a'), "a", true, None);
+        let o = engine.process_key_event(Some('k'), "k", true, Some(ctrl));
+        assert_eq!(o.commit_string, Some("ア".to_string()));
     }
 
     #[test]
