@@ -405,7 +405,6 @@ pub fn save_settings(
         "enable_hiragana_key",
         "disable_hiragana_key",
         "forced_preedit_trigger_key",
-        "kanchoku_bunsetsu_marker",
         "kanchoku_pure_trigger_key",
         "bunsetsu_prediction_cycle_key",
         "user_dictionary_editor_trigger",

@@ -724,10 +724,15 @@ impl PSKKEngine {
                 "Return" | "KP_Enter" | "Enter" => return self.handle_enter(),
                 "Escape" => return self.handle_escape(),
                 "BackSpace" | "Backspace" => return self.handle_backspace(),
+                // Space is always the bunsetsu marker. This is core to PSKK's
+                // input model and is deliberately NOT configurable: there is no
+                // config key for it (the former `kanchoku_bunsetsu_marker` was
+                // removed for that reason).
                 "space" | "Space" => return self.handle_space_press(key_char),
                 _ => {}
             }
         } else {
+            // Release of the fixed bunsetsu marker; see handle_space_press.
             if key_name == "space" || key_name == "Space" {
                 return self.handle_space_release();
             }
@@ -977,6 +982,11 @@ impl PSKKEngine {
             .collect()
     }
 
+    /// Space is the bunsetsu marker: while held, following keys are kanchoku
+    /// strokes; pressing it with an existing preedit commits that preedit and
+    /// arms the marker, and releasing it marks the start of the bunsetsu. This
+    /// is fixed behaviour, not a user setting (see the dispatch in
+    /// `process_hiragana_mode_key`).
     fn handle_space_press(&mut self, _key_char: Option<char>) -> EngineOutput {
         match self.marker_state {
             MarkerState::Idle => {
