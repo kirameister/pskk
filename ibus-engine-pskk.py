@@ -418,6 +418,10 @@ class PSKKEngine(IBus.Engine):
         # If Super is held, pass through immediately (for system shortcuts like Super+Space)
         if self._super_pressed:
             logger.info(f"Super key held, passing through: {key_name}")
+            # Make the short-circuit visible. Without this the trace shows a key
+            # that vanished between the client and the server, which is exactly
+            # what a stuck Super latch looks like.
+            key_trace('out', key=key_name, pressed=is_pressed, outcome='super-held')
             return False  # Let IBus/system handle it
         
         # Modifier keys
@@ -436,6 +440,7 @@ class PSKKEngine(IBus.Engine):
             logger.warning("No gRPC connection, attempting to reconnect")
             self.connect_to_server()
             if not self.stub:
+                key_trace('out', key=key_name, pressed=is_pressed, outcome='no-server')
                 return False
         
         try:
@@ -477,6 +482,7 @@ class PSKKEngine(IBus.Engine):
             key_trace('out', key=key_name, pressed=is_pressed,
                       status=pskk_pb2.ResponseStatus.Name(response.status),
                       consumed=response.consumed,
+                      mode=pskk_pb2.InputMode.Name(response.current_mode),
                       marker=pskk_pb2.MarkerState.Name(response.marker_state),
                       engine=pskk_pb2.EngineState.Name(response.engine_state),
                       commit=response.commit_string,
@@ -490,6 +496,8 @@ class PSKKEngine(IBus.Engine):
             
         except Exception as e:
             logger.error(f"ProcessKey error: {e}")
+            key_trace('out', key=key_name, pressed=is_pressed,
+                      outcome='rpc-error', error=str(e))
             return False
     
     def _update_ui(self, output):

@@ -209,7 +209,7 @@ impl PSKKEngine {
         let seq = TRACE_SEQ.fetch_add(1, Ordering::Relaxed) + 1;
         info!(
             target: "pskk::keytrace",
-            "KEYTRACE src=server seq={} phase={} t={} dt_ms={} rel_ms={:.1} key='{}' pressed={} marker={:?} engine={:?} preedit='{}' pending='{}' {}",
+            "KEYTRACE src=server seq={} phase={} t={} dt_ms={} rel_ms={:.1} key='{}' pressed={} mode={:?} marker={:?} engine={:?} preedit='{}' pending='{}' {}",
             seq,
             phase,
             epoch_ms(),
@@ -217,6 +217,7 @@ impl PSKKEngine {
             rel_ms,
             key_name,
             is_pressed,
+            self.mode,
             self.marker_state,
             self.engine_state,
             self.preedit_string,
