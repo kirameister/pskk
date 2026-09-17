@@ -115,9 +115,6 @@ class PSKKEngine(IBus.Engine):
         # Property list for the input mode menu
         self._prop_list = self._create_properties()
         
-        # Track Super key state manually (IBus doesn't always include it in modifier mask)
-        self._super_pressed = False
-        
         # Track current mode for detecting mode changes
         self._current_mode = pskk_pb2.HIRAGANA
         
@@ -408,19 +405,26 @@ class PSKKEngine(IBus.Engine):
 
         key_trace('in', key=key_name, pressed=is_pressed, char=key_char)
         
-        # Track Super key state manually (IBus doesn't include it in modifier mask immediately)
+        # Super is passed through so the window manager keeps its own shortcuts
+        # (Super+Space switches IME, Super+1..9 switches screens/tags, ...).
+        #
+        # IBus does not reliably set SUPER_MASK on the Super key event itself,
+        # so the key name decides there; for every other key the modifier mask
+        # is authoritative. Deliberately *not* latched: when the WM grabs a
+        # Super+<key> shortcut it swallows the matching Super release, so a
+        # latched flag would never be cleared and would then pass every later
+        # key straight through - the IME silently turns into direct input until
+        # the engine is restarted.
         if key_name in ['Super_L', 'Super_R']:
-            if is_pressed:
-                self._super_pressed = True
-            else:
-                self._super_pressed = False
-        
+            super_held = is_pressed
+        else:
+            super_held = bool(state & IBus.ModifierType.SUPER_MASK)
+
         # If Super is held, pass through immediately (for system shortcuts like Super+Space)
-        if self._super_pressed:
+        if super_held:
             logger.info(f"Super key held, passing through: {key_name}")
             # Make the short-circuit visible. Without this the trace shows a key
-            # that vanished between the client and the server, which is exactly
-            # what a stuck Super latch looks like.
+            # that vanished between the client and the server.
             key_trace('out', key=key_name, pressed=is_pressed, outcome='super-held')
             return False  # Let IBus/system handle it
         
