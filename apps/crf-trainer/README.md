@@ -75,6 +75,15 @@ for `invoke`, and reports a readable error if it is missing.
 Vite開発サーバーは`127.0.0.1:1422`を使用する（他のアプリは1420/1421）。
 Tauriホストなしでブラウザで開いても動作しない。
 
+Once installed, it is also reachable from the input-method menu: both the IBus
+engine and the Fcitx 5 addon list **Settings**, **Dictionary Editor**,
+**IME Tester** and **CRF Trainer**; the last one runs
+`/opt/pskk/bin/pskk-crf-trainer`, so `just crf-trainer-install` (or
+`just ibus-install`, which now includes it) has to have been run at least once.
+
+インストール後は入力メソッドのメニューからも起動できる（IBus・Fcitx 5 の両方に
+**CRF Trainer**が表示される）。
+
 ---
 
 ## GUI layout / 画面構成

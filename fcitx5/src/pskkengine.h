@@ -86,6 +86,7 @@ private:
     std::unique_ptr<fcitx::SimpleAction> settingsAction_;
     std::unique_ptr<fcitx::SimpleAction> dictionaryEditorAction_;
     std::unique_ptr<fcitx::SimpleAction> imeTesterAction_;
+    std::unique_ptr<fcitx::SimpleAction> crfTrainerAction_;
 
     std::atomic<int> currentMode_{1};  // pskk::kHiragana
     std::atomic<bool> superPressed_{false};

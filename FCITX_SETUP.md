@@ -85,8 +85,8 @@ Uninstall: `sudo just fcitx5-uninstall` (or `sudo ./packaging/uninstall.sh`).
 Usage is identical to IBus: romaji in Hiragana mode, `Space` converts,
 `↑`/`↓` select, `Enter` commits, `Esc` cancels, `Ctrl+J`/`Ctrl+\` toggles
 `あ`/`A`. The mode switch is exposed in the input-method menu/status area
-(`あ` / `A` radio actions, plus **Settings**, **Dictionary Editor** and
-**IME Tester**).
+(`あ` / `A` radio actions, plus **Settings**, **Dictionary Editor**,
+**IME Tester** and **CRF Trainer**).
 
 ### Switching a session to Fcitx 5
 
@@ -180,7 +180,7 @@ The addon deliberately mirrors `ibus-engine-pskk.py` 1:1:
 | `commit_text` / `update_preedit_text` (attrs)   | `InputContext::commitString` + `Text` with Underline/HighLight     |
 | `IBus.LookupTable` page 9                       | `CommonCandidateList` page size 9                                 |
 | IBus property menu `InputMode` (`あ`/`A`)       | `SimpleAction` menu + `subModeLabelImpl` (`あ`/`A`)               |
-| `Settings` / `Dictionary Editor` / `IME Tester` property items | menu actions that exec the same apps                              |
+| `Settings` / `Dictionary Editor` / `IME Tester` / `CRF Trainer` property items | menu actions that exec the same apps                              |
 | `do_focus_out` → server `FocusOut`              | `deactivate()` → server `focus_out`                               |
 | `do_reset` → server `Reset`                     | `reset()` → server `reset`                                        |
 | Henkan-load retry (10 s in own process)         | bounded 1 s retry + key suppression (in-process daemon safety)     |

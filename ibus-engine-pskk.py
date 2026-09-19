@@ -303,6 +303,16 @@ class PSKKEngine(IBus.Engine):
         )
         prop_list.append(ime_tester_prop)
         
+        # CRF Trainer property
+        crf_trainer_prop = IBus.Property(
+            key='CRFTrainer',
+            prop_type=IBus.PropType.NORMAL,
+            label=IBus.Text.new_from_string('CRF Trainer'),
+            symbol=IBus.Text.new_from_string('🧠'),
+            tooltip=IBus.Text.new_from_string('Open PSKK CRF Trainer')
+        )
+        prop_list.append(crf_trainer_prop)
+        
         return prop_list
     
     def do_focus_in(self):
@@ -354,6 +364,8 @@ class PSKKEngine(IBus.Engine):
             self._open_dictionary_editor()
         elif prop_name == 'IMETester':
             self._open_ime_tester()
+        elif prop_name == 'CRFTrainer':
+            self._open_crf_trainer()
     
     def _set_mode(self, mode):
         """Set input mode via gRPC"""
@@ -390,6 +402,13 @@ class PSKKEngine(IBus.Engine):
             subprocess.Popen(['/opt/pskk/bin/pskk-ime-tester'])
         except Exception as e:
             logger.error(f"Failed to open IME tester: {e}")
+    
+    def _open_crf_trainer(self):
+        """Open PSKK CRF trainer application"""
+        try:
+            subprocess.Popen(['/opt/pskk/bin/pskk-crf-trainer'])
+        except Exception as e:
+            logger.error(f"Failed to open CRF trainer: {e}")
     
     def do_process_key_event(self, keyval, keycode, state):
         """

@@ -78,6 +78,7 @@ PskkEngine::PskkEngine(fcitx::Instance *instance)
     settingsAction_ = std::make_unique<fcitx::SimpleAction>();
     dictionaryEditorAction_ = std::make_unique<fcitx::SimpleAction>();
     imeTesterAction_ = std::make_unique<fcitx::SimpleAction>();
+    crfTrainerAction_ = std::make_unique<fcitx::SimpleAction>();
     menu_ = std::make_unique<fcitx::Menu>();
 
     modeAction_->setShortText("あ");
@@ -89,6 +90,7 @@ PskkEngine::PskkEngine(fcitx::Instance *instance)
     settingsAction_->setShortText("Settings");
     dictionaryEditorAction_->setShortText("Dictionary Editor");
     imeTesterAction_->setShortText("IME Tester");
+    crfTrainerAction_->setShortText("CRF Trainer");
 
     modeAction_->setMenu(menu_.get());
     menu_->addAction(hiraganaAction_.get());
@@ -96,6 +98,7 @@ PskkEngine::PskkEngine(fcitx::Instance *instance)
     menu_->addAction(settingsAction_.get());
     menu_->addAction(dictionaryEditorAction_.get());
     menu_->addAction(imeTesterAction_.get());
+    menu_->addAction(crfTrainerAction_.get());
 
     instance_->userInterfaceManager().registerAction("pskk-input-mode",
                                                      modeAction_.get());
@@ -109,6 +112,8 @@ PskkEngine::PskkEngine(fcitx::Instance *instance)
         "pskk-dictionary-editor", dictionaryEditorAction_.get());
     instance_->userInterfaceManager().registerAction(
         "pskk-ime-tester", imeTesterAction_.get());
+    instance_->userInterfaceManager().registerAction(
+        "pskk-crf-trainer", crfTrainerAction_.get());
 
     hiraganaAction_->connect<fcitx::SimpleAction::Activated>(
         [this](fcitx::InputContext *ic) { setServerMode(kHiragana, ic); });
@@ -123,6 +128,10 @@ PskkEngine::PskkEngine(fcitx::Instance *instance)
     imeTesterAction_->connect<fcitx::SimpleAction::Activated>(
         [this](fcitx::InputContext * /*ic*/) {
             launch("/opt/pskk/bin/pskk-ime-tester");
+        });
+    crfTrainerAction_->connect<fcitx::SimpleAction::Activated>(
+        [this](fcitx::InputContext * /*ic*/) {
+            launch("/opt/pskk/bin/pskk-crf-trainer");
         });
 
     // Connect to pskk-server in the background (auto-starting it if needed),
