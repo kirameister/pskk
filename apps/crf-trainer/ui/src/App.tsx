@@ -3,6 +3,7 @@ import { getEnvironment, listModels } from "./api";
 import StatsView from "./components/StatsView";
 import TestView from "./components/TestView";
 import TrainView from "./components/TrainView";
+import { useEscapeToClose } from "./hooks/useEscapeToClose";
 import type { EnvironmentInfo, ModelInfo, ViewId } from "./types";
 
 const NAV: { id: ViewId; label: string; hint: string }[] = [
@@ -24,6 +25,9 @@ export default function App() {
   const [envError, setEnvError] = useState<string | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelPath, setModelPath] = useState("");
+
+  // Escape closes the window, matching the GTK panel.
+  useEscapeToClose();
 
   const reloadModels = useCallback(async () => {
     try {
@@ -121,6 +125,9 @@ export default function App() {
         </span>
         <span>
           Default features TSV: <span className="mono">{env?.defaultFeaturesPath ?? "—"}</span>
+        </span>
+        <span className="status-hint">
+          <kbd>Esc</kbd> close
         </span>
       </footer>
     </div>
