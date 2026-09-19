@@ -28,8 +28,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tauri::{AppHandle, Emitter};
-use tauri_plugin_dialog::DialogExt;
+use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 use crate::types::*;
 
@@ -145,6 +145,158 @@ pub fn get_environment() -> EnvironmentInfo {
 // Model discovery / モデル探索
 // ═══════════════════════════════════════════════════════════════════════
 
+/// Directory holding the models that ship with the install.
+/// インストールに同梱されるモデルのディレクトリ。
+fn shipped_models_dir() -> PathBuf {
+    pskk::util::get_datadir().join("data").join("crf_training")
+}
+
+/// Resolve a requested model path, falling back to the IME's model path.
+/// 要求されたモデルパスを解決し、未指定ならIMEのモデルパスにフォールバック。
+fn resolve_model_target(path: Option<&str>) -> PathBuf {
+    match path.map(str::trim) {
+        Some(p) if !p.is_empty() => PathBuf::from(p),
+        _ => default_model_path(),
+    }
+}
+
+/// Authoritative facts about what a training run would write to.
+/// 訓練が書き込む先についての確実な情報。
+fn model_target_info(target: &Path) -> ModelTargetInfo {
+    let meta = std::fs::metadata(target).ok().filter(|m| m.is_file());
+    ModelTargetInfo {
+        path: target.to_string_lossy().to_string(),
+        exists: meta.is_some(),
+        size_bytes: meta.as_ref().map(|m| m.len()).unwrap_or(0),
+        modified: meta
+            .as_ref()
+            .and_then(|m| m.modified().ok())
+            .map(format_system_time),
+        is_live_model_path: target == default_model_path(),
+        is_shipped_model: target.starts_with(shipped_models_dir()),
+    }
+}
+
+/// Report whether the training output path already holds a model file.
+///
+/// 訓練の出力先に既存のモデルファイルがあるかを報告する。
+/// The UI uses this to warn *before* the user presses Train.
+#[tauri::command]
+pub fn check_model_target(path: Option<String>) -> ModelTargetInfo {
+    model_target_info(&resolve_model_target(path.as_deref()))
+}
+
+/// Ask the user to confirm overwriting an existing model file.
+///
+/// 既存のモデルファイルを上書きしてよいか確認する。
+///
+/// Returns `true` when it is safe to proceed: either nothing is there to
+/// overwrite, or the user accepted the warning dialog. The CRF model is an
+/// optional aid — the IME falls back to dictionary-only conversion without it —
+/// so the wording says so rather than treating the loss as fatal.
+#[tauri::command]
+pub async fn confirm_model_overwrite(
+    app: AppHandle,
+    path: Option<String>,
+) -> Result<bool, String> {
+    let target = resolve_model_target(path.as_deref());
+    let info = model_target_info(&target);
+    if !info.exists {
+        // Nothing to lose: skip the prompt entirely.
+        return Ok(true);
+    }
+
+    let mut detail = format!(
+        "{}\n\nExisting file: {} (last modified {})\n",
+        info.path,
+        human_bytes(info.size_bytes),
+        info.modified
+            .as_deref()
+            .map(format_epoch_seconds)
+            .unwrap_or_else(|| "unknown".to_string()),
+    );
+
+    if info.is_live_model_path {
+        detail.push_str(
+            "\nThis is the model the IME loads. The IME does not depend on it — \
+             without a CRF model it falls back to dictionary-only conversion — but \
+             bunsetsu splitting changes the moment this file is replaced.\n",
+        );
+    }
+    if info.is_shipped_model {
+        detail.push_str(
+            "\nThis file ships with PSKK: writing here may need root, and the next \
+             install will restore the original.\n",
+        );
+    }
+    detail.push_str("\nOverwrite it?");
+
+    let mut builder = app
+        .dialog()
+        .message(detail)
+        .title("Overwrite existing CRF model?")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Overwrite".to_string(),
+            "Cancel".to_string(),
+        ));
+    // Attach to the main window so the dialog is modal to it.
+    if let Some(window) = app.get_webview_window("main") {
+        builder = builder.parent(&window);
+    }
+
+    Ok(builder.blocking_show())
+}
+
+/// Format a byte count for dialog text.
+/// ダイアログ用にバイト数を整形。
+fn human_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{bytes} B")
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
+/// Render an epoch-seconds string (see `format_system_time`) as a UTC date.
+/// `format_system_time` の出力（エポック秒）をUTC日付に変換。
+///
+/// Hand-rolled to avoid pulling in a date crate for one dialog line.
+fn format_epoch_seconds(raw: &str) -> String {
+    let Ok(secs) = raw.parse::<i64>() else {
+        return raw.to_string();
+    };
+    let days = secs.div_euclid(86_400);
+    let time_of_day = secs.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    format!(
+        "{year:04}-{month:02}-{day:02} {:02}:{:02} UTC",
+        time_of_day / 3600,
+        (time_of_day % 3600) / 60
+    )
+}
+
+/// Howard Hinnant's `civil_from_days`: days since 1970-01-01 → (y, m, d).
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
 #[tauri::command]
 pub fn list_models() -> Vec<ModelInfo> {
     let default = default_model_path();
@@ -155,7 +307,7 @@ pub fn list_models() -> Vec<ModelInfo> {
     }
     // Models shipped with the install (`/opt/pskk/data/crf_training`), so a fresh
     // machine can test predictions before training anything itself.
-    let shipped_models = pskk::util::get_datadir().join("data").join("crf_training");
+    let shipped_models = shipped_models_dir();
     if shipped_models.is_dir() {
         dirs.push(shipped_models);
     }
@@ -1164,6 +1316,62 @@ mod tests {
         assert_eq!(keys.first().map(String::as_str), Some("char"));
         assert_eq!(keys.last().map(String::as_str), Some("dict_entry_ct_e"));
         assert_eq!(keys.len(), 9);
+    }
+
+    #[test]
+    fn model_target_resolution_falls_back_to_the_live_model_path() {
+        let expected = default_model_path().to_string_lossy().to_string();
+
+        assert_eq!(resolve_model_target(None), default_model_path());
+        assert_eq!(resolve_model_target(Some("")), default_model_path());
+        assert_eq!(resolve_model_target(Some("   ")), default_model_path());
+        assert_eq!(resolve_model_target(Some("/tmp/custom.crfsuite")), PathBuf::from("/tmp/custom.crfsuite"));
+
+        // Whichever way it is requested, the live model path is flagged as such.
+        let info = check_model_target(None);
+        assert_eq!(info.path, expected);
+        assert!(info.is_live_model_path);
+    }
+
+    #[test]
+    fn model_target_reports_an_existing_file() {
+        let existing = write_temp("model-target.crfsuite", "not really a model");
+        let info = check_model_target(Some(existing.to_string_lossy().to_string()));
+
+        assert!(info.exists);
+        assert_eq!(info.size_bytes, 18);
+        assert!(info.modified.is_some());
+        // A temp path is neither the live model nor a shipped one.
+        assert!(!info.is_live_model_path);
+        assert!(!info.is_shipped_model);
+    }
+
+    #[test]
+    fn model_target_reports_a_missing_file() {
+        let missing = std::env::temp_dir().join("pskk-crf-trainer-does-not-exist.crfsuite");
+        let _ = std::fs::remove_file(&missing);
+        let info = check_model_target(Some(missing.to_string_lossy().to_string()));
+
+        assert!(!info.exists);
+        assert_eq!(info.size_bytes, 0);
+        assert!(info.modified.is_none());
+    }
+
+    #[test]
+    fn human_bytes_formats_readably() {
+        assert_eq!(human_bytes(0), "0 B");
+        assert_eq!(human_bytes(999), "999 B");
+        assert_eq!(human_bytes(1024), "1.0 KB");
+        assert_eq!(human_bytes(1_275_404), "1.2 MB");
+    }
+
+    #[test]
+    fn epoch_seconds_render_as_a_utc_date() {
+        // 2024-05-17T12:34:56Z
+        assert_eq!(format_epoch_seconds("1715949296"), "2024-05-17 12:34 UTC");
+        // Leap day, and a non-numeric value passes through untouched.
+        assert_eq!(format_epoch_seconds("1709205896"), "2024-02-29 11:24 UTC");
+        assert_eq!(format_epoch_seconds("unparseable"), "unparseable");
     }
 }
 

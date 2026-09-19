@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import {
+  checkModelTarget,
+  confirmModelOverwrite,
   extractFeatures,
   formatBytes,
+  formatEpochSeconds,
   loadTrainingParams,
   onProgress,
   pickCorpusFile,
@@ -14,6 +17,7 @@ import type {
   EnvironmentInfo,
   FeatureExtractionResult,
   LogLine,
+  ModelTargetInfo,
   ProgressEvent,
   TrainingParams,
   TrainingResult,
@@ -54,6 +58,10 @@ export default function TrainView({ env, onReloadModels, onModelsChanged }: Trai
   const [extractResult, setExtractResult] = useState<FeatureExtractionResult | null>(null);
   const [trainResult, setTrainResult] = useState<TrainingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Facts about the current output path, for the overwrite warning. */
+  const [modelTarget, setModelTarget] = useState<ModelTargetInfo | null>(null);
+  /** True while the overwrite-confirmation dialog is up. */
+  const [confirming, setConfirming] = useState(false);
 
   const unlistenRef = useRef<UnlistenFn | null>(null);
 
@@ -65,6 +73,23 @@ export default function TrainView({ env, onReloadModels, onModelsChanged }: Trai
         /* Not running inside Tauri: keep defaults. */
       });
   }, []);
+
+  const refreshModelTarget = useCallback(async () => {
+    try {
+      setModelTarget(await checkModelTarget(modelPath || null));
+    } catch {
+      // Not running inside Tauri — no overwrite warning to show.
+      setModelTarget(null);
+    }
+  }, [modelPath]);
+
+  // Re-check the output path as the user types, lightly debounced.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void refreshModelTarget();
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [refreshModelTarget]);
 
   // Subscribe to the backend progress stream.
   useEffect(() => {
@@ -167,8 +192,39 @@ export default function TrainView({ env, onReloadModels, onModelsChanged }: Trai
   };
 
   const runTraining = async () => {
-    setRunning("train");
     setError(null);
+
+    // Never silently clobber an existing model file — especially not the one the
+    // IME loads. The backend shows a native warning dialog; we only proceed if it
+    // reports it is safe (nothing there, or the user accepted).
+    setConfirming(true);
+    try {
+      const target = await checkModelTarget(modelPath || null);
+      setModelTarget(target);
+      if (target.exists) {
+        const proceed = await confirmModelOverwrite(modelPath || null);
+        if (!proceed) {
+          appendLocalLog(
+            "train",
+            `Cancelled — ${target.path} left untouched`,
+            "warn"
+          );
+          return;
+        }
+      }
+    } catch (err) {
+      // If the check itself fails (e.g. running outside Tauri), don't block
+      // training; the guard is a safety net, not a precondition.
+      appendLocalLog(
+        "train",
+        `Could not verify the output path: ${err instanceof Error ? err.message : String(err)}`,
+        "warn"
+      );
+    } finally {
+      setConfirming(false);
+    }
+
+    setRunning("train");
     setProgress(null);
     setTrainResult(null);
     appendLocalLog(
@@ -190,6 +246,8 @@ export default function TrainView({ env, onReloadModels, onModelsChanged }: Trai
       setTrainResult(result);
       if (result.modelPath) onModelsChanged(result.modelPath);
       onReloadModels();
+      // A real run would have created or replaced the file; refresh the warning.
+      void refreshModelTarget();
       appendLocalLog(
         "train",
         result.success
@@ -216,9 +274,11 @@ export default function TrainView({ env, onReloadModels, onModelsChanged }: Trai
     }
   };
 
-  const canExtract = corpusPaths.length > 0 && running === null;
+  const canExtract = corpusPaths.length > 0 && running === null && !confirming;
   const canTrain =
-    running === null && (featuresPath.trim().length > 0 || corpusPaths.length > 0);
+    running === null &&
+    !confirming &&
+    (featuresPath.trim().length > 0 || corpusPaths.length > 0);
 
   const step1State = corpusPaths.length ? "done" : "pending";
   const step2State = running === "extract"
@@ -409,7 +469,7 @@ export default function TrainView({ env, onReloadModels, onModelsChanged }: Trai
             disabled={!canTrain}
             onClick={runTraining}
           >
-            {running === "train" ? "Training…" : "Train"}
+            {running === "train" ? "Training…" : confirming ? "Confirm…" : "Train"}
           </button>
         }
       >
@@ -517,13 +577,42 @@ export default function TrainView({ env, onReloadModels, onModelsChanged }: Trai
               className="input mono"
               type="text"
               value={modelPath}
-              placeholder={env?.defaultModelPath ?? "bunsetsu_boundary.crfsuite"}
+              placeholder={env?.defaultModelPath ?? "bunsetsu.crfsuite"}
               onChange={(event) => setModelPath(event.target.value)}
             />
             <button type="button" className="btn btn-secondary" onClick={browseModelOutput}>
               Browse…
             </button>
           </div>
+
+          {modelTarget?.exists && (
+            <p className={`alert ${modelTarget.isLiveModelPath ? "alert-error" : "alert-warn"}`}>
+              {modelTarget.isLiveModelPath ? (
+                <>
+                  <strong>This is the model your IME loads.</strong> Training will replace{" "}
+                  <span className="mono">{modelTarget.path}</span> (
+                  {formatBytes(modelTarget.sizeBytes)}, modified{" "}
+                  {formatEpochSeconds(modelTarget.modified)}). You will be asked to confirm before
+                  anything is written. The IME does not depend on this model — without it, it falls
+                  back to dictionary-only conversion.
+                </>
+              ) : (
+                <>
+                  <span className="mono">{modelTarget.path}</span> already exists (
+                  {formatBytes(modelTarget.sizeBytes)}, modified{" "}
+                  {formatEpochSeconds(modelTarget.modified)}) and will be replaced after you
+                  confirm.
+                </>
+              )}
+            </p>
+          )}
+          {modelTarget?.exists && modelTarget.isShippedModel && (
+            <p className="field-hint">
+              This file ships with PSKK (installed under <span className="mono">/opt/pskk</span>):
+              writing to it may need root, and the next install restores the original. Consider
+              training to <span className="mono">~/.config/pskk/models/</span> instead.
+            </p>
+          )}
         </div>
 
         {trainResult && (

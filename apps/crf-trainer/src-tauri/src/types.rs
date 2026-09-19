@@ -47,6 +47,24 @@ pub struct ModelInfo {
     pub is_default: bool,
 }
 
+/// What a training run would write to, and whether that clobbers something.
+/// 訓練の出力先と、上書きが発生するかどうか。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelTargetInfo {
+    /// Resolved absolute path training would write to.
+    pub path: String,
+    pub exists: bool,
+    pub size_bytes: u64,
+    pub modified: Option<String>,
+    /// True when this is `util::get_crf_model_path()` — the file the IME loads.
+    /// The IME works without a CRF model, but replacing this one changes
+    /// bunsetsu splitting immediately.
+    pub is_live_model_path: bool,
+    /// True when the file is one shipped under the install root's data dir.
+    pub is_shipped_model: bool,
+}
+
 // ─── Corpus / コーパス統計 ────────────────────────────────────────────
 
 /// Statistics for one annotated corpus file.

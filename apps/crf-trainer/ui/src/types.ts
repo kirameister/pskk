@@ -27,6 +27,18 @@ export interface ModelInfo {
   isDefault: boolean;
 }
 
+/** What a training run would write to, and whether that clobbers something. */
+export interface ModelTargetInfo {
+  path: string;
+  exists: boolean;
+  sizeBytes: number;
+  modified: string | null;
+  /** True for `~/.config/pskk/bunsetsu.crfsuite` — the model the IME loads. */
+  isLiveModelPath: boolean;
+  /** True for a model shipped under the install root's data dir. */
+  isShippedModel: boolean;
+}
+
 // ─── Corpus ──────────────────────────────────────────────────────────
 
 export interface CorpusStats {

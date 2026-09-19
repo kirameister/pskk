@@ -15,6 +15,7 @@ import type {
   FeatureExtractionResult,
   FeatureTsvReport,
   ModelInfo,
+  ModelTargetInfo,
   PredictRequest,
   PredictionResult,
   ProgressEvent,
@@ -43,6 +44,20 @@ export const getEnvironment = (): Promise<EnvironmentInfo> =>
   call<EnvironmentInfo>("get_environment");
 
 export const listModels = (): Promise<ModelInfo[]> => call<ModelInfo[]>("list_models");
+
+/**
+ * Report whether the training output path already holds a model file.
+ * `path` may be null/empty to mean "the IME's model path".
+ */
+export const checkModelTarget = (path?: string | null): Promise<ModelTargetInfo> =>
+  call<ModelTargetInfo>("check_model_target", { path: path ?? null });
+
+/**
+ * Ask the user to confirm overwriting an existing model file.
+ * Returns true when training may proceed (nothing there, or the user agreed).
+ */
+export const confirmModelOverwrite = (path?: string | null): Promise<boolean> =>
+  call<boolean>("confirm_model_overwrite", { path: path ?? null });
 
 // ─── File dialogs ────────────────────────────────────────────────────
 

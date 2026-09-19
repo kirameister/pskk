@@ -21,6 +21,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_environment,
             commands::list_models,
+            commands::check_model_target,
+            commands::confirm_model_overwrite,
             commands::pick_corpus_file,
             commands::pick_model_file,
             commands::pick_save_file,
