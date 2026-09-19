@@ -39,6 +39,7 @@ core-install:
   just settings-install
   just dict-editor-install
   just ime-tester-install
+  just crf-trainer-install
   @echo "✓ Core installation complete"
 
 # Internal: Make sure the checked-in Python gRPC stubs can be imported by the installed protobuf

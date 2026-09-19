@@ -153,6 +153,12 @@ pub fn list_models() -> Vec<ModelInfo> {
     if models_dir.is_dir() {
         dirs.push(models_dir);
     }
+    // Models shipped with the install (`/opt/pskk/data/crf_training`), so a fresh
+    // machine can test predictions before training anything itself.
+    let shipped_models = pskk::util::get_datadir().join("data").join("crf_training");
+    if shipped_models.is_dir() {
+        dirs.push(shipped_models);
+    }
 
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut models: Vec<ModelInfo> = Vec::new();
