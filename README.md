@@ -134,6 +134,24 @@ cd apps/ime-tester
 cargo tauri dev
 ```
 
+### CRF Trainer (Development Tool)
+
+Train and test the CRF bunsetsu-segmentation model, with a canvas visualisation
+of the prediction (emission heat strips and boundary confidence):
+
+```bash
+# Run the CRF trainer
+just dev-crf-trainer
+
+# Build/install a release binary
+just crf-trainer-build
+just crf-trainer-install
+```
+
+See `apps/crf-trainer/README.md` for the current implementation status: the GUI and
+the non-CRF plumbing are real, while feature extraction, training and prediction
+are still mocked pending the Python bridge.
+
 ## Uninstallation
 
 ```bash
@@ -167,7 +185,8 @@ pskk/
 ├── fcitx5/                    # Fcitx 5 addon (C++ engine + CMake)
 ├── apps/
 │   ├── settings/              # Settings GUI (Tauri)
-│   └── ime-tester/            # IME testing app (Tauri)
+│   ├── ime-tester/            # IME testing app (Tauri)
+│   └── crf-trainer/           # CRF bunsetsu model trainer/tester (Tauri)
 ├── packaging/                 # Installation scripts
 ├── data/                      # Dictionaries and models
 └── justfile                   # Build commands
@@ -184,6 +203,9 @@ just settings-tauri-build
 
 # Build IME tester
 just ime-tester-build
+
+# Build CRF trainer
+just crf-trainer-build
 
 # Build everything
 just build-all

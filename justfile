@@ -399,11 +399,40 @@ dict-editor-install:
   sudo ln -sf /opt/pskk/bin/pskk-dictionary-editor /usr/local/bin/pskk-dictionary-editor
   @echo "✓ Dictionary editor installed to /opt/pskk/bin/pskk-dictionary-editor"
 
+# CRF trainer app (bunsetsu segmentation model: train + test)
+crf-trainer-ui-install:
+  cd apps/crf-trainer/ui && npm install
+
+crf-trainer-ui-build:
+  cd apps/crf-trainer/ui && npm run build
+
+crf-trainer-dev:
+  just _ensure-tauri-cli
+  cd apps/crf-trainer/src-tauri && cargo tauri dev
+
+crf-trainer-build:
+  just _ensure-tauri-cli
+  cd apps/crf-trainer/src-tauri && cargo tauri build
+
+crf-trainer-check:
+  cd apps/crf-trainer/ui && npm run build
+  cd apps/crf-trainer/src-tauri && cargo check
+
+crf-trainer-install:
+  just crf-trainer-ui-install
+  just crf-trainer-ui-build
+  cd apps/crf-trainer/src-tauri && cargo build --release --features custom-protocol
+  sudo mkdir -p /opt/pskk/bin
+  sudo cp apps/crf-trainer/src-tauri/target/release/pskk-crf-trainer /opt/pskk/bin/
+  sudo ln -sf /opt/pskk/bin/pskk-crf-trainer /usr/local/bin/pskk-crf-trainer
+  @echo "✓ CRF trainer installed to /opt/pskk/bin/pskk-crf-trainer"
+
 # Install all dependencies
 install-deps:
   just settings-ui-install
   just ime-tester-ui-install
   just dict-editor-ui-install
+  just crf-trainer-ui-install
 
 # Build everything
 build-all:
@@ -415,6 +444,8 @@ build-all:
   just ime-tester-build
   just dict-editor-ui-build
   just dict-editor-build
+  just crf-trainer-ui-build
+  just crf-trainer-build
 
 # Development workflow
 dev-settings:
@@ -426,6 +457,9 @@ dev-ime-tester:
 dev-dict-editor:
   just dict-editor-dev
 
+dev-crf-trainer:
+  just crf-trainer-dev
+
 # Check everything works
 check-all:
   cargo test
@@ -433,6 +467,7 @@ check-all:
   just settings-ui-build
   just ime-tester-ui-build
   just dict-editor-ui-build
+  just crf-trainer-check
 
 # Clean build artifacts
 clean:
@@ -440,9 +475,11 @@ clean:
   rm -rf apps/settings/ui/node_modules apps/settings/ui/dist
   rm -rf apps/ime-tester/ui/node_modules apps/ime-tester/ui/dist
   rm -rf apps/dictionary-editor/ui/node_modules apps/dictionary-editor/ui/dist
+  rm -rf apps/crf-trainer/ui/node_modules apps/crf-trainer/ui/dist
   rm -rf apps/settings/src-tauri/target
   rm -rf apps/ime-tester/src-tauri/target
   rm -rf apps/dictionary-editor/src-tauri/target
+  rm -rf apps/crf-trainer/src-tauri/target
 
 # Package for distribution
 package-settings:
@@ -460,10 +497,16 @@ package-dict-editor:
   cd apps/dictionary-editor/src-tauri && cargo tauri build
   @echo "Packages created in apps/dictionary-editor/src-tauri/target/release/bundle/"
 
+package-crf-trainer:
+  just _ensure-tauri-cli
+  cd apps/crf-trainer/src-tauri && cargo tauri build
+  @echo "Packages created in apps/crf-trainer/src-tauri/target/release/bundle/"
+
 package-all:
   just package-settings
   just package-ime-tester
   just package-dict-editor
+  just package-crf-trainer
 
 # Show build outputs
 show-outputs:
@@ -487,3 +530,9 @@ show-outputs:
   @echo ""
   @echo "=== Dictionary Editor Packages ==="
   @find apps/dictionary-editor/src-tauri/target/release/bundle -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" 2>/dev/null || echo "Not packaged yet"
+  @echo ""
+  @echo "=== CRF Trainer ==="
+  @ls -lh apps/crf-trainer/src-tauri/target/release/pskk-crf-trainer 2>/dev/null || echo "Not built yet"
+  @echo ""
+  @echo "=== CRF Trainer Packages ==="
+  @find apps/crf-trainer/src-tauri/target/release/bundle -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" 2>/dev/null || echo "Not packaged yet"

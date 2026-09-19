@@ -1,0 +1,19 @@
+[package]
+name = "pskk-crf-trainer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+pskk = { path = "../../.." }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
