@@ -100,7 +100,7 @@ export const inspectFeatureTsv = (
 ): Promise<FeatureTsvReport> =>
   call<FeatureTsvReport>("inspect_feature_tsv", { path, limit });
 
-// ─── Jobs (mock until the Python bridge lands) ───────────────────────
+// ─── CRF pipeline (pure Rust, in-process) ────────────────────────────
 
 export const extractFeatures = (
   request: ExtractRequest

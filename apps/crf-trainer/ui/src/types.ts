@@ -8,10 +8,8 @@
 // ─── Environment ─────────────────────────────────────────────────────
 
 export interface EnvironmentInfo {
-  pythonAvailable: boolean;
-  pythonVersion: string | null;
-  pycrfsuiteAvailable: boolean;
-  crfsuiteVersion: string | null;
+  /** Engine identifier, e.g. `crfsuite-compliant-rs 0.4.2 (pure Rust)`. */
+  crfEngine: string;
   configDir: string;
   defaultModelPath: string;
   defaultFeaturesPath: string;
@@ -160,6 +158,8 @@ export interface TrainingResult {
   lastIteration: number | null;
   loss: number | null;
   featureCount: number | null;
+  /** Terminal trainer message, e.g. convergence or the iteration cap. */
+  status: string | null;
   errorMessage: string | null;
   isMock: boolean;
 }

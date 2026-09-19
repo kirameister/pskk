@@ -66,7 +66,6 @@ export default function TestView({
       <section className="panel">
         <header className="panel-head">
           <h2>Test bunsetsu-split prediction</h2>
-          {result?.isMock && <span className="badge badge-mock">MOCK DATA</span>}
         </header>
 
         <div className="test-input-row">

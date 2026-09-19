@@ -148,9 +148,9 @@ just crf-trainer-build
 just crf-trainer-install
 ```
 
-See `apps/crf-trainer/README.md` for the current implementation status: the GUI and
-the non-CRF plumbing are real, while feature extraction, training and prediction
-are still mocked pending the Python bridge.
+See `apps/crf-trainer/README.md` for details. Training and testing run entirely in
+Rust (`crfsuite-compliant-rs` plus the IME's own feature extractor) — the app needs
+no Python interpreter.
 
 ## Uninstallation
 

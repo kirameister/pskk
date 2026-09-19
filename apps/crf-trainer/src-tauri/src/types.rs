@@ -14,18 +14,17 @@ use serde::{Deserialize, Serialize};
 
 // ─── Environment / 環境情報 ───────────────────────────────────────────
 
-/// Result of probing the host for the Python CRF toolchain.
-/// Python CRFツールチェーンの検出結果。
+/// Result of probing the host for the CRF toolchain.
+/// CRFツールチェーンの検出結果。
+///
+/// There is no Python probe: learning and testing run on a pure-Rust CRFsuite
+/// port inside this app.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnvironmentInfo {
-    /// `python3` (or `python`) resolvable on PATH.
-    pub python_available: bool,
-    pub python_version: Option<String>,
-    /// `import pycrfsuite` succeeded in the detected interpreter.
-    pub pycrfsuite_available: bool,
-    /// Version string reported by the `crfsuite` tool, when present.
-    pub crfsuite_version: Option<String>,
+    /// Engine identifier shown in the header, e.g.
+    /// `crfsuite-compliant-rs 0.4.2 (pure Rust)`.
+    pub crf_engine: String,
     pub config_dir: String,
     pub default_model_path: String,
     pub default_features_path: String,
@@ -240,6 +239,8 @@ pub struct TrainingResult {
     pub last_iteration: Option<u32>,
     pub loss: Option<f64>,
     pub feature_count: Option<u64>,
+    /// Terminal trainer message, e.g. "L-BFGS terminated with the stopping criteria".
+    pub status: Option<String>,
     pub error_message: Option<String>,
     pub is_mock: bool,
 }

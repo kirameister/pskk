@@ -495,6 +495,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "crfsuite-compliant-rs"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a14a2006b15f3b2361378808f186d17f8b355d66288d01799f2119a8e10c1672"
+dependencies = [
+ "liblbfgs-compliant-rs",
+ "rand",
+ "rand_chacha",
+]
+
+[[package]]
 name = "crossbeam-channel"
 version = "0.5.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1961,6 +1972,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "liblbfgs-compliant-rs"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1e9232cb3a09e5eb8c90238756f856f7e19e16f0c12c4cbef670b0ff31f4ca0"
+
+[[package]]
 name = "libloading"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2774,6 +2791,7 @@ dependencies = [
 name = "pskk-crf-trainer"
 version = "0.1.0"
 dependencies = [
+ "crfsuite-compliant-rs",
  "pskk",
  "serde",
  "serde_json",

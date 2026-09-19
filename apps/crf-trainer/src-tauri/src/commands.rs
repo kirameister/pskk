@@ -2,35 +2,33 @@
 //!
 //! CRFトレーナーGUIのTauriコマンド群。
 //!
-//! # Implementation status / 実装状況
+//! # No Python / Python非依存
 //!
-//! This app was scaffolded GUI-first. Commands fall into two groups:
-//! このアプリはGUIファーストで雛形を作成した。コマンドは2種類に分かれる:
+//! Feature extraction, training and prediction are all implemented in Rust:
+//! the CRF maths come from `crfsuite-compliant-rs` (see `crate::crf`) and the
+//! features come from `pskk::util`, the same code the IME uses at runtime.
+//! Nothing here spawns an interpreter.
 //!
-//! **Real / 実装済み** — pure host/filesystem plumbing, no CRF maths:
-//!   `get_environment`, `list_models`, `pick_*`, `load_corpus_report`,
-//!   `load_training_params`, `save_training_params`
-//!
-//! **Mock / モック** — everything that needs `pycrfsuite` or the Python
-//! feature-extraction pipeline. These return synthetic but well-formed data so
-//! the GUI (including the canvas visualisation) can be designed and reviewed
-//! before the bridge exists. Every payload carries `isMock: true`, which the UI
-//! renders as a "MOCK" badge.
-//!   `extract_features`, `train_model`, `predict`
-//!
-//! Porting note / 移植メモ: the mock commands are the seam where the Python
-//! side (`crf_core.run_feature_extraction`, `crf_core.train_model`,
-//! `crf_core.test_prediction`) gets wired in — either by shelling out to a
-//! `python3` sidecar or by porting the logic to Rust.
+//! **Commands / コマンド**
+//!   host plumbing : `get_environment`, `list_models`, `pick_*`,
+//!                   `load_corpus_report`, `inspect_feature_tsv`,
+//!                   `check_model_target`, `confirm_model_overwrite`,
+//!                   `load_training_params`, `save_training_params`
+//!   CRF pipeline  : `extract_features`, `train_model`, `predict`
 
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::rc::Rc;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
+use crfsuite_compliant_rs::train;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
+use pskk::util::{CrfFeatureMaterials, FeatureRow};
+
+use crate::crf::{self, LabeledSentence};
 use crate::types::*;
 
 /// Event name used for all progress/log traffic.
@@ -51,43 +49,9 @@ const DISPLAY_FEATURE_KEYS: [&str; 9] = [
     "dict_entry_ct_e",
 ];
 
-/// Common Japanese particles, used only by the mock predictor.
-/// モック予測器でのみ使用する主要な助詞。
-const MOCK_PARTICLES: [char; 16] = [
-    'は', 'が', 'を', 'に', 'で', 'と', 'へ', 'も', 'の', 'て', 'し', 'ば', 'か', 'ね', 'よ', 'や',
-];
-
 // ═══════════════════════════════════════════════════════════════════════
 // Environment probing / 環境検出
 // ═══════════════════════════════════════════════════════════════════════
-
-/// First `python3`/`python` on PATH, if any.
-fn python_binary() -> Option<String> {
-    ["python3", "python"].into_iter().find_map(|candidate| {
-        let ok = Command::new(candidate)
-            .arg("--version")
-            .output()
-            .map(|out| out.status.success())
-            .unwrap_or(false);
-        ok.then(|| candidate.to_string())
-    })
-}
-
-/// `pycrfsuite.__version__`, or `None` when the import fails.
-fn pycrfsuite_version(python: &str) -> Option<String> {
-    let out = Command::new(python)
-        .args([
-            "-c",
-            "import pycrfsuite, sys; sys.stdout.write(getattr(pycrfsuite, '__version__', 'unknown'))",
-        ])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    (!version.is_empty()).then_some(version)
-}
 
 fn config_dir() -> PathBuf {
     pskk::util::get_user_config_dir()
@@ -101,40 +65,15 @@ fn default_features_path() -> PathBuf {
     config_dir().join("crf_model_training_data.tsv")
 }
 
+/// Report the host paths and the CRF engine backing this app.
+///
+/// ホストのパスと、このアプリが使うCRFエンジンを報告する。
+/// There is no interpreter probe: the engine is linked in, so the only thing
+/// that can really be "missing" is a trained model.
 #[tauri::command]
 pub fn get_environment() -> EnvironmentInfo {
-    let python = python_binary();
-    let python_version = python
-        .as_deref()
-        .and_then(|p| Command::new(p).arg("--version").output().ok())
-        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
-        .filter(|v| !v.is_empty());
-
-    let pycrfsuite_available = python
-        .as_deref()
-        .and_then(pycrfsuite_version)
-        .is_some();
-
-    // The `crfsuite` CLI is optional; it is only used for display.
-    let crfsuite_version = Command::new("crfsuite")
-        .arg("-v")
-        .output()
-        .ok()
-        .filter(|out| out.status.success())
-        .map(|out| {
-            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if text.is_empty() {
-                String::from_utf8_lossy(&out.stderr).trim().to_string()
-            } else {
-                text
-            }
-        });
-
     EnvironmentInfo {
-        python_available: python.is_some(),
-        python_version,
-        pycrfsuite_available,
-        crfsuite_version,
+        crf_engine: crf::CRF_ENGINE.to_string(),
         config_dir: config_dir().to_string_lossy().to_string(),
         default_model_path: default_model_path().to_string_lossy().to_string(),
         default_features_path: default_features_path().to_string_lossy().to_string(),
@@ -460,7 +399,7 @@ pub fn save_training_params(params: TrainingParams) -> Result<(), String> {
 /// Mirrors `crf_core.parse_annotated_line`:
 ///   `きょう _は_ てんき` → tokens `['き','ょ','う','は',...]`
 ///                          labels `['B-L','I-L','I-L','B-P',...]`
-fn parse_annotated_line(line: &str) -> (Vec<String>, Vec<String>, Vec<Bunsetsu>) {
+pub(crate) fn parse_annotated_line(line: &str) -> (Vec<String>, Vec<String>, Vec<Bunsetsu>) {
     let trimmed = line.trim();
     if trimmed.is_empty() || trimmed.starts_with('#') {
         return (Vec::new(), Vec::new(), Vec::new());
@@ -704,7 +643,11 @@ pub fn inspect_feature_tsv(path: String, limit: usize) -> Result<FeatureTsvRepor
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// MOCK commands / モックコマンド (TODO: wire to crf_core.py)
+// CRF pipeline / CRFパイプライン
+//
+// Pure Rust: `crfsuite-compliant-rs` for the model maths and `pskk::util` for
+// the features. No interpreter, no subprocess.
+// 純Rust実装。モデル演算は`crfsuite-compliant-rs`、特徴量は`pskk::util`。
 // ═══════════════════════════════════════════════════════════════════════
 
 fn now_millis() -> u128 {
@@ -723,6 +666,7 @@ fn emit(app: &AppHandle, event: ProgressEvent) {
     let _ = app.emit(PROGRESS_EVENT, event);
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_stage(
     app: &AppHandle,
     job: &str,
@@ -745,35 +689,6 @@ fn emit_stage(
     );
 }
 
-/// Small deterministic PRNG so mock scores look organic but stay reproducible.
-/// モックのスコアを再現可能かつ自然に見せるための簡易PRNG。
-struct MockRng(u64);
-
-impl MockRng {
-    fn new(seed: u64) -> Self {
-        Self(seed | 1)
-    }
-    fn next_f64(&mut self) -> f64 {
-        // xorshift64*
-        let mut x = self.0;
-        x ^= x >> 12;
-        x ^= x << 25;
-        x ^= x >> 27;
-        self.0 = x;
-        let v = x.wrapping_mul(0x2545_F491_4F6C_DD1D);
-        (v >> 11) as f64 / (1u64 << 53) as f64
-    }
-    fn range(&mut self, lo: f64, hi: f64) -> f64 {
-        lo + self.next_f64() * (hi - lo)
-    }
-}
-
-fn seed_from(text: &str) -> u64 {
-    text.bytes().fold(0xcbf2_9ce4_8422_2325u64, |acc, b| {
-        (acc ^ b as u64).wrapping_mul(0x0000_0100_0000_01B3)
-    })
-}
-
 /// Derive bunsetsu spans from a char-level label sequence.
 /// 文字レベルのラベル列から文節スパンを再構成。
 fn labels_to_bunsetsu(tokens: &[String], labels: &[String]) -> Vec<Bunsetsu> {
@@ -794,275 +709,236 @@ fn labels_to_bunsetsu(tokens: &[String], labels: &[String]) -> Vec<Bunsetsu> {
     out
 }
 
-/// Mock labelling: content chars form lookup bunsetsu, particles passthrough.
-/// モックラベリング: 内容語はルックアップ、助詞はパススルー。
-fn mock_labels(tokens: &[String]) -> Vec<String> {
-    let mut labels: Vec<String> = Vec::with_capacity(tokens.len());
-    let mut prev_kind: Option<char> = None;
-
-    for token in tokens {
-        let ch = token.chars().next().unwrap_or(' ');
-        let kind = if MOCK_PARTICLES.contains(&ch) { 'P' } else { 'L' };
-        if prev_kind == Some(kind) {
-            labels.push(format!("I-{kind}"));
-        } else {
-            labels.push(format!("B-{kind}"));
-        }
-        prev_kind = Some(kind);
-    }
-    labels
-}
-
-/// Flip one bunsetsu boundary to build a distinct N-best alternative.
-/// 文節境界を1つ反転させて別のN-best候補を作る。
-fn flip_boundary(labels: &[String], gap: usize) -> Vec<String> {
-    let mut out = labels.to_vec();
-    if out.len() < 2 {
-        return out;
-    }
-    let idx = (gap % (out.len() - 1)) + 1;
-    let kind = out[idx].rsplit('-').next().unwrap_or("L").to_string();
-    if out[idx].starts_with('B') {
-        out[idx] = format!("I-{kind}");
-    } else {
-        out[idx] = format!("B-{kind}");
-    }
-    out
-}
-
-fn feature_values(tokens: &[String], index: usize, rng: &mut MockRng, predicted: &str) -> Vec<FeatureValue> {
-    let current = tokens.get(index).cloned().unwrap_or_default();
-    let left = tokens.get(index.wrapping_sub(1)).cloned();
-    let right = tokens.get(index + 1).cloned();
-
-    let raw: [(String, String); 9] = [
-        ("char".into(), current.clone()),
-        (
-            "char_left".into(),
-            if index == 0 { "BOS".into() } else { left.clone().unwrap_or_default() },
-        ),
-        (
-            "char_right".into(),
-            right.clone().unwrap_or_else(|| "EOS".into()),
-        ),
-        (
-            "bigram_left".into(),
-            match &left {
-                Some(l) => format!("{l}{current}"),
-                None => format!("BOS{current}"),
-            },
-        ),
-        (
-            "bigram_right".into(),
-            match &right {
-                Some(r) => format!("{current}{r}"),
-                None => format!("{current}EOS"),
-            },
-        ),
-        ("dict_max_kl_s".into(), format!("{:.2}", rng.range(0.0, 12.0))),
-        ("dict_max_kl_e".into(), format!("{:.2}", rng.range(0.0, 12.0))),
-        ("dict_entry_ct_s".into(), format!("{}", (rng.range(0.0, 40.0)) as u32)),
-        ("dict_entry_ct_e".into(), format!("{}", (rng.range(0.0, 40.0)) as u32)),
-    ];
-
-    raw.into_iter()
-        .map(|(key, value)| {
-            // Bias the weight of the predicted label so the grid looks coherent.
-            let bias = if rng.next_f64() > 0.55 { 1.0 } else { -0.4 };
-            let _ = predicted;
-            FeatureValue {
-                weight: Some((rng.range(0.2, 3.4) * bias * 10.0).round() / 10.0),
-                key,
-                value,
+/// Resolve the dictionary-derived feature materials used by extraction.
+///
+/// 抽出に使う辞書由来の特徴量マテリアルを解決する。
+/// Regeneration is best-effort: if it fails we fall back to the existing file
+/// rather than refusing to extract.
+fn feature_materials(
+    regenerate: bool,
+    log: &mut Vec<String>,
+) -> Result<CrfFeatureMaterials, String> {
+    if regenerate {
+        match pskk::util::generate_crf_feature_materials(None) {
+            Ok((path, materials)) => {
+                log.push(format!(
+                    "Dictionary features regenerated: {}",
+                    path.display()
+                ));
+                return Ok(materials);
             }
-        })
-        .collect()
+            Err(error) => log.push(format!(
+                "Warning: could not regenerate dictionary features ({error}); using the existing file"
+            )),
+        }
+    }
+    pskk::util::load_crf_feature_materials(None).map_err(|e| e.to_string())
 }
 
-/// Mock prediction payload, shaped exactly like the future real one.
-/// 将来の実データと同じ形をしたモック予測結果。
-#[tauri::command]
-pub async fn predict(request: PredictRequest) -> Result<PredictionResult, String> {
-    let text = request.input_text.trim().to_string();
-    if text.is_empty() {
-        return Err("Input text is empty".into());
+/// Read annotated corpus files into labeled sentences.
+/// 注釈付きコーパスを文単位で読み込む。
+fn load_corpus_sentences(paths: &[String], log: &mut Vec<String>) -> Vec<LabeledSentence> {
+    let mut sentences = Vec::new();
+    for path in paths {
+        let file_path = Path::new(path);
+        if !file_path.is_file() {
+            log.push(format!("Warning: file not found: {path}"));
+            continue;
+        }
+        let text = match std::fs::read_to_string(file_path) {
+            Ok(text) => text,
+            Err(error) => {
+                log.push(format!("Warning: could not read {path}: {error}"));
+                continue;
+            }
+        };
+        let before = sentences.len();
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            let (tokens, labels, _) = parse_annotated_line(trimmed);
+            if tokens.is_empty() {
+                continue;
+            }
+            sentences.push(LabeledSentence { tokens, labels });
+        }
+        log.push(format!(
+            "Loaded {} sentences from {}",
+            sentences.len() - before,
+            path
+        ));
     }
+    sentences
+}
 
-    let tokens: Vec<String> = text.chars().map(|c| c.to_string()).collect();
-    let model_labels = vec![
-        "B-L".to_string(),
-        "I-L".to_string(),
-        "B-P".to_string(),
-        "I-P".to_string(),
-    ];
-
-    let mut rng = MockRng::new(seed_from(&text));
-    let predicted = mock_labels(&tokens);
-
-    // Emissions: highest for the predicted label, plus noise.
-    let emission_scores: Vec<Vec<f64>> = predicted
-        .iter()
-        .map(|label| {
-            model_labels
-                .iter()
-                .map(|candidate| {
-                    let base = if candidate == label {
-                        rng.range(1.2, 4.5)
-                    } else {
-                        rng.range(-3.5, 0.6)
-                    };
-                    (base * 100.0).round() / 100.0
-                })
-                .collect()
-        })
-        .collect();
-
-    // Boundary confidence per gap, nudged up where a particle starts.
-    let boundary_scores: Vec<f64> = (0..tokens.len().saturating_sub(1))
-        .map(|gap| {
-            let next_starts = predicted.get(gap + 1).map(|l| l.starts_with('B')).unwrap_or(false);
-            let base = if next_starts { rng.range(0.62, 0.98) } else { rng.range(0.02, 0.35) };
-            (base * 1000.0).round() / 1000.0
-        })
-        .collect();
-
-    let transitions: Vec<TransitionScore> = if request.debug {
-        model_labels
-            .iter()
-            .flat_map(|from| {
-                model_labels.iter().map(move |to| (from.clone(), to.clone()))
-            })
-            .map(|(from, to)| {
-                let score = if from == to { rng.range(-2.0, 0.0) } else { rng.range(-4.0, 2.0) };
-                TransitionScore {
-                    from,
-                    to,
-                    score: (score * 100.0).round() / 100.0,
-                }
-            })
-            .collect()
-    } else {
-        // Default view: transitions out of each predicted label.
-        let mut seen: HashSet<String> = HashSet::new();
-        predicted
-            .iter()
-            .filter(|l| seen.insert((*l).clone()))
-            .flat_map(|from| {
-                model_labels.iter().map(move |to| (from.clone(), to.clone()))
-            })
-            .map(|(from, to)| {
-                let score = if from == to { rng.range(-2.0, 0.0) } else { rng.range(-4.0, 2.0) };
-                TransitionScore {
-                    from,
-                    to,
-                    score: (score * 100.0).round() / 100.0,
-                }
-            })
-            .collect()
+/// Extended-dictionary readings as single-bunsetsu lookup examples.
+///
+/// 拡張辞書の読みを「1文節のルックアップ例」として訓練データに加える。
+/// Mirrors `crf_core.load_extended_dictionary_as_training_data`: every reading
+/// becomes one bunsetsu labelled `B-L` / `I-L`.
+fn dictionary_sentences() -> (Vec<LabeledSentence>, u64) {
+    let path = config_dir().join("extended_dictionary.json");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return (Vec::new(), 0);
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return (Vec::new(), 0);
+    };
+    let Some(entries) = value.as_object() else {
+        return (Vec::new(), 0);
     };
 
-    let features: Vec<Vec<FeatureValue>> = (0..tokens.len())
-        .map(|i| feature_values(&tokens, i, &mut rng, &predicted[i]))
-        .collect();
-
-    // N-best: rank 1 is the mock prediction, later ranks flip one boundary each.
-    let n_best = request.n_best.clamp(1, 10) as usize;
-    let mut candidates = Vec::with_capacity(n_best);
-    for rank in 0..n_best {
-        let labels = if rank == 0 {
-            predicted.clone()
-        } else {
-            flip_boundary(&predicted, rank - 1)
-        };
-        let score = if rank == 0 {
-            rng.range(-1.0, 0.0)
-        } else {
-            -rng.range(0.4, 3.0) * rank as f64
-        };
-        candidates.push(NBestCandidate {
-            rank: rank as u32 + 1,
-            score: (score * 1000.0).round() / 1000.0,
-            bunsetsu: labels_to_bunsetsu(&tokens, &labels),
-            labels,
-        });
+    let mut sentences = Vec::with_capacity(entries.len());
+    let mut tokens_total = 0u64;
+    for reading in entries.keys() {
+        let tokens = pskk::util::tokenize_line(reading);
+        if tokens.is_empty() {
+            continue;
+        }
+        let labels = tokens
+            .iter()
+            .enumerate()
+            .map(|(index, _)| {
+                if index == 0 {
+                    "B-L".to_string()
+                } else {
+                    "I-L".to_string()
+                }
+            })
+            .collect();
+        tokens_total += tokens.len() as u64;
+        sentences.push(LabeledSentence { tokens, labels });
     }
-    candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-    for (i, c) in candidates.iter_mut().enumerate() {
-        c.rank = i as u32 + 1;
-    }
-
-    let model_path = request
-        .model_path
-        .filter(|p| !p.is_empty())
-        .unwrap_or_else(|| default_model_path().to_string_lossy().to_string());
-
-    Ok(PredictionResult {
-        input_text: text,
-        model_path,
-        tokens,
-        model_labels,
-        features,
-        emission_scores,
-        transitions,
-        boundary_scores,
-        candidates,
-        debug: request.debug,
-        is_mock: true,
-    })
+    (sentences, tokens_total)
 }
 
-/// Mock feature extraction run, with progress events.
-/// モックの特徴量抽出実行（進捗イベント付き）。
+/// Emit coarse progress for a long loop.
+/// 長いループの粗い進捗を発行する。
+fn emit_progress(app: &AppHandle, job: &str, stage: &str, done: u64, total: u64, unit: &str) {
+    emit_stage(
+        app,
+        job,
+        stage,
+        format!("{done}/{total} {unit}"),
+        "info",
+        Some(done),
+        Some(total),
+    );
+}
+
+/// Extract features from the selected corpora and write the intermediate TSV.
+///
+/// 選択したコーパスから特徴量を抽出し、中間TSVを書き出す。
 #[tauri::command]
 pub async fn extract_features(
     app: AppHandle,
     request: ExtractRequest,
 ) -> Result<FeatureExtractionResult, String> {
     let job = job_id("extract");
-    let started = now_millis();
+    let started = Instant::now();
+    let mut log: Vec<String> = Vec::new();
 
-    let stages: [(&str, &str); 6] = [
-        ("dictionary", "Regenerating dictionary features (crf_feature_materials.json)..."),
-        ("dictionary", "Dictionary features updated (mock)"),
-        ("load", "Loading corpus..."),
-        ("load", "Loaded corpus (mock)"),
-        ("extract", "Extracting features..."),
-        ("save", "Features saved (mock)"),
-    ];
-
-    let total = stages.len() as u64;
-    for (i, (stage, message)) in stages.iter().enumerate() {
-        emit_stage(&app, &job, stage, *message, "info", Some(i as u64 + 1), Some(total));
-        tokio::time::sleep(std::time::Duration::from_millis(180)).await;
+    emit_stage(
+        &app,
+        &job,
+        "dictionary",
+        "Preparing dictionary features...",
+        "info",
+        Some(0),
+        None,
+    );
+    let materials = feature_materials(request.regenerate_dictionary_features, &mut log)?;
+    for line in &log {
+        let level = if line.starts_with("Warning") { "warn" } else { "info" };
+        emit_stage(&app, &job, "dictionary", line.clone(), level, None, None);
     }
 
-    let mut stats = CorpusStats {
-        source: if request.corpus_paths.len() > 1 {
-            format!("{} files combined", request.corpus_paths.len())
-        } else {
-            request.corpus_paths.first().cloned().unwrap_or_default()
-        },
-        ..Default::default()
+    // ── Corpus ──
+    if request.corpus_paths.is_empty() {
+        return Err("No corpus files selected".to_string());
+    }
+    let mut log_lines = Vec::new();
+    let mut sentences = load_corpus_sentences(&request.corpus_paths, &mut log_lines);
+    for line in &log_lines {
+        let level = if line.starts_with("Warning") { "warn" } else { "info" };
+        emit_stage(&app, &job, "load", line.clone(), level, None, None);
+    }
+    if sentences.is_empty() {
+        return Err("No sentences found in the selected corpus files".to_string());
+    }
+
+    // Statistics come from the same parser the Corpus Stats tab uses.
+    let report = load_corpus_report(request.corpus_paths.clone(), 0);
+    let mut stats = report.combined.clone();
+    for warning in &report.warnings {
+        emit_stage(&app, &job, "load", warning.clone(), "warn", None, None);
+    }
+
+    // ── Optional dictionary entries ──
+    let (dict_sentences, dict_tokens) = if request.include_dictionary {
+        dictionary_sentences()
+    } else {
+        (Vec::new(), 0)
     };
-    // Reuse the real parser so the numbers on screen are honest.
-    for path in &request.corpus_paths {
-        let p = Path::new(path);
-        if p.is_file() {
-            let _ = stats_for_file(p, &mut stats);
+    let dict_entries = dict_sentences.len() as u64;
+    if dict_entries > 0 {
+        emit_stage(
+            &app,
+            &job,
+            "load",
+            format!("Added {dict_entries} dictionary entries ({dict_tokens} tokens)"),
+            "info",
+            None,
+            None,
+        );
+        stats.sentence_count += dict_entries;
+        stats.total_tokens += dict_tokens;
+        stats.total_chars += dict_tokens;
+        stats.total_bunsetsu += dict_entries;
+        stats.lookup_bunsetsu += dict_entries;
+        sentences.extend(dict_sentences);
+    }
+
+    // ── Feature extraction ──
+    let total = sentences.len() as u64;
+    emit_stage(
+        &app,
+        &job,
+        "extract",
+        format!("Extracting features for {total} sentences..."),
+        "info",
+        Some(0),
+        Some(total),
+    );
+    let mut features: Vec<Vec<FeatureRow>> = Vec::with_capacity(sentences.len());
+    for (index, sentence) in sentences.iter().enumerate() {
+        features.push(crf::features_for(&sentence.tokens, Some(&materials)));
+        if index % 200 == 0 {
+            emit_progress(&app, &job, "extract", index as u64, total, "sentences");
         }
     }
+    emit_progress(&app, &job, "extract", total, total, "sentences");
 
+    // ── Intermediate TSV ──
     let output_path = request
         .output_path
-        .filter(|p| !p.is_empty())
-        .unwrap_or_else(|| default_features_path().to_string_lossy().to_string());
+        .filter(|p| !p.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(default_features_path);
+    let tsv_size_bytes = crf::save_features_tsv(&sentences, &features, &output_path)?;
 
-    let elapsed = (now_millis() - started) as f64 / 1000.0;
+    let elapsed_secs = started.elapsed().as_secs_f64();
     emit_stage(
         &app,
         &job,
         "done",
-        format!("Feature extraction finished in {elapsed:.2}s (mock)"),
+        format!(
+            "Wrote {} sentences to {} ({elapsed_secs:.2}s)",
+            sentences.len(),
+            output_path.display()
+        ),
         "success",
         Some(total),
         Some(total),
@@ -1070,99 +946,382 @@ pub async fn extract_features(
 
     Ok(FeatureExtractionResult {
         success: true,
-        output_path: Some(output_path),
-        tsv_size_bytes: 0,
+        output_path: Some(output_path.to_string_lossy().to_string()),
+        tsv_size_bytes,
         stats,
-        dict_entries: if request.include_dictionary { 12_480 } else { 0 },
-        dict_tokens: if request.include_dictionary { 41_902 } else { 0 },
-        elapsed_secs: elapsed,
+        dict_entries,
+        dict_tokens,
+        elapsed_secs,
         error_message: None,
-        is_mock: true,
+        is_mock: false,
     })
 }
 
-/// Mock training run, with progress events.
-/// モックの訓練実行（進捗イベント付き）。
+/// Mutable state shared with the trainer's log callback.
+/// 訓練器のログコールバックと共有する可変状態。
+#[derive(Default)]
+struct TrainLogState {
+    last_iteration: Option<u32>,
+    last_loss: Option<f64>,
+    status: String,
+}
+
+/// Train a CRF model, either from corpus files (one-shot) or a features TSV.
+///
+/// コーパスから（ワンショット）または特徴量TSVからCRFモデルを訓練。
 #[tauri::command]
 pub async fn train_model(
     app: AppHandle,
     request: TrainRequest,
 ) -> Result<TrainingResult, String> {
     let job = job_id("train");
-    let started = now_millis();
+    let started = Instant::now();
 
-    let has_features = request
-        .features_path
-        .as_deref()
-        .is_some_and(|p| !p.is_empty());
-    let source = if has_features {
-        "pre-extracted features TSV".to_string()
-    } else {
-        format!("{} corpus file(s)", request.corpus_paths.len())
+    let params = crf::TrainParams {
+        algorithm: request.params.algorithm.clone(),
+        c1: request.params.c1,
+        c2: request.params.c2,
+        max_iterations: request.params.max_iterations.max(1) as i32,
+        possible_transitions: request.params.feature_possible_transitions,
     };
 
-    emit_stage(&app, &job, "prepare", format!("Loading data from {source}..."), "info", Some(1), Some(6));
+    // ── Data source ──
+    let features_path = request
+        .features_path
+        .clone()
+        .filter(|p| !p.trim().is_empty());
 
-    let iterations = request.params.max_iterations.min(30) as u64;
-    let total = 6 + iterations;
-    let mut current = 1u64;
-    let mut loss = 42.0f64;
+    let (sentences, features) = match &features_path {
+        Some(path) => {
+            emit_stage(
+                &app,
+                &job,
+                "prepare",
+                format!("Loading pre-extracted features from {path}..."),
+                "info",
+                Some(0),
+                None,
+            );
+            let parsed = crf::parse_features_tsv(Path::new(path), None)?;
+            if parsed.is_empty() {
+                return Err(format!("No training sentences found in {path}"));
+            }
+            let sentences: Vec<LabeledSentence> = parsed
+                .iter()
+                .map(|s| LabeledSentence {
+                    tokens: s.tokens.clone(),
+                    labels: s.labels.clone(),
+                })
+                .collect();
+            let features: Vec<Vec<FeatureRow>> =
+                parsed.into_iter().map(|s| s.features).collect();
+            (sentences, features)
+        }
+        None => {
+            if request.corpus_paths.is_empty() {
+                return Err("Select corpus files or a features TSV first".to_string());
+            }
+            // One-shot: corpus → features → train, writing the intermediate TSV
+            // exactly like the two-step workflow would.
+            let mut log = Vec::new();
+            let materials = feature_materials(request.regenerate_dictionary_features, &mut log)?;
+            for line in &log {
+                let level = if line.starts_with("Warning") { "warn" } else { "info" };
+                emit_stage(&app, &job, "prepare", line.clone(), level, None, None);
+            }
+            let mut log = Vec::new();
+            let mut sentences = load_corpus_sentences(&request.corpus_paths, &mut log);
+            for line in &log {
+                let level = if line.starts_with("Warning") { "warn" } else { "info" };
+                emit_stage(&app, &job, "prepare", line.clone(), level, None, None);
+            }
+            if request.include_dictionary {
+                let (extra, tokens) = dictionary_sentences();
+                if !extra.is_empty() {
+                    emit_stage(
+                        &app,
+                        &job,
+                        "prepare",
+                        format!(
+                            "Added {} dictionary entries ({tokens} tokens)",
+                            extra.len()
+                        ),
+                        "info",
+                        None,
+                        None,
+                    );
+                    sentences.extend(extra);
+                }
+            }
+            if sentences.is_empty() {
+                return Err("No sentences found in the selected corpus files".to_string());
+            }
+            let features: Vec<Vec<FeatureRow>> = sentences
+                .iter()
+                .map(|s| crf::features_for(&s.tokens, Some(&materials)))
+                .collect();
+            let tsv_path = default_features_path();
+            match crf::save_features_tsv(&sentences, &features, &tsv_path) {
+                Ok(_) => emit_stage(
+                    &app,
+                    &job,
+                    "prepare",
+                    format!("Training data saved to {}", tsv_path.display()),
+                    "info",
+                    None,
+                    None,
+                ),
+                Err(error) => emit_stage(
+                    &app,
+                    &job,
+                    "prepare",
+                    format!("Warning: could not save the intermediate TSV: {error}"),
+                    "warn",
+                    None,
+                    None,
+                ),
+            }
+            (sentences, features)
+        }
+    };
 
-    for _ in 0..iterations {
-        current += 1;
-        loss *= 0.93;
-        emit_stage(
-            &app,
-            &job,
-            "train",
-            format!("iter {current}  loss={loss:.6}  (mock L-BFGS)"),
-            "info",
-            Some(current),
-            Some(total),
-        );
-        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
-    }
-
-    emit_stage(&app, &job, "save", "Saving model...", "info", Some(total), Some(total));
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-
-    let elapsed = (now_millis() - started) as f64 / 1000.0;
-    let model_path = request
-        .model_path
-        .filter(|p| !p.is_empty())
-        .unwrap_or_else(|| default_model_path().to_string_lossy().to_string());
+    let token_count: u64 = sentences.iter().map(|s| s.tokens.len() as u64).sum();
+    let sentence_count = sentences.len() as u64;
+    let max_iterations = params.max_iterations.max(1) as u64;
 
     emit_stage(
         &app,
         &job,
-        "done",
-        format!("Training complete in {elapsed:.2}s — model written to {model_path} (mock)"),
-        "success",
-        Some(total),
-        Some(total),
+        "train",
+        format!(
+            "Training CRF model ({}, c1={}, c2={}) on {sentence_count} sentences, {token_count} tokens...",
+            params.algorithm, params.c1, params.c2
+        ),
+        "info",
+        Some(0),
+        Some(max_iterations),
     );
 
-    let mut stats = CorpusStats::default();
-    for path in &request.corpus_paths {
-        let p = Path::new(path);
-        if p.is_file() {
-            let _ = stats_for_file(p, &mut stats);
+    // ── Train, streaming the trainer's own log through the progress channel ──
+    let state = Rc::new(RefCell::new(TrainLogState::default()));
+    let state_for_log = Rc::clone(&state);
+    let app_for_log = app.clone();
+    let job_for_log = job.clone();
+    let mut log: train::LogFn = Box::new(move |message: &str| {
+        let Some(event) = crf::parse_training_log(message) else {
+            return;
+        };
+        let mut state = state_for_log.borrow_mut();
+        match event {
+            crf::TrainingLogEvent::Iteration {
+                index,
+                loss,
+                active_features,
+            } => {
+                state.last_iteration = Some(index);
+                if loss.is_some() {
+                    state.last_loss = loss;
+                }
+                let mut text = format!("iteration {index}");
+                if let Some(loss) = loss {
+                    text.push_str(&format!("  loss={loss:.6}"));
+                }
+                if let Some(active) = active_features {
+                    text.push_str(&format!("  active features={active}"));
+                }
+                emit_stage(
+                    &app_for_log,
+                    &job_for_log,
+                    "train",
+                    text,
+                    "info",
+                    Some(index as u64),
+                    Some(max_iterations),
+                );
+            }
+            crf::TrainingLogEvent::Status(status) => {
+                state.status = status.clone();
+                let level = if status.contains("error") { "error" } else { "info" };
+                emit_stage(&app_for_log, &job_for_log, "train", status, level, None, None);
+            }
+        }
+    });
+
+    let trained = match crf::train(&sentences, &features, &params, &mut log) {
+        Ok(trained) => trained,
+        Err(error) => {
+            emit_stage(&app, &job, "done", error.clone(), "error", None, None);
+            return Err(error);
+        }
+    };
+
+    // ── Write the model ──
+    let model_path = request
+        .model_path
+        .filter(|p| !p.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(default_model_path);
+    if let Some(parent) = model_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("{}: {e}", parent.display()))?;
         }
     }
+    std::fs::write(&model_path, &trained.bytes)
+        .map_err(|e| format!("{}: {e}", model_path.display()))?;
+
+    let (last_iteration, last_loss, status) = {
+        let state = state.borrow();
+        (state.last_iteration, state.last_loss, state.status.clone())
+    };
+    let training_time_secs = started.elapsed().as_secs_f64();
+    emit_stage(
+        &app,
+        &job,
+        "done",
+        format!(
+            "Model written to {} ({} bytes, {} features, {} labels, {} attributes)",
+            model_path.display(),
+            trained.bytes.len(),
+            trained.feature_count,
+            trained.label_count,
+            trained.attribute_count
+        ),
+        "success",
+        Some(max_iterations),
+        Some(max_iterations),
+    );
 
     Ok(TrainingResult {
         success: true,
-        model_path: Some(model_path),
-        // Nothing is written to disk yet; report an indicative size only.
-        model_size_bytes: 1_842_176,
-        training_time_secs: elapsed,
-        sentence_count: if stats.sentence_count > 0 { stats.sentence_count } else { 18_204 },
-        token_count: if stats.total_tokens > 0 { stats.total_tokens } else { 412_887 },
-        last_iteration: Some(iterations as u32),
-        loss: Some((loss * 1000.0).round() / 1000.0),
-        feature_count: Some(1_204_553),
+        model_path: Some(model_path.to_string_lossy().to_string()),
+        model_size_bytes: trained.bytes.len() as u64,
+        training_time_secs,
+        sentence_count,
+        token_count,
+        last_iteration,
+        loss: last_loss,
+        feature_count: Some(trained.feature_count as u64),
+        status: (!status.is_empty()).then_some(status),
         error_message: None,
-        is_mock: true,
+        is_mock: false,
+    })
+}
+
+/// Predict bunsetsu splits for the input text.
+///
+/// 入力テキストの文節分割を予測する。
+/// Everything returned is computed from the model: emissions and transitions
+/// come from its weights, the N-best list from the repo's Viterbi, and the
+/// boundary bars from forward-backward marginals.
+#[tauri::command]
+pub async fn predict(request: PredictRequest) -> Result<PredictionResult, String> {
+    let text = request.input_text.trim().to_string();
+    if text.is_empty() {
+        return Err("Input text is empty".to_string());
+    }
+
+    let model_path = request
+        .model_path
+        .filter(|p| !p.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(default_model_path);
+    if !model_path.is_file() {
+        return Err(format!(
+            "No model at {}. Train one in the Train tab first.",
+            model_path.display()
+        ));
+    }
+    let model = crf::CrfModel::load(&model_path)?;
+
+    let tokens = pskk::util::tokenize_line(&text);
+    if tokens.is_empty() {
+        return Err("Input text produced no tokens".to_string());
+    }
+
+    let materials = pskk::util::load_crf_feature_materials(None).unwrap_or_default();
+    let features = crf::features_for(&tokens, Some(&materials));
+
+    // Emission scores and the N-best list are computed by the repo's own CRF
+    // helpers, driven by the weights read out of the model file.
+    let emission_scores =
+        pskk::util::crf_compute_emission_scores(&features, &model.state_features, &model.labels);
+
+    let n_best = request.n_best.clamp(1, 10) as usize;
+    let best_paths =
+        pskk::util::crf_nbest_viterbi(&emission_scores, &model.transitions, &model.labels, n_best);
+
+    let best_labels = best_paths
+        .first()
+        .map(|path| path.labels.clone())
+        .unwrap_or_default();
+
+    // Boundary confidence: P(the next token starts a new bunsetsu).
+    let boundary_scores = model.boundary_marginals(&features).unwrap_or_default();
+
+    // Feature values with the weight the *best* path assigns to them.
+    let feature_rows: Vec<Vec<FeatureValue>> = features
+        .iter()
+        .enumerate()
+        .map(|(index, row)| {
+            DISPLAY_FEATURE_KEYS
+                .iter()
+                .filter_map(|key| {
+                    let value = row.get(*key)?;
+                    let weight = best_labels.get(index).and_then(|label| {
+                        model
+                            .state_features
+                            .get(&(crf::feature_key(key, value), label.clone()))
+                            .copied()
+                    });
+                    Some(FeatureValue {
+                        key: (*key).to_string(),
+                        value: value.clone(),
+                        weight,
+                    })
+                })
+                .collect()
+        })
+        .collect();
+
+    // Transitions: every pair in debug mode, otherwise only those leaving a
+    // label the best path actually uses.
+    let used: HashSet<&String> = best_labels.iter().collect();
+    let mut transitions: Vec<TransitionScore> = model
+        .transitions
+        .iter()
+        .filter(|((from, _), _)| request.debug || used.contains(from))
+        .map(|((from, to), score)| TransitionScore {
+            from: from.clone(),
+            to: to.clone(),
+            score: *score,
+        })
+        .collect();
+    transitions.sort_by(|a, b| a.from.cmp(&b.from).then_with(|| a.to.cmp(&b.to)));
+
+    let candidates: Vec<NBestCandidate> = best_paths
+        .iter()
+        .enumerate()
+        .map(|(index, path)| NBestCandidate {
+            rank: index as u32 + 1,
+            score: path.score,
+            bunsetsu: labels_to_bunsetsu(&tokens, &path.labels),
+            labels: path.labels.clone(),
+        })
+        .collect();
+
+    Ok(PredictionResult {
+        input_text: text,
+        model_path: model_path.to_string_lossy().to_string(),
+        tokens,
+        model_labels: model.labels,
+        features: feature_rows,
+        emission_scores,
+        transitions,
+        boundary_scores,
+        candidates,
+        debug: request.debug,
+        is_mock: false,
     })
 }
 
@@ -1170,10 +1329,7 @@ pub async fn train_model(
 /// UIが表示する特徴量キー。両側の齟齬を防ぐため公開。
 #[tauri::command]
 pub fn display_feature_keys() -> Vec<String> {
-    DISPLAY_FEATURE_KEYS
-        .iter()
-        .map(|k| (*k).to_string())
-        .collect()
+    DISPLAY_FEATURE_KEYS.iter().map(|k| (*k).to_string()).collect()
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1278,37 +1434,7 @@ mod tests {
         assert!(report.truncated);
     }
 
-    #[test]
-    fn mock_prediction_is_well_formed() {
-        let tokens: Vec<String> = "きょうは".chars().map(|c| c.to_string()).collect();
-        let labels = mock_labels(&tokens);
-        assert_eq!(labels.len(), tokens.len());
-        assert!(labels[0].starts_with('B'));
-        // Particles become the start of a passthrough bunsetsu.
-        assert_eq!(labels[3], "B-P");
 
-        let bunsetsu = labels_to_bunsetsu(&tokens, &labels);
-        let rebuilt: String = bunsetsu.iter().map(|b| b.text.clone()).collect();
-        assert_eq!(rebuilt, "きょうは");
-    }
-
-    #[test]
-    fn flipping_a_boundary_changes_exactly_one_label() {
-        let base = vec![
-            "B-L".to_string(),
-            "I-L".to_string(),
-            "B-P".to_string(),
-            "B-L".to_string(),
-        ];
-        let flipped = flip_boundary(&base, 0);
-        assert_eq!(flipped.len(), base.len());
-        let differences = base
-            .iter()
-            .zip(flipped.iter())
-            .filter(|(a, b)| a != b)
-            .count();
-        assert_eq!(differences, 1);
-    }
 
     #[test]
     fn display_feature_keys_match_the_grid_order() {

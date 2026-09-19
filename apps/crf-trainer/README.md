@@ -13,28 +13,46 @@ PSKK IMEのCRF文節分割モデルを**訓練・テスト**するためのTauri
 
 ## Status / 実装状況
 
-This first pass delivers **the complete GUI plus the real non-CRF plumbing**.
-The CRF-dependent steps are mocked so the UI (including the canvas) can be
-designed and reviewed before the Python bridge exists.
+**No Python.** Feature extraction, training and prediction all run in-process in
+Rust: the CRF maths come from `crfsuite-compliant-rs` (a Rust port of CRFsuite
+0.12) and the features come from `pskk::util` — the same extractor the IME uses
+at runtime, so training and inference cannot drift apart.
 
 | Area | Command / feature | Status |
 | --- | --- | --- |
-| Environment probe (`python`, `pycrfsuite`) | `get_environment` | **Real** |
+| CRF engine | linked in, reported by `get_environment` | **Real (pure Rust)** |
 | Model discovery (`.crfsuite` scan) | `list_models` | **Real** |
 | Native file dialogs | `pick_corpus_file`, `pick_model_file`, `pick_save_file` | **Real** |
 | Corpus parsing + statistics | `load_corpus_report` | **Real** |
 | Features-TSV inspector | `inspect_feature_tsv` | **Real** |
 | Hyperparameter persistence | `load_training_params`, `save_training_params` | **Real** |
-| Feature extraction | `extract_features` | **MOCK** |
-| CRF training | `train_model` | **MOCK** |
-| Prediction (N-best) | `predict` | **MOCK** |
+| Feature extraction → TSV | `extract_features` | **Real** |
+| CRF training (L-BFGS) | `train_model` | **Real** |
+| Prediction (N-best + marginals) | `predict` | **Real** |
+| Overwrite guard for the live model | `check_model_target`, `confirm_model_overwrite` | **Real** |
 
-MOCK commands return well-formed synthetic payloads tagged `isMock: true`; the UI
-shows a purple `MOCK` badge wherever such data appears. Nothing is written to the
-model or features paths yet.
+Verified end-to-end on the repository corpus
+(`data/crf_training/wagahai_neko_dearu-mecab_processed.txt`, 300 train / 100 test
+sentences, real dictionary features): a model trained through this pipeline
+reaches **87.0 %** token accuracy on held-out sentences, with 23,171 features and
+16 transitions. The test lives in `src/crf.rs` as
+`real_corpus_pipeline_round_trip` and skips itself when the corpus is absent.
 
-モックコマンドは`isMock: true`を持つ合成データを返し、UIは紫色の`MOCK`バッジを
-表示する。モデルや特徴量ファイルはまだ書き込まれない。
+実コーパスでの統合テスト（300文で訓練・100文で評価、実辞書特徴量）で
+トークン精度**87.0%**を確認。テストは`src/crf.rs`の
+`real_corpus_pipeline_round_trip`。
+
+### Engine risk / エンジンのリスク
+
+`crfsuite-compliant-rs` is pinned to exactly `=0.4.2` on purpose (5 of its 7
+published versions have been yanked, and 0.4.x permits breaking changes). Its
+L-BFGS training and Viterbi inference were verified against the reference C
+implementation: models trained by both are **byte-identical**, and inference
+agrees on **100 %** of labels. Only L-BFGS is wired up for that reason — the
+port's online trainers deliberately use a different RNG stream.
+
+`crfsuite-compliant-rs`は`=0.4.2`に固定。L-BFGS訓練とViterbi推論は参照C実装と
+突き合わせ済み（訓練モデルはバイト単位で一致、推論ラベルは100%一致）。
 
 ---
 
@@ -123,7 +141,8 @@ apps/crf-trainer/
 │   └── src/
 │       ├── main.rs             # Builder + command registration
 │       ├── types.rs            # serde DTOs (mirrored in ui/src/types.ts)
-│       └── commands.rs         # Real plumbing + MOCK CRF commands
+│       ├── crf.rs              # CRF engine: model I/O, training, inference
+│       └── commands.rs         # Tauri commands (host plumbing + pipeline)
 └── ui/                         # React 18 + TypeScript + Vite
     └── src/
         ├── App.tsx             # Shell, sidebar, environment badges
@@ -148,27 +167,30 @@ apps/crf-trainer/
 The canvas view is driven by layered state (tokens, per-token emissions, the
 M×M transition matrix, N-best alternatives, hover/zoom). React keeps that in one
 place and redraws the canvas from a `useEffect` on state change, and the TS types
-catch payload mismatches that the Python code only guards against at runtime.
+catch payload mismatches that would otherwise only surface at runtime.
 
 ---
 
 ## Next steps / 次の作業
 
-The seam for the real implementation is deliberately narrow — three functions in
-`src-tauri/src/commands.rs`, each marked `MOCK`:
+The pipeline is complete and Python-free. What is left is mostly breadth:
 
-1. **Bridge or port the pipeline.** Either shell out to a Python sidecar
-   (`crf_core.run_feature_extraction`, `crf_core.train_model`,
-   `crf_core.test_prediction`) or port `crf_core.py` + the CRF maths to Rust.
-2. **Stream real progress.** The `crf-progress` event shape already carries
-   `stage`/`current`/`total`; forward the Python `progress_callback` into it.
-3. **Fill in the prediction payload.** `emission_scores`, `transitions` and
-   `boundary_scores` map 1:1 onto `util.crf_compute_emission_scores`,
-   `tagger.info().transitions` and the boundary marginals — the canvas needs no
-   changes once they are real.
+1. **More training algorithms.** Only L-BFGS is wired up (it is the parity-verified
+   one). The port also ships L2-SGD, averaged perceptron, passive-aggressive and
+   AROW; enabling them means accepting that they will not match the C reference,
+   because the port uses a different RNG stream for online trainers.
+2. **A golden test in CI.** Pin the crate and assert that training on a checked-in
+   fixture still reproduces a checked-in golden model byte-for-byte. That turns
+   "trust the dependency" into "verify the dependency" on every bump.
+3. **Cross-validation / accuracy reporting** in the Train tab, a **model diff**
+   view, and exporting the canvas as PNG.
+4. **Wiring the IME runtime.** `Convertor::with_crf_model` in `src/henkan.rs` is
+   still never called, so the IME currently converts dictionary-only. The model
+   reader in `src-tauri/src/crf.rs` shows exactly what that wiring needs; moving it
+   into the `pskk` library is the natural next step.
 
-Additional ideas noted while building: cross-validation/accuracy reporting in the
-Train tab, a diffs view between two models, and exporting the canvas as PNG.
+既知の残作業: 他アルゴリズムの配線、CIでのゴールデンテスト、交差検証表示、
+そして`with_crf_model`の配線（現状IMEは辞書のみで変換）。
 
 ---
 

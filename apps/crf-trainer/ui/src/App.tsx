@@ -63,14 +63,8 @@ export default function App() {
         </div>
 
         <div className="env-badges">
-          <span className={`env-badge ${env?.pythonAvailable ? "ok" : "bad"}`}>
-            {env?.pythonAvailable ? env.pythonVersion ?? "python ✓" : "python ✗"}
-          </span>
-          <span
-            className={`env-badge ${env?.pycrfsuiteAvailable ? "ok" : "bad"}`}
-            title={env?.crfsuiteVersion ? `crfsuite ${env.crfsuiteVersion}` : undefined}
-          >
-            {env?.pycrfsuiteAvailable ? "pycrfsuite ✓" : "pycrfsuite ✗"}
+          <span className="env-badge ok" title="Learning and testing run in-process; no interpreter is involved">
+            {env?.crfEngine ?? "CRF engine"}
           </span>
           <span className="env-badge neutral">{models.length} model(s)</span>
         </div>

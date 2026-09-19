@@ -305,13 +305,6 @@ export default function TrainView({ env, onReloadModels, onModelsChanged }: Trai
 
   return (
     <div className="view">
-      {env && !env.pycrfsuiteAvailable && (
-        <p className="alert alert-warn">
-          <strong>pycrfsuite was not found</strong>
-          {env.pythonAvailable && env.pythonVersion ? ` (${env.pythonVersion})` : ""}. Training will
-          fail until it is installed: <code>pip install python-crfsuite</code>
-        </p>
-      )}
       {error && <p className="alert alert-error">{error}</p>}
 
       {/* ── STEP 1: corpus ── */}
@@ -448,7 +441,6 @@ export default function TrainView({ env, onReloadModels, onModelsChanged }: Trai
             {extractResult.outputPath && (
               <span className="mono">{extractResult.outputPath}</span>
             )}
-            {extractResult.isMock && <span className="badge badge-mock">MOCK</span>}
           </div>
         )}
         {totalCorpusChars > 0 && (
@@ -486,11 +478,24 @@ export default function TrainView({ env, onReloadModels, onModelsChanged }: Trai
               onChange={(event) => setParams({ ...params, algorithm: event.target.value })}
             >
               <option value="lbfgs">lbfgs (L-BFGS)</option>
-              <option value="l2sgd">l2sgd</option>
-              <option value="ap">ap (averaged perceptron)</option>
-              <option value="pa">pa (passive aggressive)</option>
-              <option value="arow">arow</option>
+              <option value="l2sgd" disabled>
+                l2sgd — not wired up
+              </option>
+              <option value="ap" disabled>
+                ap — not wired up
+              </option>
+              <option value="pa" disabled>
+                pa — not wired up
+              </option>
+              <option value="arow" disabled>
+                arow — not wired up
+              </option>
             </select>
+            <p className="field-hint">
+              Only <code>lbfgs</code> is available: it is the configuration whose models were
+              verified byte-identical to the reference C implementation. The port's online trainers
+              use a different RNG stream by design, so they would not match.
+            </p>
           </div>
 
           <div className="field">
@@ -631,7 +636,7 @@ export default function TrainView({ env, onReloadModels, onModelsChanged }: Trai
               <span>{trainResult.featureCount.toLocaleString()} features</span>
             )}
             <span>{formatBytes(trainResult.modelSizeBytes)}</span>
-            {trainResult.isMock && <span className="badge badge-mock">MOCK</span>}
+            {trainResult.status && <span className="muted">{trainResult.status}</span>}
           </div>
         )}
       </PipelineStep>
@@ -648,9 +653,9 @@ export default function TrainView({ env, onReloadModels, onModelsChanged }: Trai
 
       <p className="muted footnote">
         After training, the produced model shows up in the <strong>Test</strong> tab model picker.
-        Backend status for this scaffold: feature extraction and training currently emit{" "}
-        <strong>mock</strong> results (no model file is written yet). Corpus parsing, statistics,
-        model discovery and the parameter store are real.
+        Learning and testing run in-process on {env?.crfEngine ?? "a pure-Rust CRF engine"} — no
+        Python, no interpreter, no subprocess. Features come from the same extractor the IME uses at
+        runtime, so training and inference cannot drift apart.
       </p>
     </div>
   );
