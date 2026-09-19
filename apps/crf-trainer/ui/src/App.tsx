@@ -53,23 +53,6 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <header className="app-header">
-        <div className="brand">
-          <span className="brand-mark">CRF</span>
-          <div>
-            <h1 className="brand-title">PSKK CRF Trainer</h1>
-            <p className="brand-sub">Bunsetsu segmentation — train &amp; test</p>
-          </div>
-        </div>
-
-        <div className="env-badges">
-          <span className="env-badge ok" title="Learning and testing run in-process; no interpreter is involved">
-            {env?.crfEngine ?? "CRF engine"}
-          </span>
-          <span className="env-badge neutral">{models.length} model(s)</span>
-        </div>
-      </header>
-
       <div className="app-body">
         <nav className="sidebar">
           {NAV.map((item) => (
@@ -119,6 +102,15 @@ export default function App() {
         </span>
         <span>
           Default features TSV: <span className="mono">{env?.defaultFeaturesPath ?? "—"}</span>
+        </span>
+        <span className="env-badges">
+          <span
+            className="env-badge ok"
+            title="Learning and testing run in-process; no interpreter is involved"
+          >
+            {env?.crfEngine ?? "CRF engine"}
+          </span>
+          <span className="env-badge neutral">{models.length} model(s)</span>
         </span>
         <span className="status-hint">
           <kbd>Esc</kbd> close

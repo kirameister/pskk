@@ -81,47 +81,12 @@ textarea {
   height: 100%;
 }
 
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 20px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius);
-  background: linear-gradient(135deg, var(--accent), #7c3aed);
-  color: #fff;
-  font-weight: 700;
-  font-size: 13px;
-  letter-spacing: 0.5px;
-}
-
-.brand-title {
-  font-size: 17px;
-}
-
-.brand-sub {
-  margin: 0;
-  font-size: 12px;
-  color: var(--muted);
-}
+/* The window title bar already carries the app name, so there is no in-app
+   header: the engine identity and model count live in the status bar instead. */
 
 .env-badges {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
@@ -231,6 +196,12 @@ textarea {
   align-items: center;
   gap: 4px;
   margin-left: auto;
+}
+
+/* Keep the badges from making the status bar taller than it needs to be. */
+.status-bar .env-badge {
+  padding: 1px 8px;
+  font-size: 10px;
 }
 
 kbd {

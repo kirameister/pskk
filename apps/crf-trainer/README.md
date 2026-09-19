@@ -145,7 +145,7 @@ apps/crf-trainer/
 │       └── commands.rs         # Tauri commands (host plumbing + pipeline)
 └── ui/                         # React 18 + TypeScript + Vite
     └── src/
-        ├── App.tsx             # Shell, sidebar, environment badges
+        ├── App.tsx             # Shell: sidebar, status bar, environment badges
         ├── api.ts              # Typed invoke/listen wrappers
         ├── types.ts            # TS mirrors of the Rust DTOs
         ├── styles.css
