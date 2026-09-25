@@ -177,11 +177,14 @@ _install-ibus-engine:
 # Internal: Install IBus component XML
 _install-ibus-component:
   @echo "  Registering IBus component..."
-  sudo mkdir -p /opt/pskk/share/icons
-  sudo cp packaging/icons/pskk.svg /opt/pskk/share/icons/pskk.svg
-  sudo mkdir -p /usr/share/icons/hicolor/scalable/apps
-  sudo cp packaging/icons/pskk.svg /usr/share/icons/hicolor/scalable/apps/pskk.svg
-  @sudo gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true
+  @if [ -f packaging/icons/pskk.svg ]; then \
+    sudo mkdir -p /opt/pskk/share/icons /usr/share/icons/hicolor/scalable/apps; \
+    sudo cp packaging/icons/pskk.svg /opt/pskk/share/icons/pskk.svg; \
+    sudo cp packaging/icons/pskk.svg /usr/share/icons/hicolor/scalable/apps/pskk.svg; \
+    sudo gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true; \
+  else \
+    echo "  ⚠ packaging/icons/pskk.svg not found - skipping IME icon"; \
+  fi
   sudo cp packaging/pskk.xml /usr/share/ibus/component/
   @echo "  ✓ IBus component registered (icon: /opt/pskk/share/icons/pskk.svg)"
 
