@@ -67,6 +67,9 @@ pub struct EngineOutput {
     pub marker_state: MarkerState,
     pub engine_state: EngineState,
     pub status: ProtoResponseStatus,
+    /// Set when the configured user dictionary editor trigger was pressed; the
+    /// client launches the dictionary editor in response.
+    pub open_dictionary_editor: bool,
 }
 
 impl EngineOutput {
@@ -86,6 +89,7 @@ impl EngineOutput {
             marker_state: MarkerState::Idle,
             engine_state: EngineState::Normal,
             status: ProtoResponseStatus::Ok,
+            open_dictionary_editor: false,
         }
     }
 
@@ -933,9 +937,13 @@ impl PSKKEngine {
         if let Some(keys) = self.config.get("user_dictionary_editor_trigger").and_then(|v| v.as_array()) {
             if self.matches_key_binding(&event, keys) {
                 debug!("Matched user_dictionary_editor_trigger");
-                // TODO: Implement dictionary editor trigger
-                // For now, just passthrough
-                return Some(EngineOutput::passthrough(self.mode));
+                // Consume the key combination (so it does not reach the
+                // application) and signal the client to launch the editor,
+                // preserving whatever preedit/conversion is on screen.
+                let mut output = self.build_current_output_passthrough();
+                output.consumed = true;
+                output.open_dictionary_editor = true;
+                return Some(output);
             }
         }
         
@@ -2378,6 +2386,58 @@ mod tests {
         engine.process_key_event(Some('f'), "f", false, None);
         let o = engine.process_key_event(None, "space", false, None);
         assert_eq!(o.engine_state, EngineState::ForcedPreedit);
+    }
+
+    fn mods(ctrl: bool, shift: bool) -> crate::grpc::proto::KeyModifiers {
+        crate::grpc::proto::KeyModifiers {
+            shift,
+            ctrl,
+            alt: false,
+            super_: false,
+        }
+    }
+
+    #[test]
+    fn dictionary_editor_trigger_sets_output_flag() {
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine.config["user_dictionary_editor_trigger"] = serde_json::json!(["Ctrl+Shift+R"]);
+
+        let output = engine.process_key_event(Some('r'), "r", true, Some(mods(true, true)));
+
+        assert!(
+            output.open_dictionary_editor,
+            "the trigger must ask the client to open the dictionary editor"
+        );
+        assert!(
+            output.consumed,
+            "the trigger key combination must not be passed through to the application"
+        );
+    }
+
+    #[test]
+    fn dictionary_editor_trigger_respects_config() {
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine.config["user_dictionary_editor_trigger"] = serde_json::json!(["Ctrl+Shift+D"]);
+
+        // The default binding is no longer active
+        let output = engine.process_key_event(Some('r'), "r", true, Some(mods(true, true)));
+        assert!(!output.open_dictionary_editor);
+
+        // The configured binding works
+        let output = engine.process_key_event(Some('d'), "d", true, Some(mods(true, true)));
+        assert!(output.open_dictionary_editor);
+    }
+
+    #[test]
+    fn dictionary_editor_trigger_empty_config_is_disabled() {
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine.config["user_dictionary_editor_trigger"] = serde_json::json!([]);
+
+        let output = engine.process_key_event(Some('r'), "r", true, Some(mods(true, true)));
+        assert!(!output.open_dictionary_editor);
     }
 
     /// Test engine in Hiragana mode with an explicit

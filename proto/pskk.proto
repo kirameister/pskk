@@ -143,6 +143,10 @@ message EngineOutput {
 
   // Response status (e.g. while henkan dictionary is still loading)
   ResponseStatus status = 11;
+
+  // Whether the client should launch the user dictionary editor. Set when the
+  // configured `user_dictionary_editor_trigger` key combination is pressed.
+  bool open_dictionary_editor = 12;
 }
 
 // A segment of preedit text

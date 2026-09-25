@@ -625,6 +625,12 @@ class PSKKEngine(IBus.Engine):
             self.commit_text(IBus.Text.new_from_string(output.commit_string))
             # Now hide preedit after commit
             self.hide_preedit_text()
+
+        # The engine signals when the configured dictionary-editor trigger
+        # (default Ctrl+Shift+R) was pressed.
+        if getattr(output, 'open_dictionary_editor', False):
+            logger.info("Dictionary editor trigger pressed - launching editor")
+            self._open_dictionary_editor()
         
         # Update candidates
         if output.show_candidates and output.candidates:
