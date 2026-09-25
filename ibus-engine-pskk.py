@@ -6,7 +6,7 @@ A thin wrapper that connects IBus to the PSKK Rust gRPC server.
 
 import gi
 gi.require_version('IBus', '1.0')
-from gi.repository import IBus, GLib
+from gi.repository import IBus, GLib, Gio
 import grpc
 import json
 import os
@@ -249,6 +249,17 @@ class PSKKEngine(IBus.Engine):
             symbol=IBus.Text.new_from_string('あ'),
             tooltip=IBus.Text.new_from_string('Input Mode')
         )
+
+        # Attach the PSKK icon so the panel/indicator shows it instead of the
+        # default icon (the component XML declares icon_prop_key=InputMode).
+        try:
+            icon_path = '/opt/pskk/share/icons/pskk.svg'
+            if Path(icon_path).exists():
+                mode_prop.set_icon(Gio.Icon.new_for_string(icon_path))
+            else:
+                mode_prop.set_icon(Gio.ThemedIcon.new_with_default_fallbacks('pskk'))
+        except Exception as e:
+            logger.warning(f"Could not set PSKK property icon: {e}")
         
         # Mode menu
         mode_menu = IBus.PropList()

@@ -143,9 +143,18 @@ if [[ "${PSKK_PREFIX}" != "${SYSTEM_BIN_DIR}" ]]; then
     fi
 fi
 
-# Install IBus component file (if exists)
+# Install IBus component file and icon (if they exist)
 if [ -f "packaging/pskk.xml" ]; then
     echo "Installing IBus component..."
+    if [ -f "packaging/icons/pskk.svg" ]; then
+        mkdir -p "${PSKK_PREFIX}/share/icons"
+        cp packaging/icons/pskk.svg "${PSKK_PREFIX}/share/icons/pskk.svg"
+        # Also install into the icon theme so the name 'pskk' resolves
+        mkdir -p /usr/share/icons/hicolor/scalable/apps
+        cp packaging/icons/pskk.svg /usr/share/icons/hicolor/scalable/apps/pskk.svg
+        gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true
+        echo "  ✓ IBus component icon installed"
+    fi
     cp packaging/pskk.xml "${PSKK_IBUS_COMPONENT_DIR}/"
     # Also install to system IBus location
     if [ -d "${SYSTEM_IBUS_COMPONENT_DIR}" ]; then

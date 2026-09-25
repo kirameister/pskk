@@ -177,8 +177,13 @@ _install-ibus-engine:
 # Internal: Install IBus component XML
 _install-ibus-component:
   @echo "  Registering IBus component..."
+  sudo mkdir -p /opt/pskk/share/icons
+  sudo cp packaging/icons/pskk.svg /opt/pskk/share/icons/pskk.svg
+  sudo mkdir -p /usr/share/icons/hicolor/scalable/apps
+  sudo cp packaging/icons/pskk.svg /usr/share/icons/hicolor/scalable/apps/pskk.svg
+  @sudo gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true
   sudo cp packaging/pskk.xml /usr/share/ibus/component/
-  @echo "  ✓ IBus component registered"
+  @echo "  ✓ IBus component registered (icon: /opt/pskk/share/icons/pskk.svg)"
 
 # Internal: Restart the IBus daemon. This is a *user session* command - it needs the desktop
 # session D-Bus, so it cannot work when run as root or from a shell without a session bus.
@@ -214,6 +219,9 @@ ibus-uninstall:
 _uninstall-ibus-component:
   @echo "  Removing IBus component..."
   sudo rm -f /usr/share/ibus/component/pskk.xml
+  sudo rm -f /usr/share/icons/hicolor/scalable/apps/pskk.svg
+  sudo rm -f /opt/pskk/share/icons/pskk.svg
+  sudo rmdir /opt/pskk/share/icons /opt/pskk/share 2>/dev/null || true
   @echo "  ✓ IBus component removed"
 
 # Internal: Remove IBus Python engine

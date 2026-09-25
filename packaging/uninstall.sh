@@ -28,6 +28,7 @@ echo "  ✓ Symlinks removed"
 echo "Removing IBus component..."
 rm -f "${SYSTEM_IBUS_COMPONENT_DIR}/pskk.xml"
 echo "  ✓ IBus component removed"
+rm -f /usr/share/icons/hicolor/scalable/apps/pskk.svg
 
 # Remove desktop files
 echo "Removing desktop files..."
