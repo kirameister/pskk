@@ -400,10 +400,14 @@ class PSKKEngine(IBus.Engine):
         except Exception as e:
             logger.error(f"Failed to open settings: {e}")
     
-    def _open_dictionary_editor(self):
-        """Open PSKK dictionary editor application"""
+    def _open_dictionary_editor(self, yomi=None):
+        """Open PSKK dictionary editor application, optionally pre-filling the
+        yomi (reading) field with the current preedit."""
         try:
-            subprocess.Popen(['/opt/pskk/bin/pskk-dictionary-editor'])
+            command = ['/opt/pskk/bin/pskk-dictionary-editor']
+            if yomi:
+                command += ['--yomi', yomi]
+            subprocess.Popen(command)
         except Exception as e:
             logger.error(f"Failed to open dictionary editor: {e}")
     
@@ -627,10 +631,12 @@ class PSKKEngine(IBus.Engine):
             self.hide_preedit_text()
 
         # The engine signals when the configured dictionary-editor trigger
-        # (default Ctrl+Shift+R) was pressed.
+        # (default Ctrl+Shift+R) was pressed, together with the current reading
+        # to pre-fill in the editor.
         if getattr(output, 'open_dictionary_editor', False):
-            logger.info("Dictionary editor trigger pressed - launching editor")
-            self._open_dictionary_editor()
+            yomi = getattr(output, 'dictionary_editor_yomi', '') or None
+            logger.info(f"Dictionary editor trigger pressed - launching editor (yomi={yomi!r})")
+            self._open_dictionary_editor(yomi)
         
         # Update candidates
         if output.show_candidates and output.candidates:

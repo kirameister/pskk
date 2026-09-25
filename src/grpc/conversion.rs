@@ -59,5 +59,6 @@ pub fn engine_output_to_proto(output: RustEngineOutput) -> EngineOutput {
         engine_state: engine_state as i32,
         status,
         open_dictionary_editor: output.open_dictionary_editor,
+        dictionary_editor_yomi: output.dictionary_editor_yomi,
     }
 }

@@ -13,21 +13,21 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\npskk.proto\x12\x04pskk\"\x07\n\x05\x45mpty\"i\n\x08KeyEvent\x12\x10\n\x08key_char\x18\x01 \x01(\t\x12\x10\n\x08key_name\x18\x02 \x01(\t\x12\x12\n\nis_pressed\x18\x03 \x01(\x08\x12%\n\tmodifiers\x18\x04 \x01(\x0b\x32\x12.pskk.KeyModifiers\"G\n\x0cKeyModifiers\x12\r\n\x05shift\x18\x01 \x01(\x08\x12\x0c\n\x04\x63trl\x18\x02 \x01(\x08\x12\x0b\n\x03\x61lt\x18\x03 \x01(\x08\x12\r\n\x05super\x18\x04 \x01(\x08\"/\n\x0eSetModeRequest\x12\x1d\n\x04mode\x18\x01 \x01(\x0e\x32\x0f.pskk.InputMode\"-\n\x0cModeResponse\x12\x1d\n\x04mode\x18\x01 \x01(\x0e\x32\x0f.pskk.InputMode\"%\n\x0e\x43onfigResponse\x12\x13\n\x0b\x63onfig_json\x18\x01 \x01(\t\"&\n\x16\x44ictionarySizeResponse\x12\x0c\n\x04size\x18\x01 \x01(\r\"\x9e\x03\n\x0c\x45ngineOutput\x12\x15\n\rcommit_string\x18\x01 \x01(\t\x12.\n\x10preedit_segments\x18\x02 \x03(\x0b\x32\x14.pskk.PreeditSegment\x12\x1a\n\x12preedit_cursor_pos\x18\x03 \x01(\r\x12#\n\ncandidates\x18\x04 \x03(\x0b\x32\x0f.pskk.Candidate\x12\x1c\n\x14\x63\x61ndidate_cursor_pos\x18\x05 \x01(\r\x12\x17\n\x0fshow_candidates\x18\x06 \x01(\x08\x12\x10\n\x08\x63onsumed\x18\x07 \x01(\x08\x12%\n\x0c\x63urrent_mode\x18\x08 \x01(\x0e\x32\x0f.pskk.InputMode\x12\'\n\x0cmarker_state\x18\t \x01(\x0e\x32\x11.pskk.MarkerState\x12\'\n\x0c\x65ngine_state\x18\n \x01(\x0e\x32\x11.pskk.EngineState\x12$\n\x06status\x18\x0b \x01(\x0e\x32\x14.pskk.ResponseStatus\x12\x1e\n\x16open_dictionary_editor\x18\x0c \x01(\x08\"3\n\x0ePreeditSegment\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x13\n\x0bis_selected\x18\x02 \x01(\x08\"-\n\tCandidate\x12\x0f\n\x07surface\x18\x01 \x01(\t\x12\x0f\n\x07reading\x18\x02 \x01(\t*+\n\tInputMode\x12\x10\n\x0c\x41LPHANUMERIC\x10\x00\x12\x0c\n\x08HIRAGANA\x10\x01*l\n\x0bMarkerState\x12\x08\n\x04IDLE\x10\x00\x12\x0f\n\x0bMARKER_HELD\x10\x01\x12\x11\n\rFIRST_PRESSED\x10\x02\x12\x12\n\x0e\x46IRST_RELEASED\x10\x03\x12\x1b\n\x17KANCHOKU_SECOND_PRESSED\x10\x04*K\n\x0b\x45ngineState\x12\n\n\x06NORMAL\x10\x00\x12\x0c\n\x08\x42UNSETSU\x10\x01\x12\x12\n\x0e\x46ORCED_PREEDIT\x10\x02\x12\x0e\n\nCONVERTING\x10\x03*0\n\x0eResponseStatus\x12\x06\n\x02OK\x10\x00\x12\x16\n\x12HENKAN_UNAVAILABLE\x10\x01\x32\x8a\x03\n\x0bPSKKService\x12\x30\n\nProcessKey\x12\x0e.pskk.KeyEvent\x1a\x12.pskk.EngineOutput\x12\x33\n\x07SetMode\x12\x14.pskk.SetModeRequest\x1a\x12.pskk.EngineOutput\x12*\n\x07GetMode\x12\x0b.pskk.Empty\x1a\x12.pskk.ModeResponse\x12+\n\x08\x46ocusOut\x12\x0b.pskk.Empty\x1a\x12.pskk.EngineOutput\x12!\n\x05Reset\x12\x0b.pskk.Empty\x1a\x0b.pskk.Empty\x12.\n\tGetConfig\x12\x0b.pskk.Empty\x1a\x14.pskk.ConfigResponse\x12(\n\x0cReloadConfig\x12\x0b.pskk.Empty\x1a\x0b.pskk.Empty\x12>\n\x11GetDictionarySize\x12\x0b.pskk.Empty\x1a\x1c.pskk.DictionarySizeResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\npskk.proto\x12\x04pskk\"\x07\n\x05\x45mpty\"i\n\x08KeyEvent\x12\x10\n\x08key_char\x18\x01 \x01(\t\x12\x10\n\x08key_name\x18\x02 \x01(\t\x12\x12\n\nis_pressed\x18\x03 \x01(\x08\x12%\n\tmodifiers\x18\x04 \x01(\x0b\x32\x12.pskk.KeyModifiers\"G\n\x0cKeyModifiers\x12\r\n\x05shift\x18\x01 \x01(\x08\x12\x0c\n\x04\x63trl\x18\x02 \x01(\x08\x12\x0b\n\x03\x61lt\x18\x03 \x01(\x08\x12\r\n\x05super\x18\x04 \x01(\x08\"/\n\x0eSetModeRequest\x12\x1d\n\x04mode\x18\x01 \x01(\x0e\x32\x0f.pskk.InputMode\"-\n\x0cModeResponse\x12\x1d\n\x04mode\x18\x01 \x01(\x0e\x32\x0f.pskk.InputMode\"%\n\x0e\x43onfigResponse\x12\x13\n\x0b\x63onfig_json\x18\x01 \x01(\t\"&\n\x16\x44ictionarySizeResponse\x12\x0c\n\x04size\x18\x01 \x01(\r\"\xbe\x03\n\x0c\x45ngineOutput\x12\x15\n\rcommit_string\x18\x01 \x01(\t\x12.\n\x10preedit_segments\x18\x02 \x03(\x0b\x32\x14.pskk.PreeditSegment\x12\x1a\n\x12preedit_cursor_pos\x18\x03 \x01(\r\x12#\n\ncandidates\x18\x04 \x03(\x0b\x32\x0f.pskk.Candidate\x12\x1c\n\x14\x63\x61ndidate_cursor_pos\x18\x05 \x01(\r\x12\x17\n\x0fshow_candidates\x18\x06 \x01(\x08\x12\x10\n\x08\x63onsumed\x18\x07 \x01(\x08\x12%\n\x0c\x63urrent_mode\x18\x08 \x01(\x0e\x32\x0f.pskk.InputMode\x12\'\n\x0cmarker_state\x18\t \x01(\x0e\x32\x11.pskk.MarkerState\x12\'\n\x0c\x65ngine_state\x18\n \x01(\x0e\x32\x11.pskk.EngineState\x12$\n\x06status\x18\x0b \x01(\x0e\x32\x14.pskk.ResponseStatus\x12\x1e\n\x16open_dictionary_editor\x18\x0c \x01(\x08\x12\x1e\n\x16\x64ictionary_editor_yomi\x18\r \x01(\t\"3\n\x0ePreeditSegment\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x13\n\x0bis_selected\x18\x02 \x01(\x08\"-\n\tCandidate\x12\x0f\n\x07surface\x18\x01 \x01(\t\x12\x0f\n\x07reading\x18\x02 \x01(\t*+\n\tInputMode\x12\x10\n\x0c\x41LPHANUMERIC\x10\x00\x12\x0c\n\x08HIRAGANA\x10\x01*l\n\x0bMarkerState\x12\x08\n\x04IDLE\x10\x00\x12\x0f\n\x0bMARKER_HELD\x10\x01\x12\x11\n\rFIRST_PRESSED\x10\x02\x12\x12\n\x0e\x46IRST_RELEASED\x10\x03\x12\x1b\n\x17KANCHOKU_SECOND_PRESSED\x10\x04*K\n\x0b\x45ngineState\x12\n\n\x06NORMAL\x10\x00\x12\x0c\n\x08\x42UNSETSU\x10\x01\x12\x12\n\x0e\x46ORCED_PREEDIT\x10\x02\x12\x0e\n\nCONVERTING\x10\x03*0\n\x0eResponseStatus\x12\x06\n\x02OK\x10\x00\x12\x16\n\x12HENKAN_UNAVAILABLE\x10\x01\x32\x8a\x03\n\x0bPSKKService\x12\x30\n\nProcessKey\x12\x0e.pskk.KeyEvent\x1a\x12.pskk.EngineOutput\x12\x33\n\x07SetMode\x12\x14.pskk.SetModeRequest\x1a\x12.pskk.EngineOutput\x12*\n\x07GetMode\x12\x0b.pskk.Empty\x1a\x12.pskk.ModeResponse\x12+\n\x08\x46ocusOut\x12\x0b.pskk.Empty\x1a\x12.pskk.EngineOutput\x12!\n\x05Reset\x12\x0b.pskk.Empty\x1a\x0b.pskk.Empty\x12.\n\tGetConfig\x12\x0b.pskk.Empty\x1a\x14.pskk.ConfigResponse\x12(\n\x0cReloadConfig\x12\x0b.pskk.Empty\x1a\x0b.pskk.Empty\x12>\n\x11GetDictionarySize\x12\x0b.pskk.Empty\x1a\x1c.pskk.DictionarySizeResponseb\x06proto3')
 
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'pskk_pb2', globals())
 if _descriptor._USE_C_DESCRIPTORS == False:
 
   DESCRIPTOR._options = None
-  _INPUTMODE._serialized_start=901
-  _INPUTMODE._serialized_end=944
-  _MARKERSTATE._serialized_start=946
-  _MARKERSTATE._serialized_end=1054
-  _ENGINESTATE._serialized_start=1056
-  _ENGINESTATE._serialized_end=1131
-  _RESPONSESTATUS._serialized_start=1133
-  _RESPONSESTATUS._serialized_end=1181
+  _INPUTMODE._serialized_start=933
+  _INPUTMODE._serialized_end=976
+  _MARKERSTATE._serialized_start=978
+  _MARKERSTATE._serialized_end=1086
+  _ENGINESTATE._serialized_start=1088
+  _ENGINESTATE._serialized_end=1163
+  _RESPONSESTATUS._serialized_start=1165
+  _RESPONSESTATUS._serialized_end=1213
   _EMPTY._serialized_start=20
   _EMPTY._serialized_end=27
   _KEYEVENT._serialized_start=29
@@ -43,11 +43,11 @@ if _descriptor._USE_C_DESCRIPTORS == False:
   _DICTIONARYSIZERESPONSE._serialized_start=344
   _DICTIONARYSIZERESPONSE._serialized_end=382
   _ENGINEOUTPUT._serialized_start=385
-  _ENGINEOUTPUT._serialized_end=799
-  _PREEDITSEGMENT._serialized_start=801
-  _PREEDITSEGMENT._serialized_end=852
-  _CANDIDATE._serialized_start=854
-  _CANDIDATE._serialized_end=899
-  _PSKKSERVICE._serialized_start=1184
-  _PSKKSERVICE._serialized_end=1578
+  _ENGINEOUTPUT._serialized_end=831
+  _PREEDITSEGMENT._serialized_start=833
+  _PREEDITSEGMENT._serialized_end=884
+  _CANDIDATE._serialized_start=886
+  _CANDIDATE._serialized_end=931
+  _PSKKSERVICE._serialized_start=1216
+  _PSKKSERVICE._serialized_end=1610
 # @@protoc_insertion_point(module_scope)

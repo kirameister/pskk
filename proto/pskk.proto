@@ -147,6 +147,10 @@ message EngineOutput {
   // Whether the client should launch the user dictionary editor. Set when the
   // configured `user_dictionary_editor_trigger` key combination is pressed.
   bool open_dictionary_editor = 12;
+
+  // Reading to pre-fill in the dictionary editor's yomi field (normally the
+  // current preedit). Only meaningful when `open_dictionary_editor` is true.
+  string dictionary_editor_yomi = 13;
 }
 
 // A segment of preedit text

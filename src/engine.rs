@@ -70,6 +70,8 @@ pub struct EngineOutput {
     /// Set when the configured user dictionary editor trigger was pressed; the
     /// client launches the dictionary editor in response.
     pub open_dictionary_editor: bool,
+    /// Reading to pre-fill in the dictionary editor (the current preedit).
+    pub dictionary_editor_yomi: String,
 }
 
 impl EngineOutput {
@@ -90,6 +92,7 @@ impl EngineOutput {
             engine_state: EngineState::Normal,
             status: ProtoResponseStatus::Ok,
             open_dictionary_editor: false,
+            dictionary_editor_yomi: String::new(),
         }
     }
 
@@ -939,10 +942,21 @@ impl PSKKEngine {
                 debug!("Matched user_dictionary_editor_trigger");
                 // Consume the key combination (so it does not reach the
                 // application) and signal the client to launch the editor,
-                // preserving whatever preedit/conversion is on screen.
+                // preserving whatever preedit/conversion is on screen. The
+                // current reading is handed over as the pre-fill value: while
+                // converting, the preedit shows the candidate surface, so the
+                // original reading is used instead.
+                let yomi = if self.engine_state == EngineState::Converting
+                    && !self.conversion_yomi.is_empty()
+                {
+                    self.conversion_yomi.clone()
+                } else {
+                    self.preedit_string.clone()
+                };
                 let mut output = self.build_current_output_passthrough();
                 output.consumed = true;
                 output.open_dictionary_editor = true;
+                output.dictionary_editor_yomi = yomi;
                 return Some(output);
             }
         }
@@ -2403,6 +2417,10 @@ mod tests {
         engine.set_mode(ProtoInputMode::Hiragana);
         engine.config["user_dictionary_editor_trigger"] = serde_json::json!(["Ctrl+Shift+R"]);
 
+        // Type a reading first: the preedit must be handed over as the yomi
+        engine.process_key_event(Some('a'), "a", true, None);
+        engine.process_key_event(Some('i'), "i", true, None);
+
         let output = engine.process_key_event(Some('r'), "r", true, Some(mods(true, true)));
 
         assert!(
@@ -2412,6 +2430,10 @@ mod tests {
         assert!(
             output.consumed,
             "the trigger key combination must not be passed through to the application"
+        );
+        assert_eq!(
+            output.dictionary_editor_yomi, "あい",
+            "the current preedit must be handed over as the dictionary editor yomi"
         );
     }
 

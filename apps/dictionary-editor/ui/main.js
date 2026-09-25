@@ -60,14 +60,26 @@ async function saveDictionaryToFile() {
 // Pre-fill form from clipboard and launch arguments
 async function prefillFromClipboardAndArgs() {
     try {
+        let prefillReading = null;
+        let prefillCandidate = null;
+
+        // Launch argument: the IME client passes the current preedit with
+        // --yomi when the dictionary editor is opened via the key combo.
+        try {
+            const launchYomi = await invoke('get_launch_yomi');
+            if (launchYomi && launchYomi.trim()) {
+                prefillReading = launchYomi.trim();
+                console.log('Pre-filled reading from launch arguments:', prefillReading);
+            }
+        } catch (err) {
+            console.log('Could not read launch arguments:', err);
+        }
+
         // Get launch arguments from window label (will be set by Rust backend)
         const appWindow = getCurrentWindow();
         const label = appWindow.label;
         
         // Parse label for prefill data (format: "dict-editor-reading:yomi-candidate:kanji")
-        let prefillReading = null;
-        let prefillCandidate = null;
-        
         if (label && label.startsWith('dict-editor-')) {
             const data = label.substring('dict-editor-'.length);
             const parts = data.split('-candidate:');
