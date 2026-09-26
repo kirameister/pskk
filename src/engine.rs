@@ -147,6 +147,11 @@ pub struct PSKKEngine {
     
     // Full configuration
     config: serde_json::Value,
+
+    /// Set when the input mode switches to direct input (Alphanumeric). The
+    /// server watches this to refresh the dictionary in the background, so the
+    /// IO-heavy reload happens while the user is not composing Japanese.
+    dictionary_reload_requested: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -328,6 +333,7 @@ impl PSKKEngine {
             pure_kanchoku_first_key: None,
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
+            dictionary_reload_requested: false,
         })
     }
 
@@ -387,6 +393,13 @@ impl PSKKEngine {
         self.mode = mode;
         self.reset_state();
 
+        // Switching to direct input is a good moment to refresh the dictionary
+        // in the background: the user is not composing Japanese right now, so
+        // the IO-heavy reload is invisible.
+        if mode == InputMode::Alphanumeric {
+            self.dictionary_reload_requested = true;
+        }
+
         // Update output to reflect the new mode
         output.current_mode = match mode {
             InputMode::Alphanumeric => ProtoInputMode::Alphanumeric,
@@ -399,6 +412,12 @@ impl PSKKEngine {
     /// Load the kana-to-kanji dictionary into the engine after startup.
     pub fn load_henkan_dictionary(&mut self, dictionary: crate::util::Dictionary) {
         self.henkan_processor.load_dictionary(dictionary);
+    }
+
+    /// Whether a dictionary reload was requested (the mode switched to direct
+    /// input). Reading this clears the request.
+    pub fn take_dictionary_reload_request(&mut self) -> bool {
+        std::mem::take(&mut self.dictionary_reload_requested)
     }
 
     /// Build an EngineOutput that tells the client the henkan dictionary is still loading.
@@ -2137,6 +2156,7 @@ mod tests {
             pure_kanchoku_first_key: None,
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
+            dictionary_reload_requested: false,
         }
     }
 
@@ -2189,6 +2209,7 @@ mod tests {
             pure_kanchoku_first_key: None,
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
+            dictionary_reload_requested: false,
         }
     }
 
@@ -2342,6 +2363,7 @@ mod tests {
             pure_kanchoku_first_key: None,
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
+            dictionary_reload_requested: false,
         }
     }
 
@@ -2460,6 +2482,42 @@ mod tests {
 
         let output = engine.process_key_event(Some('r'), "r", true, Some(mods(true, true)));
         assert!(!output.open_dictionary_editor);
+    }
+
+    #[test]
+    fn switching_to_direct_input_requests_dictionary_reload() {
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        // Switching to Hiragana must not request a reload
+        assert!(!engine.take_dictionary_reload_request());
+
+        // Switching to direct input does ...
+        engine.set_mode(ProtoInputMode::Alphanumeric);
+        assert!(engine.take_dictionary_reload_request());
+
+        // ... and taking the request clears it
+        assert!(!engine.take_dictionary_reload_request());
+    }
+
+    #[test]
+    fn redundant_mode_switch_does_not_request_reload() {
+        let mut engine = create_test_engine();
+        // The engine starts in direct input; switching to the same mode is a no-op
+        engine.set_mode(ProtoInputMode::Alphanumeric);
+        assert!(!engine.take_dictionary_reload_request());
+    }
+
+    #[test]
+    fn direct_input_via_key_requests_dictionary_reload() {
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+        let _ = engine.take_dictionary_reload_request();
+
+        // Muhenkan is the default disable_hiragana_key
+        engine.process_key_event(None, "Muhenkan", true, None);
+
+        assert!(engine.take_dictionary_reload_request());
     }
 
     /// Test engine in Hiragana mode with an explicit

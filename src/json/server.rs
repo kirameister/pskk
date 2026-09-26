@@ -62,8 +62,9 @@ pub async fn run_server(
     eprintln!("PSKK JSON server listening on {}", addr);
     loop {
         let (stream, _peer) = listener.accept().await?;
-        // Each connection gets a thin service handle around the shared engine.
-        let service = PSKKServiceImpl::from_engine(service.engine());
+        // Each connection gets a thin handle sharing the engine *and* the
+        // dictionary reload bookkeeping with the main service.
+        let service = service.clone();
         tokio::spawn(async move {
             if let Err(e) = handle_connection(stream, service).await {
                 eprintln!("JSON connection error: {}", e);
