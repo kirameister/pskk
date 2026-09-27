@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import logging
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -36,6 +37,30 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('pskk-ibus')
+
+# GUI helper apps are installed here by `just core-install`; $PATH is used as a
+# fallback (the install recipes also symlink them into /usr/local/bin).
+GUI_APP_DIR = '/opt/pskk/bin'
+# app key -> (binary name, justfile recipe, human-readable label)
+GUI_APPS = {
+    'settings': ('pskk-settings', 'settings-install', 'PSKK settings'),
+    'dictionary_editor': ('pskk-dictionary-editor', 'dict-editor-install', 'PSKK dictionary editor'),
+    'ime_tester': ('pskk-ime-tester', 'ime-tester-install', 'PSKK IME tester'),
+    'crf_trainer': ('pskk-crf-trainer', 'crf-trainer-install', 'PSKK CRF trainer'),
+}
+
+
+def find_gui_app(app):
+    """Path of an installed PSKK GUI app, or None.
+
+    The installation directory is checked first, then $PATH.
+    """
+    name = GUI_APPS[app][0]
+    for candidate in (os.path.join(GUI_APP_DIR, name), name):
+        path = shutil.which(candidate)
+        if path:
+            return path
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -393,37 +418,45 @@ class PSKKEngine(IBus.Engine):
             except Exception as e:
                 logger.error(f"SetMode error: {e}")
     
+    def _launch_gui_app(self, app, args=None):
+        """Launch an installed GUI app, logging an actionable error if missing.
+
+        A missing binary used to fail silently (the exception was swallowed into
+        the log), which made the corresponding menu entry look like it did
+        nothing at all.
+        """
+        name, recipe, label = GUI_APPS[app]
+        path = find_gui_app(app)
+        if path is None:
+            logger.error(
+                "%s is not installed: no %s in %s or $PATH. Install it with: just %s",
+                label, name, GUI_APP_DIR, recipe,
+            )
+            return
+
+        command = [path] + list(args or [])
+        try:
+            subprocess.Popen(command)
+            logger.info("Launched %s: %s", label, command)
+        except Exception as e:
+            logger.error("Failed to open %s: %s", label, e)
+
     def _open_settings(self):
         """Open PSKK settings application"""
-        try:
-            subprocess.Popen(['pskk-settings'])
-        except Exception as e:
-            logger.error(f"Failed to open settings: {e}")
-    
+        self._launch_gui_app('settings')
+
     def _open_dictionary_editor(self, yomi=None):
         """Open PSKK dictionary editor application, optionally pre-filling the
         yomi (reading) field with the current preedit."""
-        try:
-            command = ['/opt/pskk/bin/pskk-dictionary-editor']
-            if yomi:
-                command += ['--yomi', yomi]
-            subprocess.Popen(command)
-        except Exception as e:
-            logger.error(f"Failed to open dictionary editor: {e}")
-    
+        self._launch_gui_app('dictionary_editor', ['--yomi', yomi] if yomi else None)
+
     def _open_ime_tester(self):
         """Open PSKK IME tester application"""
-        try:
-            subprocess.Popen(['/opt/pskk/bin/pskk-ime-tester'])
-        except Exception as e:
-            logger.error(f"Failed to open IME tester: {e}")
-    
+        self._launch_gui_app('ime_tester')
+
     def _open_crf_trainer(self):
         """Open PSKK CRF trainer application"""
-        try:
-            subprocess.Popen(['/opt/pskk/bin/pskk-crf-trainer'])
-        except Exception as e:
-            logger.error(f"Failed to open CRF trainer: {e}")
+        self._launch_gui_app('crf_trainer')
     
     def do_process_key_event(self, keyval, keycode, state):
         """
