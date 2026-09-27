@@ -109,6 +109,9 @@ pub struct HenkanProcessor {
 
     passthrough_dictionary: PassThroughDictionary,
     passthrough_discount: f64,
+
+    /// How many CRF n-best bunsetsu-split predictions to keep for cycling.
+    bunsetsu_n_best: usize,
 }
 
 impl HenkanProcessor {
@@ -137,6 +140,7 @@ impl HenkanProcessor {
             ],
             passthrough_dictionary: PassThroughDictionary::default(),
             passthrough_discount: 0.09,
+            bunsetsu_n_best: 3,
         }
     }
 
@@ -163,16 +167,38 @@ impl HenkanProcessor {
         *self.ready.lock().unwrap() = true;
     }
 
-    pub fn with_crf_model(
-        mut self,
-        feature_materials: CrfFeatureMaterials,
-        state_features: StateFeatureWeights,
-        transitions: TransitionWeights,
-    ) -> Self {
-        self.crf_feature_materials = Some(feature_materials);
-        self.state_features = Some(state_features);
-        self.transitions = Some(transitions);
-        self
+    /// Install (or clear) the trained CRF model used for bunsetsu splitting.
+    /// Passing `None` clears it, disabling CRF prediction — the processor then
+    /// falls back to whole-word matches, pass-through candidates and plain
+    /// kana passthrough.
+    ///
+    /// The model's own label list/order is adopted, because the emission and
+    /// transition lookups are keyed by label.
+    pub fn set_crf_model(
+        &mut self,
+        materials: Option<CrfFeatureMaterials>,
+        weights: Option<crate::crf_model::CrfWeights>,
+    ) {
+        match (materials, weights) {
+            (Some(materials), Some(weights)) if weights.is_usable() => {
+                self.crf_feature_materials = Some(materials);
+                if !weights.labels.is_empty() {
+                    self.labels = weights.labels;
+                }
+                self.state_features = Some(weights.state_features);
+                self.transitions = Some(weights.transitions);
+            }
+            _ => {
+                self.crf_feature_materials = None;
+                self.state_features = None;
+                self.transitions = None;
+            }
+        }
+    }
+
+    /// Number of CRF n-best bunsetsu predictions to keep (at least 1).
+    pub fn set_bunsetsu_n_best(&mut self, n_best: usize) {
+        self.bunsetsu_n_best = n_best.max(1);
     }
 
     pub fn is_ready(&self) -> bool {
@@ -215,7 +241,7 @@ impl HenkanProcessor {
             self.has_whole_word_match = false;
             drop(dict);
             
-            let predictions = self.predict_bunsetsu(reading, 5);
+            let predictions = self.predict_bunsetsu(reading, self.bunsetsu_n_best);
             self.bunsetsu_predictions = predictions
                 .into_iter()
                 .filter(|p| self.is_multi_bunsetsu(&p.bunsetsu_list))
@@ -803,5 +829,61 @@ mod tests {
 
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].surface, "御店");
+    }
+
+    /// The CRF model shipped in the repository.
+    fn shipped_crf_weights() -> crate::crf_model::CrfWeights {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("data/crf_training/bunsetsu.crfsuite");
+        crate::crf_model::CrfWeights::load(&path).expect("shipped CRF model must decode")
+    }
+
+    /// Dictionary covering the words of 吾輩は猫である, so that the full reading
+    /// has no single-entry match and the CRF bunsetsu path is exercised.
+    fn wagahai_dictionary() -> Dictionary {
+        dict_with(&[
+            ("わがはい", "吾輩", 1),
+            ("ねこ", "猫", 1),
+            ("である", "である", 1),
+        ])
+    }
+
+    #[test]
+    fn crf_model_enables_bunsetsu_prediction_and_cycling() {
+        let dict = wagahai_dictionary();
+        let materials = crate::util::build_crf_feature_materials(&dict);
+
+        let mut processor = HenkanProcessor::new().with_dictionary(dict);
+        processor.set_crf_model(Some(materials), Some(shipped_crf_weights()));
+        processor.set_bunsetsu_n_best(5);
+
+        let candidates = processor.convert("わがはいはねこである").to_vec();
+
+        assert!(processor.is_bunsetsu_mode(), "CRF must split the reading into bunsetsu");
+        assert!(candidates[0].bunsetsu_mode);
+        assert!(processor.get_bunsetsu_count() >= 2, "expected at least two segments");
+
+        // Cycling must move to another n-best split
+        let first = candidates[0].surface.clone();
+        assert!(processor.cycle_bunsetsu_prediction(), "expected an alternative n-best split");
+        let cycled = processor.get_candidates()[0].surface.clone();
+        assert_ne!(first, cycled, "cycling must change the displayed split");
+    }
+
+    #[test]
+    fn clearing_crf_model_disables_bunsetsu_prediction() {
+        let dict = wagahai_dictionary();
+        let materials = crate::util::build_crf_feature_materials(&dict);
+
+        let mut processor = HenkanProcessor::new().with_dictionary(dict);
+        processor.set_crf_model(Some(materials), Some(shipped_crf_weights()));
+        assert!(processor.convert("わがはいはねこである").to_vec()[0].bunsetsu_mode);
+
+        // Without a model the same reading degrades to a kana passthrough
+        processor.set_crf_model(None, None);
+        let candidates = processor.convert("わがはいはねこである").to_vec();
+        assert_eq!(candidates.len(), 1);
+        assert!(candidates[0].passthrough);
+        assert!(!processor.is_bunsetsu_mode());
     }
 }

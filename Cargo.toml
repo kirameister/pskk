@@ -18,6 +18,10 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-uti
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 atty = "0.2"
+# Pure-Rust CRFsuite port, used to load trained bunsetsu-segmentation models.
+# Pinned exactly on purpose: 5 of its 7 published versions have been yanked and
+# 0.4.x allows breaking changes. Keep in sync with apps/crf-trainer.
+crfsuite-compliant-rs = { version = "=0.4.2", default-features = false }
 
 [build-dependencies]
 tonic-build = "0.11"

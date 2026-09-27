@@ -188,6 +188,16 @@ fn epoch_ms() -> u128 {
         .unwrap_or(0)
 }
 
+/// Number of CRF n-best bunsetsu predictions to keep, read from
+/// `bunsetsu_prediction_n_best` (default 3).
+fn bunsetsu_n_best_from_config(config: &serde_json::Value) -> usize {
+    config
+        .get("bunsetsu_prediction_n_best")
+        .and_then(|v| v.as_u64())
+        .map(|n| n.max(1) as usize)
+        .unwrap_or(3)
+}
+
 impl PSKKEngine {
     fn mode_switch_key_matches(configured: &str, incoming: &str) -> bool {
         if configured == incoming {
@@ -311,6 +321,7 @@ impl PSKKEngine {
             &get_user_config_dir().join("pass_through_dictionary.json"),
         );
         henkan_processor.load_passthrough_dictionary(passthrough_dict, passthrough_discount);
+        henkan_processor.set_bunsetsu_n_best(bunsetsu_n_best_from_config(&config));
 
         Ok(Self {
             mode: InputMode::Alphanumeric,
@@ -370,6 +381,10 @@ impl PSKKEngine {
         self.henkan_processor
             .load_passthrough_dictionary(passthrough_dict, passthrough_discount);
 
+        // Pick up bunsetsu-prediction settings too
+        let bunsetsu_n_best = bunsetsu_n_best_from_config(&self.config);
+        self.henkan_processor.set_bunsetsu_n_best(bunsetsu_n_best);
+
         info!("Config reloaded.");
 
         Ok(())
@@ -412,6 +427,17 @@ impl PSKKEngine {
     /// Load the kana-to-kanji dictionary into the engine after startup.
     pub fn load_henkan_dictionary(&mut self, dictionary: crate::util::Dictionary) {
         self.henkan_processor.load_dictionary(dictionary);
+    }
+
+    /// Install (or clear) the trained CRF bunsetsu-splitting model. Passing
+    /// `None` — e.g. when no trained model is installed — disables CRF
+    /// prediction; the engine then converts without bunsetsu splitting.
+    pub fn load_crf_model(
+        &mut self,
+        materials: Option<crate::util::CrfFeatureMaterials>,
+        weights: Option<crate::crf_model::CrfWeights>,
+    ) {
+        self.henkan_processor.set_crf_model(materials, weights);
     }
 
     /// Whether a dictionary reload was requested (the mode switched to direct
@@ -765,8 +791,19 @@ impl PSKKEngine {
                 // Space is always the bunsetsu marker. This is core to PSKK's
                 // input model and is deliberately NOT configurable: there is no
                 // config key for it (the former `kanchoku_bunsetsu_marker` was
-                // removed for that reason).
-                "space" | "Space" => return self.handle_space_press(key_char),
+                // removed for that reason). A Shift+Space combination IS
+                // configurable: `bunsetsu_prediction_cycle_key` cycles through
+                // the CRF n-best bunsetsu splits while converting.
+                "space" | "Space" => {
+                    if has_shift
+                        && self.engine_state == EngineState::Converting
+                        && self.henkan_processor.is_bunsetsu_mode()
+                        && self.matches_bunsetsu_cycle_key(key_char, key_name, has_shift)
+                    {
+                        return self.handle_bunsetsu_prediction_cycle();
+                    }
+                    return self.handle_space_press(key_char);
+                }
                 _ => {}
             }
         } else {
@@ -984,6 +1021,33 @@ impl PSKKEngine {
         None
     }
     
+    /// Whether the incoming key event matches the configured
+    /// `bunsetsu_prediction_cycle_key` binding (default `Shift+Space`).
+    fn matches_bunsetsu_cycle_key(
+        &self,
+        key_char: Option<char>,
+        key_name: &str,
+        has_shift: bool,
+    ) -> bool {
+        let Some(keys) = self
+            .config
+            .get("bunsetsu_prediction_cycle_key")
+            .and_then(|v| v.as_array())
+        else {
+            return false;
+        };
+        let modifiers = Modifiers {
+            ctrl: false,
+            alt: false,
+            shift: has_shift,
+            super_: false,
+        };
+        let Some(event) = KeyBinding::from_event(key_char, key_name, modifiers) else {
+            return false;
+        };
+        self.matches_key_binding(&event, keys)
+    }
+
     /// Does the incoming key event match any of the configured bindings?
     /// Legacy spellings (`Control+semicolon`, `BackSpace`) are handled by the
     /// parser, so configs written before the canonical format still work.
@@ -1853,6 +1917,25 @@ impl PSKKEngine {
         self.build_conversion_output()
     }
 
+    /// `bunsetsu_prediction_cycle_key` (default Shift+Space): cycle through the
+    /// CRF n-best bunsetsu-split predictions.
+    fn handle_bunsetsu_prediction_cycle(&mut self) -> EngineOutput {
+        debug!("Cycling bunsetsu prediction ({:?})", self.engine_state);
+
+        if !self.henkan_processor.cycle_bunsetsu_prediction() {
+            // No alternative split available: keep showing the current one.
+            return self.build_conversion_output();
+        }
+
+        // The processor refreshed the per-bunsetsu candidates; mirror the new
+        // split in the preedit surface.
+        let surface = self.henkan_processor.get_display_surface();
+        if !surface.is_empty() {
+            self.preedit_string = surface;
+        }
+        self.build_conversion_output()
+    }
+
     fn get_engine_state(&self) -> EngineState {
         self.engine_state
     }
@@ -2518,6 +2601,67 @@ mod tests {
         engine.process_key_event(None, "Muhenkan", true, None);
 
         assert!(engine.take_dictionary_reload_request());
+    }
+
+    /// Install the shipped CRF model into a test engine. The feature materials
+    /// are built from the same words the henkan tests use, so the n-best splits
+    /// differ visibly when cycling.
+    fn install_shipped_crf_model(engine: &mut PSKKEngine) {
+        let mut dict: crate::util::Dictionary = std::collections::HashMap::new();
+        for (reading, surface) in [("わがはい", "吾輩"), ("ねこ", "猫"), ("である", "である")] {
+            dict.insert(reading.to_string(), [(surface.to_string(), 1)].into_iter().collect());
+        }
+        // The engine's own dictionary must know the words too, otherwise every
+        // segment falls back to kana and different splits look identical.
+        engine.henkan_processor.load_dictionary(dict.clone());
+        let materials = crate::util::build_crf_feature_materials(&dict);
+        let model_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("data/crf_training/bunsetsu.crfsuite");
+        let weights = crate::crf_model::CrfWeights::load(&model_path).expect("shipped CRF model");
+        engine.load_crf_model(Some(materials), Some(weights));
+    }
+
+    #[test]
+    fn shift_space_cycles_bunsetsu_predictions() {
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine.config["bunsetsu_prediction_cycle_key"] = serde_json::json!(["Shift+Space"]);
+        engine.henkan_processor.set_bunsetsu_n_best(5);
+        install_shipped_crf_model(&mut engine);
+
+        // Seed the reading and start a conversion that lands in bunsetsu mode
+        engine.preedit_string = "わがはいはねこである".to_string();
+        engine.preedit_hiragana = engine.preedit_string.clone();
+        let start = engine.trigger_conversion();
+        assert!(
+            engine.henkan_processor.is_bunsetsu_mode(),
+            "expected the CRF to produce a bunsetsu split"
+        );
+        let first: String = start.preedit_segments.iter().map(|s| s.text.clone()).collect();
+
+        // Shift+Space (the configured cycle key) moves to the next n-best split
+        let out = engine.process_key_event(Some(' '), "space", true, Some(mods(false, true)));
+
+        assert!(out.consumed, "the cycle key must be consumed");
+        assert!(out.show_candidates, "the candidate window must stay open");
+        let cycled: String = out.preedit_segments.iter().map(|s| s.text.clone()).collect();
+        assert_ne!(first, cycled, "Shift+Space must cycle to another bunsetsu split");
+    }
+
+    #[test]
+    fn shift_space_without_bunsetsu_conversion_behaves_like_space() {
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine.config["bunsetsu_prediction_cycle_key"] = serde_json::json!(["Shift+Space"]);
+
+        // Outside a bunsetsu conversion, Shift+Space keeps the plain space
+        // behaviour (here: committing the pending preedit)
+        engine.process_key_event(Some('a'), "a", true, None);
+        engine.process_key_event(Some('i'), "i", true, None);
+        let out = engine.process_key_event(Some(' '), "space", true, Some(mods(false, true)));
+
+        assert!(out.consumed);
+        assert_eq!(out.commit_string, Some("あい".to_string()));
     }
 
     /// Test engine in Hiragana mode with an explicit

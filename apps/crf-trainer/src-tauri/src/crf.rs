@@ -17,7 +17,6 @@
 //! that look equivalent but differ by a separator — so there is deliberately
 //! only one implementation of them, shared by both sides.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crfsuite_compliant_rs::crf1d::encode::Crf1dEncoder;
@@ -34,11 +33,6 @@ use pskk::util::{
 /// Version string shown in the UI. Keep in sync with `Cargo.toml`.
 /// UIに表示するバージョン文字列。`Cargo.toml`と同期させること。
 pub const CRF_ENGINE: &str = "crfsuite-compliant-rs 0.4.2 (pure Rust)";
-
-/// Feature kind tags used by the model's feature tables.
-/// モデルの特徴量テーブルが使う種別タグ。
-const FEATURE_KIND_STATE: u32 = 0;
-const FEATURE_KIND_TRANSITION: u32 = 1;
 
 /// Canonical feature key order, matching the insertion order of
 /// `pskk::util::add_features_per_line`.
@@ -151,64 +145,23 @@ impl CrfModel {
     /// Load a CRFsuite model file into owned weight maps.
     ///
     /// モデルファイルを所有権付きの重みマップとして読み込む。
-    /// Enumerates the model the same way the crate's own `dump` does: state
-    /// features through the per-attribute refs, transitions through the
-    /// per-label refs (the header's feature count is always 0).
+    /// The decoding itself lives in the shared `pskk::crf_model` module, so the
+    /// trainer and the IME always agree on how a model is read.
     pub fn load(path: &Path) -> Result<Self, String> {
         let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
         Self::from_bytes(path.to_path_buf(), bytes)
     }
 
     pub fn from_bytes(path: PathBuf, bytes: Vec<u8>) -> Result<Self, String> {
-        let model = ModelReader::open(&bytes)
+        let weights = pskk::crf_model::CrfWeights::from_bytes(&bytes)
             .ok_or_else(|| format!("not a CRFsuite model: {}", path.display()))?;
-
-        let labels: Vec<String> = (0..model.num_labels())
-            .map(|id| model.to_label(id as i32).unwrap_or("?").to_string())
-            .collect();
-
-        let mut state_features: StateFeatureWeights = HashMap::new();
-        for aid in 0..model.num_attrs() as i32 {
-            let Some(attribute) = model.to_attr(aid) else {
-                continue;
-            };
-            for fid in model.get_attrref(aid) {
-                let Some(feature) = model.get_feature(fid) else {
-                    continue;
-                };
-                if feature.ftype != FEATURE_KIND_STATE {
-                    continue;
-                }
-                if let Some(label) = labels.get(feature.dst as usize) {
-                    state_features.insert((attribute.to_string(), label.clone()), feature.weight);
-                }
-            }
-        }
-
-        let mut transitions: TransitionWeights = HashMap::new();
-        for lid in 0..model.num_labels() as i32 {
-            for fid in model.get_labelref(lid) {
-                let Some(feature) = model.get_feature(fid) else {
-                    continue;
-                };
-                if feature.ftype != FEATURE_KIND_TRANSITION {
-                    continue;
-                }
-                if let (Some(from), Some(to)) = (
-                    labels.get(feature.src as usize),
-                    labels.get(feature.dst as usize),
-                ) {
-                    transitions.insert((from.clone(), to.clone()), feature.weight);
-                }
-            }
-        }
 
         Ok(Self {
             path,
             bytes,
-            labels,
-            state_features,
-            transitions,
+            labels: weights.labels,
+            state_features: weights.state_features,
+            transitions: weights.transitions,
         })
     }
 

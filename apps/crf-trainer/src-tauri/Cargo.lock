@@ -2775,6 +2775,7 @@ name = "pskk"
 version = "0.1.0"
 dependencies = [
  "atty",
+ "crfsuite-compliant-rs",
  "dirs 5.0.1",
  "prost",
  "prost-types",

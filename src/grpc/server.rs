@@ -6,6 +6,7 @@ use std::time::SystemTime;
 use tonic::{transport::Server, Request, Response, Status};
 use tracing::{debug, info};
 
+use crate::crf_model::CrfWeights;
 use crate::engine::PSKKEngine;
 use crate::grpc::conversion::engine_output_to_proto;
 use crate::grpc::proto::pskk_service_server::{PskkService, PskkServiceServer};
@@ -16,7 +17,10 @@ use crate::grpc::proto::{
 use crate::henkan::HenkanProcessor;
 use crate::kanchoku::KanchokuProcessor;
 use crate::simultaneous_processor::SimultaneousInputProcessor;
-use crate::util::{get_dictionary_files, load_and_merge_dictionary_files};
+use crate::util::{
+    get_crf_model_path, get_dictionary_files, get_user_config_dir, load_and_merge_dictionary_files,
+    load_crf_feature_materials,
+};
 
 /// (path, last-modified time) pairs describing the dictionary files used by a
 /// load. `None` mtime means the file did not exist.
@@ -155,9 +159,10 @@ impl PSKKServiceImpl {
         });
     }
 
-    /// Load, merge and install the dictionary. With `only_if_changed` the load
-    /// is skipped unless the dictionary files changed since the last successful
-    /// load, so a mode switch is usually just a few `stat` calls.
+    /// Load, merge and install the dictionary and the CRF bunsetsu model. With
+    /// `only_if_changed` the load is skipped unless one of the tracked files
+    /// changed since the last successful load, so a mode switch is usually just
+    /// a few `stat` calls.
     fn load_dictionary(
         engine: &Arc<Mutex<PSKKEngine>>,
         state: &Arc<DictionaryReloadState>,
@@ -165,26 +170,57 @@ impl PSKKServiceImpl {
     ) {
         let _guard = LoadingGuard(state.clone());
 
+        // The CRF model and its feature materials are tracked alongside the
+        // dictionary files, so retraining the model (or regenerating the
+        // materials) is picked up by the same reload trigger.
+        let dict_files = get_dictionary_files(None);
+        let crf_model_path = get_crf_model_path();
+        let crf_materials_path = get_user_config_dir().join("crf_feature_materials.json");
+        let mut tracked = dict_files.clone();
+        tracked.push(crf_model_path.clone());
+        tracked.push(crf_materials_path);
+
         // Snapshot *before* reading: a file modified while we load then still
         // differs from the recorded snapshot, so the next check reloads again.
-        let files = get_dictionary_files(None);
-        let snapshot = dictionary_file_snapshot(&files);
+        let snapshot = dictionary_file_snapshot(&tracked);
 
-        if only_if_changed && !state.files_changed(&files) {
-            debug!("Dictionary files unchanged; skipping reload");
+        if only_if_changed && !state.files_changed(&tracked) {
+            debug!("Dictionary/model files unchanged; skipping reload");
             return;
         }
 
-        match load_and_merge_dictionary_files(&files) {
-            Ok(dictionary) => match engine.lock() {
-                Ok(mut engine) => {
-                    engine.load_henkan_dictionary(dictionary);
-                    state.record(snapshot);
-                    info!("Dictionary loaded from {} file(s)", files.len());
-                }
-                Err(_) => eprintln!("Failed to lock engine to load dictionary"),
-            },
-            Err(e) => eprintln!("Failed to load dictionary: {}", e),
+        let dictionary = match load_and_merge_dictionary_files(&dict_files) {
+            Ok(dictionary) => dictionary,
+            Err(e) => {
+                eprintln!("Failed to load dictionary: {}", e);
+                return;
+            }
+        };
+
+        // A missing or invalid model is not an error: the engine simply runs
+        // without CRF bunsetsu prediction.
+        let crf_weights = CrfWeights::load(&crf_model_path);
+        let crf_loaded = crf_weights.is_some();
+        if !crf_loaded {
+            info!(
+                "No CRF model at {}; bunsetsu prediction disabled",
+                crf_model_path.display()
+            );
+        }
+        let crf_materials = load_crf_feature_materials(None).ok();
+
+        match engine.lock() {
+            Ok(mut engine) => {
+                engine.load_henkan_dictionary(dictionary);
+                engine.load_crf_model(crf_materials, crf_weights);
+                state.record(snapshot);
+                info!(
+                    "Dictionary loaded from {} file(s); CRF model {}",
+                    dict_files.len(),
+                    if crf_loaded { "loaded" } else { "absent" }
+                );
+            }
+            Err(_) => eprintln!("Failed to lock engine to load dictionary"),
         }
     }
 

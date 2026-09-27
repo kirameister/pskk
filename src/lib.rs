@@ -1,4 +1,5 @@
 pub mod engine;
+pub mod crf_model;
 pub mod henkan;
 pub mod kanchoku;
 pub mod katsuyou;
