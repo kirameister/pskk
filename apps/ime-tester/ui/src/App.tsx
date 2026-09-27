@@ -220,6 +220,8 @@ function App() {
       shift: e.shiftKey,
       ctrl: e.ctrlKey,
       alt: e.altKey,
+      // Super/Meta; must be present or the backend rejects the whole command
+      super_key: e.metaKey,
     };
 
     addLog(`Invoking backend: keyName="${keyName}" keyChar=${keyChar}`);

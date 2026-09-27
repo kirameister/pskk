@@ -9,9 +9,13 @@ use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyModifiers {
+    #[serde(default)]
     pub shift: bool,
+    #[serde(default)]
     pub ctrl: bool,
+    #[serde(default)]
     pub alt: bool,
+    #[serde(default)]
     pub super_key: bool,
 }
 

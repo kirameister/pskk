@@ -12,9 +12,16 @@ const RETRY_DELAY_MS: u64 = 500;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyModifiers {
+    #[serde(default)]
     pub shift: bool,
+    #[serde(default)]
     pub ctrl: bool,
+    #[serde(default)]
     pub alt: bool,
+    /// Super/Meta key. Defaults to false so a payload that omits it (older UI,
+    /// which used to fail the whole command with "missing field `super_key`")
+    /// still works.
+    #[serde(default)]
     pub super_key: bool,
 }
 
@@ -173,5 +180,34 @@ impl GrpcClientState {
             .get_dictionary_size()
             .await
             .map_err(|e| format!("gRPC error: {}", e))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: the UI used to send only shift/ctrl/alt, and Tauri rejected
+    /// every key event with "invalid args `modifiers` for command
+    /// `process_key`: missing field `super_key`".
+    #[test]
+    fn modifiers_payload_without_super_key_is_accepted() {
+        let modifiers: KeyModifiers =
+            serde_json::from_str(r#"{"shift":true,"ctrl":false,"alt":false}"#).unwrap();
+
+        assert!(modifiers.shift);
+        assert!(!modifiers.ctrl);
+        assert!(!modifiers.alt);
+        assert!(!modifiers.super_key);
+    }
+
+    #[test]
+    fn modifiers_payload_with_super_key_is_accepted() {
+        let modifiers: KeyModifiers =
+            serde_json::from_str(r#"{"shift":false,"ctrl":true,"alt":false,"super_key":true}"#)
+                .unwrap();
+
+        assert!(modifiers.ctrl);
+        assert!(modifiers.super_key);
     }
 }
