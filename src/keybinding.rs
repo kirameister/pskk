@@ -41,6 +41,9 @@ pub enum NamedKey {
     ArrowLeft,
     ArrowRight,
     Function(u8),
+    /// A bare modifier key (`Alt`, `Ctrl`, `Shift`, `Super`). Matched against
+    /// the framework's left/right key names (`Alt_L`, `Alt_R`, ...).
+    Modifier(Modifier),
 }
 
 impl NamedKey {
@@ -59,6 +62,7 @@ impl NamedKey {
                 out.push('F');
                 out.push_str(&n.to_string());
             }
+            NamedKey::Modifier(role) => role.push_str(out),
         }
     }
 }
@@ -151,7 +155,32 @@ impl KeyBinding {
 
     /// Does this configured binding refer to the same key event?
     pub fn matches(&self, event: &KeyBinding) -> bool {
-        self.modifiers == event.modifiers && self.key.matches(&event.key)
+        if !self.key.matches(&event.key) {
+            return false;
+        }
+
+        // A bare-modifier binding ignores its own modifier bit: frameworks
+        // report the modifier as already held on the modifier's own key event
+        // (e.g. `Alt_L` arrives with `alt = true`), and that bit is exactly
+        // what the binding names.
+        if let KeyToken::Named(NamedKey::Modifier(role)) = self.key {
+            let mut expected = self.modifiers;
+            let mut actual = event.modifiers;
+            role.clear(&mut expected);
+            role.clear(&mut actual);
+            return expected == actual;
+        }
+
+        self.modifiers == event.modifiers
+    }
+
+    /// When the binding's key is a bare modifier (`Alt`, `Ctrl`, ...), which
+    /// modifier it refers to.
+    pub fn modifier_role(&self) -> Option<Modifier> {
+        match self.key {
+            KeyToken::Named(NamedKey::Modifier(role)) => Some(role),
+            _ => None,
+        }
     }
 
     /// Canonical string form, e.g. `Ctrl+Shift+L`, `Ctrl+;`, `Ctrl+Space`.
@@ -186,11 +215,37 @@ pub fn normalize(spec: &str) -> Option<String> {
     KeyBinding::parse(spec).map(|binding| binding.canonical())
 }
 
-enum Modifier {
+/// The modifiers a binding can name. Public because a binding may use a bare
+/// modifier as its key (`Alt`, `Ctrl`, ...).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Modifier {
     Ctrl,
     Alt,
     Shift,
     Super,
+}
+
+impl Modifier {
+    /// Canonical spelling, as it appears in a binding string.
+    fn push_str(&self, out: &mut String) {
+        match self {
+            Modifier::Ctrl => out.push_str("Ctrl"),
+            Modifier::Alt => out.push_str("Alt"),
+            Modifier::Shift => out.push_str("Shift"),
+            Modifier::Super => out.push_str("Super"),
+        }
+    }
+
+    /// Zero this modifier's bit, so it can be ignored when comparing a
+    /// bare-modifier binding with its own key event.
+    fn clear(&self, modifiers: &mut Modifiers) {
+        match self {
+            Modifier::Ctrl => modifiers.ctrl = false,
+            Modifier::Alt => modifiers.alt = false,
+            Modifier::Shift => modifiers.shift = false,
+            Modifier::Super => modifiers.super_ = false,
+        }
+    }
 }
 
 fn modifier_from_name(name: &str) -> Option<Modifier> {
@@ -212,6 +267,9 @@ fn key_token(part: &str) -> Option<KeyToken> {
     if lower == "space" {
         return Some(KeyToken::Char(' '));
     }
+    if let Some(named) = modifier_key_token(&lower) {
+        return Some(KeyToken::Named(named));
+    }
     if let Some(named) = named_key(&lower) {
         return Some(KeyToken::Named(named));
     }
@@ -230,6 +288,21 @@ fn key_token(part: &str) -> Option<KeyToken> {
         (Some(c), None) => Some(KeyToken::Char(c)),
         _ => None,
     }
+}
+
+/// A bare modifier key, in every spelling that reaches us: the canonical name,
+/// the settings UI's `Control`/`Meta`, and the X11/IBus keyval names the client
+/// delivers (`Alt_L`, `Control_R`, ...).
+fn modifier_key_token(lower: &str) -> Option<NamedKey> {
+    let role = match lower {
+        "alt" | "option" | "opt" | "alt_l" | "alt_r" => Modifier::Alt,
+        "ctrl" | "control" | "ctl" | "control_l" | "control_r" => Modifier::Ctrl,
+        "shift" | "shift_l" | "shift_r" => Modifier::Shift,
+        "super" | "meta" | "cmd" | "command" | "win" | "windows" | "super_l" | "super_r"
+        | "meta_l" | "meta_r" => Modifier::Super,
+        _ => return None,
+    };
+    Some(NamedKey::Modifier(role))
 }
 
 fn named_key(lower: &str) -> Option<NamedKey> {
@@ -382,5 +455,73 @@ mod tests {
         assert!(KeyBinding::parse("Hyper+K").is_none());
         assert!(KeyBinding::parse("Ctrl+Frobnicate").is_none());
         assert!(KeyBinding::parse("Ctrl+").is_none());
+    }
+
+    #[test]
+    fn bare_modifier_bindings_parse_to_the_canonical_name() {
+        // The settings UI captures `Alt`/`Control`/`Shift`/`Meta`; the client
+        // delivers `Alt_L`, `Control_R`, ... - all mean the same binding.
+        assert_eq!(normalize("Alt").unwrap(), "Alt");
+        assert_eq!(normalize("Alt_L").unwrap(), "Alt");
+        assert_eq!(normalize("alt_r").unwrap(), "Alt");
+        assert_eq!(normalize("Control").unwrap(), "Ctrl");
+        assert_eq!(normalize("Control_R").unwrap(), "Ctrl");
+        assert_eq!(normalize("Shift").unwrap(), "Shift");
+        assert_eq!(normalize("Meta").unwrap(), "Super");
+        assert_eq!(normalize("Super_L").unwrap(), "Super");
+    }
+
+    #[test]
+    fn bare_modifier_binding_matches_its_own_key_event() {
+        let alt = Modifiers {
+            alt: true,
+            ..Default::default()
+        };
+        let binding = parse("Alt");
+
+        // Frameworks report the modifier as held on the modifier's own event
+        assert!(binding.matches(&event(None, "Alt_L", alt)));
+        assert!(binding.matches(&event(None, "Alt_R", alt)));
+
+        let ctrl = Modifiers {
+            ctrl: true,
+            ..Default::default()
+        };
+        assert!(!binding.matches(&event(None, "Control_L", ctrl)));
+        assert!(!binding.matches(&event(Some('k'), "k", alt)));
+    }
+
+    #[test]
+    fn bare_modifier_binding_still_respects_other_modifiers() {
+        let both = Modifiers {
+            ctrl: true,
+            alt: true,
+            ..Default::default()
+        };
+        let only_alt = Modifiers {
+            alt: true,
+            ..Default::default()
+        };
+
+        // "Ctrl+Alt" means: hold Ctrl, then tap Alt
+        let with_ctrl = parse("Ctrl+Alt");
+        assert!(with_ctrl.matches(&event(None, "Alt_L", both)));
+        assert!(!with_ctrl.matches(&event(None, "Alt_L", only_alt)));
+    }
+
+    #[test]
+    fn modifier_combinations_are_unaffected() {
+        let alt = Modifiers {
+            alt: true,
+            ..Default::default()
+        };
+
+        let with_key = parse("Alt+k");
+        assert_eq!(with_key.canonical(), "Alt+k");
+        assert!(with_key.matches(&event(Some('k'), "k", alt)));
+        assert!(with_key.modifier_role().is_none());
+
+        assert_eq!(parse("Alt").modifier_role(), Some(Modifier::Alt));
+        assert_eq!(parse("Ctrl+Alt").modifier_role(), Some(Modifier::Alt));
     }
 }

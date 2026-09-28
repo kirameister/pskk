@@ -59,6 +59,10 @@ pub struct SaveSettingsInput {
 pub struct SaveSettingsOutput {
     pub config_path: PathBuf,
     pub keybinding_conflicts: HashMap<String, Vec<String>>,
+    /// Non-blocking remarks, e.g. bindings that are shadowed while the
+    /// pure-kanchoku trigger is held.
+    #[serde(default)]
+    pub keybinding_warnings: Vec<String>,
 }
 
 pub fn list_available_layouts() -> Vec<DiscoveredFile> {
@@ -381,12 +385,82 @@ pub fn save_kanchoku_layout_mappings(
     Ok(resolved_path)
 }
 
+/// Config key holding the pure-kanchoku trigger binding(s).
+pub const PURE_KANCHOKU_TRIGGER_KEY: &str = "kanchoku_pure_trigger_key";
+
+/// A `kanchoku_pure_trigger_key` entry has to be a single bare modifier that the
+/// client can deliver to the engine: Ctrl, Alt or Shift. Anything else — a
+/// character key (whose own press the IME would swallow) or Super (which the
+/// client gives to the desktop) — is not usable as a trigger.
+fn pure_kanchoku_trigger_role(spec: &str) -> Option<crate::keybinding::Modifier> {
+    let binding = crate::keybinding::KeyBinding::parse(spec)?;
+    if binding.modifiers != crate::keybinding::Modifiers::default() {
+        return None;
+    }
+    match binding.modifier_role() {
+        None | Some(crate::keybinding::Modifier::Super) => None,
+        role => role,
+    }
+}
+
+/// Bindings of other actions that use the trigger's modifier. They keep working
+/// normally, but are shadowed while the trigger is held and a kanchoku first
+/// stroke is pressed.
+fn pure_kanchoku_shadowed_bindings(
+    trigger_keys: &[String],
+    bindings_by_action: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    use crate::keybinding::{KeyBinding, Modifier, Modifiers};
+
+    let mut warnings = Vec::new();
+    for spec in trigger_keys {
+        let Some(role) = pure_kanchoku_trigger_role(spec) else {
+            continue;
+        };
+        let trigger_modifiers = match role {
+            Modifier::Ctrl => Modifiers {
+                ctrl: true,
+                ..Default::default()
+            },
+            Modifier::Alt => Modifiers {
+                alt: true,
+                ..Default::default()
+            },
+            Modifier::Shift => Modifiers {
+                shift: true,
+                ..Default::default()
+            },
+            Modifier::Super => continue,
+        };
+
+        for (action, keys) in bindings_by_action {
+            if action == PURE_KANCHOKU_TRIGGER_KEY {
+                continue;
+            }
+            for key in keys {
+                let Some(binding) = KeyBinding::parse(key) else {
+                    continue;
+                };
+                if binding.modifiers == trigger_modifiers {
+                    warnings.push(format!(
+                        "{key} ({action}) is shadowed while the {spec} pure-kanchoku trigger is held"
+                    ));
+                }
+            }
+        }
+    }
+
+    warnings.sort();
+    warnings.dedup();
+    warnings
+}
+
 pub fn save_settings(
     current_config: &Value,
     input: SaveSettingsInput,
 ) -> Result<SaveSettingsOutput, UtilError> {
     let mut config = current_config.clone();
-    let (keybindings_by_action, keybinding_conflicts) = validate_keybindings(
+    let (keybindings_by_action, mut keybinding_conflicts) = validate_keybindings(
         &input
             .keybindings_by_action
             .iter()
@@ -394,10 +468,34 @@ pub fn save_settings(
             .collect::<Vec<_>>(),
     );
 
+    // `kanchoku_pure_trigger_key` accepts only a bare modifier; report anything
+    // else as a conflict so the settings app explains the rule instead of
+    // silently dropping it.
+    if let Some(trigger_keys) = keybindings_by_action.get(PURE_KANCHOKU_TRIGGER_KEY) {
+        for key in trigger_keys {
+            if pure_kanchoku_trigger_role(key).is_none() {
+                keybinding_conflicts
+                    .entry(key.clone())
+                    .or_default()
+                    .push("only a bare modifier key (Ctrl, Alt or Shift) is allowed".to_string());
+            }
+        }
+    }
+
+    // Other bindings on the same modifier are not an error — the trigger only
+    // shadows them while it is held — but the user should know.
+    let keybinding_warnings = keybindings_by_action
+        .get(PURE_KANCHOKU_TRIGGER_KEY)
+        .map(|trigger_keys| {
+            pure_kanchoku_shadowed_bindings(trigger_keys, &keybindings_by_action)
+        })
+        .unwrap_or_default();
+
     if !keybinding_conflicts.is_empty() {
         return Ok(SaveSettingsOutput {
             config_path: get_user_config_dir().join("config.json"),
             keybinding_conflicts,
+            keybinding_warnings,
         });
     }
 
@@ -443,6 +541,7 @@ pub fn save_settings(
     Ok(SaveSettingsOutput {
         config_path: get_user_config_dir().join("config.json"),
         keybinding_conflicts: HashMap::new(),
+        keybinding_warnings,
     })
 }
 
@@ -664,5 +763,45 @@ mod tests {
         assert_eq!(validate_positive_weight("3").unwrap(), 3);
         assert!(validate_positive_weight("0").is_err());
         assert!(validate_positive_weight("abc").is_err());
+    }
+
+    #[test]
+    fn pure_kanchoku_trigger_accepts_only_bare_modifiers() {
+        use crate::keybinding::Modifier;
+
+        // Both the spelling the settings UI captures and the keyval name the
+        // client delivers are accepted
+        assert_eq!(pure_kanchoku_trigger_role("Alt"), Some(Modifier::Alt));
+        assert_eq!(pure_kanchoku_trigger_role("Alt_L"), Some(Modifier::Alt));
+        assert_eq!(pure_kanchoku_trigger_role("Control"), Some(Modifier::Ctrl));
+        assert_eq!(pure_kanchoku_trigger_role("Shift"), Some(Modifier::Shift));
+
+        // Not usable as the pure-kanchoku trigger
+        assert_eq!(pure_kanchoku_trigger_role("Super"), None);
+        assert_eq!(pure_kanchoku_trigger_role("Meta"), None);
+        assert_eq!(pure_kanchoku_trigger_role("Alt+k"), None);
+        assert_eq!(pure_kanchoku_trigger_role("Ctrl+Alt"), None);
+        assert_eq!(pure_kanchoku_trigger_role("k"), None);
+        assert_eq!(pure_kanchoku_trigger_role(""), None);
+    }
+
+    #[test]
+    fn pure_kanchoku_warns_about_bindings_on_the_same_modifier() {
+        let mut bindings: HashMap<String, Vec<String>> = HashMap::new();
+        bindings.insert(PURE_KANCHOKU_TRIGGER_KEY.to_string(), vec!["Alt".to_string()]);
+        bindings.insert(
+            "force_commit_key".to_string(),
+            vec!["Alt+Return".to_string()],
+        );
+        bindings.insert("to_katakana".to_string(), vec!["Ctrl+l".to_string()]);
+
+        let warnings = pure_kanchoku_shadowed_bindings(
+            bindings.get(PURE_KANCHOKU_TRIGGER_KEY).unwrap(),
+            &bindings,
+        );
+
+        assert_eq!(warnings.len(), 1, "only the Alt binding is shadowed");
+        assert!(warnings[0].contains("Alt+Return"));
+        assert!(warnings[0].contains("force_commit_key"));
     }
 }

@@ -108,6 +108,20 @@ impl KanchokuProcessor {
         }
     }
 
+    /// The kanji defined for a two-stroke pair, or `None` when the pair is
+    /// absent or its value is empty (an empty layout value counts as "not
+    /// defined").
+    ///
+    /// Unlike [`Self::lookup_kanji`] this never falls back to the "missing"
+    /// sentinel, so a pair whose kanji really is `無` stays distinguishable.
+    pub fn lookup_kanji_exact(&self, first_key: char, second_key: char) -> Option<String> {
+        let row = self.layout.get(&first_key)?;
+        match row.get(&second_key) {
+            Some(kanji) if !kanji.is_empty() => Some(kanji.clone()),
+            _ => None,
+        }
+    }
+
     /// Cancel the current sequence and return any pending first stroke.
     pub fn cancel(&mut self) -> Option<char> {
         let first = self.first_stroke;

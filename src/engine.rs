@@ -5,7 +5,7 @@ use crate::grpc::proto::{
 };
 use crate::henkan::{Candidate, HenkanProcessor};
 use crate::kanchoku::KanchokuProcessor;
-use crate::keybinding::{KeyBinding, Modifiers};
+use crate::keybinding::{KeyBinding, Modifier, Modifiers};
 use crate::simultaneous_processor::SimultaneousInputProcessor;
 use crate::util::{get_config_data, get_layout_data, get_user_config_dir};
 use serde::{Deserialize, Serialize};
@@ -119,6 +119,14 @@ impl EngineOutput {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct PureKanchokuSnapshot {
+    preedit_string: String,
+    preedit_hiragana: String,
+    preedit_ascii: String,
+    preedit_pending: String,
+}
+
 pub struct PSKKEngine {
     mode: InputMode,
     
@@ -141,6 +149,13 @@ pub struct PSKKEngine {
     
     pure_kanchoku_held: bool,
     pure_kanchoku_first_key: Option<char>,
+    /// Preedit state captured when the pending first stroke was accepted, so an
+    /// abandoned first stroke can be undone without touching earlier input.
+    pure_kanchoku_snapshot: PureKanchokuSnapshot,
+    /// Key names whose press was swallowed while the trigger was held. Their
+    /// release must be swallowed too, otherwise the application would see a
+    /// key release for a press it never received.
+    pure_kanchoku_consumed_keys: std::collections::HashSet<String>,
     
     engine_state: EngineState,
     conversion_yomi: String,
@@ -342,6 +357,8 @@ impl PSKKEngine {
             preedit_before_marker: String::new(),
             pure_kanchoku_held: false,
             pure_kanchoku_first_key: None,
+            pure_kanchoku_snapshot: PureKanchokuSnapshot::default(),
+            pure_kanchoku_consumed_keys: std::collections::HashSet::new(),
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
             dictionary_reload_requested: false,
@@ -669,6 +686,201 @@ impl PSKKEngine {
         }
     }
 
+    // ------------------------------------------------------------------
+    // Pure kanchoku (`kanchoku_pure_trigger_key`)
+    //
+    // Holding the configured modifier turns the engine into a kanchoku-only
+    // input surface: a first+second stroke pair produces its kanji, anything
+    // that is not a kanchoku stroke stays with the application, and releasing
+    // the trigger abandons a pending first stroke. The trigger itself is never
+    // consumed, so the application keeps its modifier state and combinations
+    // like `Alt+p` still reach it.
+    // ------------------------------------------------------------------
+
+    /// Modifier roles configured as `kanchoku_pure_trigger_key`.
+    ///
+    /// Super is ignored: the client hands Super-held events to the desktop
+    /// before the engine ever sees them.
+    fn pure_kanchoku_trigger_roles(&self) -> Vec<Modifier> {
+        self.config
+            .get("kanchoku_pure_trigger_key")
+            .and_then(|v| v.as_array())
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter_map(|entry| entry.as_str())
+                    .filter_map(KeyBinding::parse)
+                    .filter(|binding| binding.modifiers == Modifiers::default())
+                    .filter_map(|binding| binding.modifier_role())
+                    .filter(|role| *role != Modifier::Super)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The configured trigger role for an incoming key event, if any.
+    fn pure_kanchoku_trigger_role(&self, key_name: &str, modifiers: Modifiers) -> Option<Modifier> {
+        let event = KeyBinding::from_event(None, key_name, modifiers)?;
+        let role = event.modifier_role()?;
+        self.pure_kanchoku_trigger_roles()
+            .contains(&role)
+            .then_some(role)
+    }
+
+    fn snapshot_preedit(&self) -> PureKanchokuSnapshot {
+        PureKanchokuSnapshot {
+            preedit_string: self.preedit_string.clone(),
+            preedit_hiragana: self.preedit_hiragana.clone(),
+            preedit_ascii: self.preedit_ascii.clone(),
+            preedit_pending: self.preedit_pending.clone(),
+        }
+    }
+
+    /// Undo a pending first stroke: restore the preedit exactly as it was when
+    /// that stroke was accepted. Earlier input (e.g. kanji appended by previous
+    /// pairs) is untouched, because the snapshot is taken per stroke.
+    fn abandon_pure_kanchoku_first_key(&mut self) {
+        let snapshot = std::mem::take(&mut self.pure_kanchoku_snapshot);
+        self.preedit_string = snapshot.preedit_string;
+        self.preedit_hiragana = snapshot.preedit_hiragana;
+        self.preedit_ascii = snapshot.preedit_ascii;
+        self.preedit_pending = snapshot.preedit_pending;
+        self.pure_kanchoku_first_key = None;
+    }
+
+    /// Trigger pressed: commit what is pending, then wait for strokes.
+    fn handle_pure_kanchoku_arm(&mut self) -> EngineOutput {
+        if self.pure_kanchoku_held {
+            // Already armed (e.g. the other Alt key): nothing to redo
+            return self.build_current_output_passthrough();
+        }
+
+        // Conversion mode commits the selected candidate (spec 3.b); a kana
+        // preedit in normal mode is committed as well, so the first stroke
+        // starts from a clean slate. Bunsetsu and forced-preedit modes keep
+        // their preedit, because resolved pairs are appended there.
+        let commit = match self.engine_state {
+            EngineState::Converting => Some(self.preedit_string.clone()),
+            EngineState::Normal if !self.preedit_string.is_empty() => {
+                Some(self.preedit_string.clone())
+            }
+            _ => None,
+        };
+
+        let mut output = match commit {
+            Some(text) => {
+                self.engine_state = EngineState::Normal;
+                self.conversion_yomi.clear();
+                self.henkan_processor.reset();
+                self.reset_preedit();
+                EngineOutput::commit(text, self.mode)
+            }
+            None => self.build_current_output_passthrough(),
+        };
+
+        self.pure_kanchoku_held = true;
+        self.pure_kanchoku_first_key = None;
+        self.pure_kanchoku_snapshot = PureKanchokuSnapshot::default();
+
+        // The trigger is never consumed: the application keeps its modifier
+        // state, which is what makes trigger+key combinations reach it (3.c).
+        output.consumed = false;
+        output
+    }
+
+    /// Trigger released: an unresolved first stroke is abandoned (spec 3.d).
+    fn handle_pure_kanchoku_disarm(&mut self) -> EngineOutput {
+        if self.pure_kanchoku_first_key.is_some() {
+            self.abandon_pure_kanchoku_first_key();
+        }
+        self.pure_kanchoku_held = false;
+
+        let mut output = self.build_current_output_passthrough();
+        // Both the trigger's press and its release reach the application.
+        output.consumed = false;
+        output
+    }
+
+    /// A character key pressed while the trigger is held.
+    fn handle_pure_kanchoku_key(&mut self, c: char, key_name: &str) -> EngineOutput {
+        let stroke = c.to_ascii_lowercase();
+
+        match self.pure_kanchoku_first_key {
+            // First stroke
+            None => {
+                if !self.kanchoku_processor.valid_keys().contains(&stroke) {
+                    // Not a kanchoku key: the combination goes to the app
+                    return self.build_current_output_passthrough();
+                }
+
+                // Restore point for an abandoned stroke (spec 3.d / 2.a)
+                self.pure_kanchoku_snapshot = self.snapshot_preedit();
+                self.pure_kanchoku_first_key = Some(stroke);
+                self.pure_kanchoku_consumed_keys.insert(key_name.to_string());
+
+                // Show the stroke, like the space-bar kanchoku does
+                self.append_pure_kanchoku_first_stroke_preedit(stroke);
+                self.build_preedit_output()
+            }
+            // Second stroke
+            Some(first) => {
+                // The second stroke must be defined for *this* first stroke; an
+                // empty layout value counts as not defined.
+                let kanji = if self
+                    .kanchoku_processor
+                    .second_stroke_keys(first)
+                    .contains(&stroke)
+                {
+                    self.kanchoku_processor.lookup_kanji_exact(first, stroke)
+                } else {
+                    None
+                };
+
+                let Some(kanji) = kanji else {
+                    // Drop the first stroke and hand the second key back to the
+                    // application. It is not retried as a first stroke.
+                    self.abandon_pure_kanchoku_first_key();
+                    return self.build_current_output_passthrough();
+                };
+
+                self.pure_kanchoku_consumed_keys.insert(key_name.to_string());
+                self.abandon_pure_kanchoku_first_key();
+
+                match self.engine_state {
+                    // Normal mode: the pair's kanji is committed
+                    EngineState::Normal => {
+                        let mut output = EngineOutput::commit(kanji, self.mode);
+                        output.consumed = true;
+                        output
+                    }
+                    // Bunsetsu and forced preedit: appended to the preedit
+                    _ => {
+                        self.preedit_string.push_str(&kanji);
+                        self.preedit_hiragana.push_str(&kanji);
+                        self.build_preedit_output()
+                    }
+                }
+            }
+        }
+    }
+
+    /// Show a first stroke the way the space-bar kanchoku does, by running it
+    /// through the ordinary kana layout.
+    fn append_pure_kanchoku_first_stroke_preedit(&mut self, stroke: char) {
+        let (output, pending) = self
+            .simul_processor
+            .get_layout_output(&self.preedit_pending, &stroke.to_string(), true);
+
+        self.preedit_ascii.push(stroke);
+        if let Some(out) = output {
+            if !out.is_empty() {
+                self.preedit_hiragana.push_str(&out);
+            }
+        }
+        self.preedit_pending = pending.unwrap_or_default();
+        self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
+    }
+
     fn process_hiragana_mode_key(
         &mut self,
         key_char: Option<char>,
@@ -683,6 +895,47 @@ impl PSKKEngine {
         trace!("process_hiragana_mode_key: key_name='{}', is_pressed={}, engine_state={:?}",
                   key_name, is_pressed, self.engine_state);
         
+        // `kanchoku_pure_trigger_key` comes first: the trigger is itself a
+        // modifier key, and while it is held the engine only claims kanchoku
+        // strokes. The trigger's own events are never consumed.
+        let event_modifiers = Modifiers {
+            ctrl: has_ctrl,
+            alt: has_alt,
+            shift: has_shift,
+            super_: false,
+        };
+        if self
+            .pure_kanchoku_trigger_role(key_name, event_modifiers)
+            .is_some()
+        {
+            return if is_pressed {
+                self.handle_pure_kanchoku_arm()
+            } else {
+                self.handle_pure_kanchoku_disarm()
+            };
+        }
+
+        // A release of a key whose press was swallowed while the trigger was
+        // held is swallowed as well: the application must never see a release
+        // without the matching press.
+        if !is_pressed && self.pure_kanchoku_consumed_keys.contains(key_name) {
+            self.pure_kanchoku_consumed_keys.remove(key_name);
+            let mut output = self.build_current_output_passthrough();
+            output.consumed = true;
+            return output;
+        }
+
+        if self.pure_kanchoku_held {
+            if is_pressed {
+                if let Some(c) = key_char {
+                    return self.handle_pure_kanchoku_key(c, key_name);
+                }
+            }
+            // Everything else stays transparent while the trigger is held: the
+            // IME does not act on it and the application receives the event.
+            return self.build_current_output_passthrough();
+        }
+
         // Handle Ctrl/Alt combos - check for PSKK commands first
         // But ignore if the key itself is a modifier key (Ctrl, Alt, Shift, etc.)
         let is_modifier_key = matches!(key_name,
@@ -2052,6 +2305,8 @@ impl PSKKEngine {
         self.preedit_before_marker.clear();
         self.pure_kanchoku_held = false;
         self.pure_kanchoku_first_key = None;
+        self.pure_kanchoku_snapshot = PureKanchokuSnapshot::default();
+        self.pure_kanchoku_consumed_keys.clear();
         self.engine_state = EngineState::Normal;
         self.conversion_yomi.clear();
         self.henkan_processor.reset();
@@ -2237,6 +2492,8 @@ mod tests {
             preedit_before_marker: String::new(),
             pure_kanchoku_held: false,
             pure_kanchoku_first_key: None,
+            pure_kanchoku_snapshot: PureKanchokuSnapshot::default(),
+            pure_kanchoku_consumed_keys: std::collections::HashSet::new(),
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
             dictionary_reload_requested: false,
@@ -2290,6 +2547,8 @@ mod tests {
             preedit_before_marker: String::new(),
             pure_kanchoku_held: false,
             pure_kanchoku_first_key: None,
+            pure_kanchoku_snapshot: PureKanchokuSnapshot::default(),
+            pure_kanchoku_consumed_keys: std::collections::HashSet::new(),
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
             dictionary_reload_requested: false,
@@ -2444,6 +2703,8 @@ mod tests {
             preedit_before_marker: String::new(),
             pure_kanchoku_held: false,
             pure_kanchoku_first_key: None,
+            pure_kanchoku_snapshot: PureKanchokuSnapshot::default(),
+            pure_kanchoku_consumed_keys: std::collections::HashSet::new(),
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
             dictionary_reload_requested: false,
@@ -3073,5 +3334,288 @@ mod tests {
 
         let _output = engine.process_key_event(None, "Muhenkan", true, None);
         assert_eq!(engine.get_mode(), ProtoInputMode::Alphanumeric);
+    }
+
+    // ------------------------------------------------------------------
+    // Pure kanchoku (`kanchoku_pure_trigger_key`)
+    // ------------------------------------------------------------------
+
+    fn alt_mods() -> Option<crate::grpc::proto::KeyModifiers> {
+        Some(crate::grpc::proto::KeyModifiers {
+            shift: false,
+            ctrl: false,
+            alt: true,
+            super_: false,
+        })
+    }
+
+    /// Hiragana engine with a synthetic kanchoku layout, a kana layout for the
+    /// first-stroke feedback, and `Alt` as the pure kanchoku trigger.
+    fn create_pure_kanchoku_engine() -> PSKKEngine {
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+
+        let kanchoku_layout = crate::kanchoku::parse_kanchoku_layout(&serde_json::json!({
+            "k": { "a": "日", "i": "月" },
+            "s": { "a": "本" },
+        }))
+        .expect("synthetic kanchoku layout");
+        engine.kanchoku_processor = KanchokuProcessor::new(Some(kanchoku_layout));
+
+        engine.simul_processor = SimultaneousInputProcessor::new(Some(vec![
+            ("a".to_string(), "あ".to_string(), "".to_string(), None),
+            ("k".to_string(), "い".to_string(), "".to_string(), None),
+            ("s".to_string(), "と".to_string(), "".to_string(), None),
+        ]));
+
+        engine.config["kanchoku_pure_trigger_key"] = serde_json::json!(["Alt"]);
+        engine
+    }
+
+    fn arm(engine: &mut PSKKEngine) -> EngineOutput {
+        engine.process_key_event(None, "Alt_L", true, alt_mods())
+    }
+
+    fn disarm(engine: &mut PSKKEngine) -> EngineOutput {
+        engine.process_key_event(None, "Alt_L", false, alt_mods())
+    }
+
+    fn press(engine: &mut PSKKEngine, c: char) -> EngineOutput {
+        let name = c.to_string();
+        engine.process_key_event(Some(c), &name, true, alt_mods())
+    }
+
+    fn release(engine: &mut PSKKEngine, c: char) -> EngineOutput {
+        let name = c.to_string();
+        engine.process_key_event(Some(c), &name, false, alt_mods())
+    }
+
+    #[test]
+    fn pure_kanchoku_pair_commits_kanji_in_normal_mode() {
+        let mut engine = create_pure_kanchoku_engine();
+
+        let triggering = arm(&mut engine);
+        assert!(!triggering.consumed, "the trigger must reach the application");
+        assert_eq!(triggering.commit_string, None);
+
+        let first = press(&mut engine, 'k');
+        assert!(first.consumed);
+        assert_eq!(preedit_text(&first), "い", "the first stroke is visible");
+
+        let second = press(&mut engine, 'a');
+        assert!(second.consumed);
+        assert_eq!(second.commit_string.as_deref(), Some("日"));
+        assert_eq!(preedit_text(&second), "", "the kana is replaced by the kanji");
+    }
+
+    #[test]
+    fn pure_kanchoku_handles_several_pairs_while_held() {
+        let mut engine = create_pure_kanchoku_engine();
+        arm(&mut engine);
+
+        press(&mut engine, 'k');
+        assert_eq!(press(&mut engine, 'a').commit_string.as_deref(), Some("日"));
+        release(&mut engine, 'k');
+        release(&mut engine, 'a');
+
+        // Still armed: a second pair works without re-pressing the trigger
+        press(&mut engine, 'k');
+        assert_eq!(press(&mut engine, 'i').commit_string.as_deref(), Some("月"));
+    }
+
+    #[test]
+    fn pure_kanchoku_undefined_first_stroke_passes_through() {
+        let mut engine = create_pure_kanchoku_engine();
+        arm(&mut engine);
+
+        let output = press(&mut engine, 'p');
+        assert!(!output.consumed, "a non-kanchoku key goes to the application");
+        assert_eq!(output.commit_string, None);
+        assert_eq!(preedit_text(&output), "");
+
+        // The application saw the press, so it sees the release too
+        assert!(!release(&mut engine, 'p').consumed);
+    }
+
+    #[test]
+    fn pure_kanchoku_undefined_second_stroke_abandons_first_stroke() {
+        let mut engine = create_pure_kanchoku_engine();
+        arm(&mut engine);
+        assert_eq!(preedit_text(&press(&mut engine, 'k')), "い");
+
+        // 'p' is no second stroke for 'k': drop the first stroke, hand the key
+        // to the application (spec 2.a)
+        let second = press(&mut engine, 'p');
+        assert!(!second.consumed);
+        assert_eq!(second.commit_string, None);
+        assert_eq!(preedit_text(&second), "", "the first stroke is undone");
+    }
+
+    #[test]
+    fn pure_kanchoku_second_stroke_of_another_pair_is_not_reused_as_first() {
+        let mut engine = create_pure_kanchoku_engine();
+        arm(&mut engine);
+        press(&mut engine, 'k');
+
+        // 's' is a first stroke in the layout, but not a second stroke for 'k'
+        let second = press(&mut engine, 's');
+        assert!(!second.consumed, "spec 2.a: the combination goes to the app");
+        assert_eq!(preedit_text(&second), "", "and is not retried as a first stroke");
+    }
+
+    #[test]
+    fn pure_kanchoku_commits_selected_candidate_in_conversion_mode() {
+        let mut engine = create_pure_kanchoku_engine();
+        engine.engine_state = EngineState::Converting;
+        engine.preedit_string = "愛".to_string();
+        engine.conversion_yomi = "あい".to_string();
+
+        let output = arm(&mut engine);
+        assert_eq!(
+            output.commit_string.as_deref(),
+            Some("愛"),
+            "3.b: the selected candidate is committed"
+        );
+        assert!(!output.consumed, "the trigger tap still reaches the application");
+        assert_eq!(engine.engine_state, EngineState::Normal);
+        assert!(engine.preedit_string.is_empty());
+
+        // The engine now waits for a first stroke
+        assert_eq!(preedit_text(&press(&mut engine, 'k')), "い");
+    }
+
+    #[test]
+    fn pure_kanchoku_tap_does_not_consume_the_trigger() {
+        let mut engine = create_pure_kanchoku_engine();
+
+        let pressed = arm(&mut engine);
+        assert!(!pressed.consumed);
+        assert_eq!(pressed.commit_string, None);
+
+        let released = disarm(&mut engine);
+        assert!(!released.consumed);
+        assert!(!engine.pure_kanchoku_held);
+    }
+
+    #[test]
+    fn pure_kanchoku_abandoned_first_stroke_is_undone_on_trigger_release() {
+        let mut engine = create_pure_kanchoku_engine();
+        arm(&mut engine);
+        assert_eq!(preedit_text(&press(&mut engine, 'k')), "い");
+
+        let released = disarm(&mut engine);
+        assert!(!released.consumed, "the trigger release reaches the application");
+        assert_eq!(preedit_text(&released), "", "3.d: the first stroke is ignored");
+        assert!(engine.pure_kanchoku_first_key.is_none());
+    }
+
+    #[test]
+    fn pure_kanchoku_swallows_releases_of_consumed_keys() {
+        let mut engine = create_pure_kanchoku_engine();
+        arm(&mut engine);
+        assert!(press(&mut engine, 'k').consumed);
+
+        // The application never saw the press, so it must not see the release
+        let released = release(&mut engine, 'k');
+        assert!(released.consumed, "the orphan release is swallowed");
+        assert_eq!(preedit_text(&released), "い", "the preedit stays visible");
+    }
+
+    #[test]
+    fn pure_kanchoku_appends_in_bunsetsu_and_forced_preedit_modes() {
+        for state in [EngineState::Bunsetsu, EngineState::ForcedPreedit] {
+            let mut engine = create_pure_kanchoku_engine();
+            engine.engine_state = state;
+            engine.preedit_string = "あ".to_string();
+            engine.preedit_hiragana = "あ".to_string();
+
+            let armed = arm(&mut engine);
+            assert_eq!(armed.commit_string, None, "{state:?}: the preedit is kept");
+            assert_eq!(preedit_text(&armed), "あ");
+
+            press(&mut engine, 'k');
+            let second = press(&mut engine, 'a');
+            assert_eq!(second.commit_string, None, "{state:?}: the kanji is appended");
+            assert_eq!(preedit_text(&second), "あ日");
+        }
+    }
+
+    #[test]
+    fn pure_kanchoku_empty_layout_value_is_not_defined() {
+        let mut engine = create_pure_kanchoku_engine();
+        let layout = crate::kanchoku::parse_kanchoku_layout(&serde_json::json!({
+            "k": { "a": "" },
+        }))
+        .expect("layout");
+        engine.kanchoku_processor = KanchokuProcessor::new(Some(layout));
+        arm(&mut engine);
+
+        press(&mut engine, 'k');
+        let second = press(&mut engine, 'a');
+        assert!(!second.consumed, "G10: an empty value counts as undefined");
+        assert_eq!(preedit_text(&second), "");
+    }
+
+    #[test]
+    fn pure_kanchoku_non_character_keys_stay_transparent() {
+        let mut engine = create_pure_kanchoku_engine();
+        engine.engine_state = EngineState::Bunsetsu;
+        engine.preedit_string = "あ".to_string();
+        engine.preedit_hiragana = "あ".to_string();
+        arm(&mut engine);
+
+        let output = engine.process_key_event(None, "Return", true, alt_mods());
+        assert!(!output.consumed, "G6: Enter is not an IME action while armed");
+        assert_eq!(output.commit_string, None);
+        assert_eq!(preedit_text(&output), "あ", "the preedit is untouched");
+    }
+
+    #[test]
+    fn pure_kanchoku_key_repeat_does_not_repeat_the_stroke() {
+        let mut engine = create_pure_kanchoku_engine();
+        arm(&mut engine);
+
+        press(&mut engine, 'k');
+        let repeat = press(&mut engine, 'k');
+        assert!(repeat.consumed);
+        assert_eq!(preedit_text(&repeat), "い", "the first stroke is not doubled");
+    }
+
+    #[test]
+    fn pure_kanchoku_requires_a_modifier_trigger() {
+        let mut engine = create_pure_kanchoku_engine();
+        engine.config["kanchoku_pure_trigger_key"] = serde_json::json!(["k"]);
+
+        // 'k' is not a modifier, so it configures nothing: input stays normal
+        let output = engine.process_key_event(Some('k'), "k", true, None);
+        assert!(!engine.pure_kanchoku_held, "a non-modifier cannot arm the mode");
+        assert!(output.consumed, "input stays normal");
+    }
+
+    #[test]
+    fn pure_kanchoku_super_trigger_is_ignored() {
+        let mut engine = create_pure_kanchoku_engine();
+        engine.config["kanchoku_pure_trigger_key"] = serde_json::json!(["Super"]);
+
+        let super_mods = Some(crate::grpc::proto::KeyModifiers {
+            shift: false,
+            ctrl: false,
+            alt: false,
+            super_: true,
+        });
+        engine.process_key_event(None, "Super_L", true, super_mods);
+
+        assert!(!engine.pure_kanchoku_held, "Super cannot be a trigger");
+    }
+
+    #[test]
+    fn pure_kanchoku_disabled_by_default() {
+        let mut engine = create_test_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine.config["kanchoku_pure_trigger_key"] = serde_json::json!([]);
+
+        let output = engine.process_key_event(None, "Alt_L", true, alt_mods());
+        assert!(!engine.pure_kanchoku_held);
+        assert!(!output.consumed, "the modifier keeps its ordinary pass-through");
     }
 }

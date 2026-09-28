@@ -29,6 +29,7 @@ pub struct SaveSettingsCommandResult {
     pub saved: bool,
     pub config_path: Option<String>,
     pub keybinding_conflicts: HashMap<String, Vec<String>>,
+    pub keybinding_warnings: Vec<String>,
     pub state: SettingsAppState,
 }
 
@@ -81,6 +82,7 @@ pub fn save_settings_state(
             .to_str()
             .map(|value| value.to_string()),
         keybinding_conflicts: save_result.keybinding_conflicts,
+        keybinding_warnings: save_result.keybinding_warnings,
         state: build_state().map_err(|err| err.to_string())?,
     })
 }

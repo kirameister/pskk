@@ -158,7 +158,11 @@ async function saveState() {
     }
 
     setStatus("Settings saved");
-    setMessage(result.config_path ? `Saved to ${result.config_path}` : "Saved");
+    const warnings = result.keybinding_warnings ?? [];
+    const savedMessage = result.config_path ? `Saved to ${result.config_path}` : "Saved";
+    setMessage(
+      warnings.length > 0 ? `${savedMessage}\n\n${warnings.join("\n")}` : savedMessage,
+    );
   } catch (error) {
     console.error(error);
     setStatus("Failed to save settings");
@@ -625,6 +629,19 @@ const modalAccept = document.getElementById("modal-accept");
 const capturedKeySpan = document.getElementById("captured-key");
 const capturedCodeSpan = document.getElementById("captured-code");
 const capturedModifiersSpan = document.getElementById("captured-modifiers");
+const capturedErrorSpan = document.getElementById("key-capture-error");
+
+// Actions whose binding must be a single bare modifier key.
+const MODIFIER_ONLY_ACTIONS = new Set(["kanchoku_pure_trigger_key"]);
+// Bare modifiers that can be delivered to the engine. Super is excluded: the
+// client hands Super-held events to the desktop before the engine sees them.
+const MODIFIER_ONLY_VALUES = new Set(["Alt", "Control", "Shift"]);
+
+/// The action configured in the row whose capture button was pressed.
+function currentCaptureAction() {
+  const row = currentKeyInput?.closest(".keybinding-row");
+  return row?.querySelector("select")?.value ?? "";
+}
 
 function openKeyCapture(inputElement) {
   currentKeyInput = inputElement;
@@ -632,6 +649,8 @@ function openKeyCapture(inputElement) {
   capturedKeySpan.textContent = "—";
   capturedCodeSpan.textContent = "—";
   capturedModifiersSpan.textContent = "—";
+  capturedErrorSpan.textContent = "";
+  capturedErrorSpan.style.display = "none";
   modal.style.display = "flex";
   modalAccept.disabled = true;
 }
@@ -688,8 +707,24 @@ function handleKeyCapture(event) {
   capturedKeySpan.textContent = key || "—";
   capturedCodeSpan.textContent = event.code || "—";
   capturedModifiersSpan.textContent = modifiers.length > 0 ? modifiers.join(", ") : "None";
-  
-  modalAccept.disabled = keyParts.length === 0;
+
+  // `kanchoku_pure_trigger_key` only takes a bare modifier: any other key would
+  // be swallowed by the IME as well, and Super never reaches the engine.
+  let rejected = false;
+  if (MODIFIER_ONLY_ACTIONS.has(currentCaptureAction())) {
+    rejected = !MODIFIER_ONLY_VALUES.has(capturedKeyValue);
+  }
+  if (rejected) {
+    capturedKeyValue = null;
+    capturedErrorSpan.textContent =
+      "Only a modifier key is allowed for this setting: hold and capture Alt, " +
+      "Control or Shift on its own. (Super is reserved for the desktop.)";
+    capturedErrorSpan.style.display = "block";
+  } else {
+    capturedErrorSpan.style.display = "none";
+  }
+
+  modalAccept.disabled = keyParts.length === 0 || rejected;
 }
 
 modalClose.addEventListener("click", closeKeyCapture);
