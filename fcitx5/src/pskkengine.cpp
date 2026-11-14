@@ -347,9 +347,14 @@ void PskkEngine::render(fcitx::InputContext *ic, const EngineOutput &output) {
                 std::make_unique<fcitx::DisplayOnlyCandidateWord>(
                     fcitx::Text(candidate.surface)));
         }
-        if (output.candidateCursorPos >= 0 &&
+        if (output.candidateCursorVisible &&
+            output.candidateCursorPos >= 0 &&
             output.candidateCursorPos < static_cast<int>(output.candidates.size())) {
             candidateList->setGlobalCursorIndex(output.candidateCursorPos);
+        } else {
+            // -1 means "no highlighted entry"; used for suggestions before
+            // the user presses Tab.
+            candidateList->setGlobalCursorIndex(-1);
         }
         panel.setCandidateList(std::move(candidateList));
     }

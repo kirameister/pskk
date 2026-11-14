@@ -65,6 +65,7 @@ struct EngineOutput {
     std::vector<Candidate> candidates;
     int candidateCursorPos = 0;
     bool showCandidates = false;
+    bool candidateCursorVisible = true;
     bool consumed = false;
     int currentMode = kAlphanumeric;
     int markerState = 0;

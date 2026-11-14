@@ -129,6 +129,11 @@ message EngineOutput {
   // Whether to show candidates window
   bool show_candidates = 6;
 
+  // Whether the candidate at candidate_cursor_pos should be highlighted.
+  // Suggestions are shown before Tab without a highlighted entry, so this is
+  // false until the user selects one.
+  bool candidate_cursor_visible = 14;
+
   // Whether the key event was consumed by the engine
   bool consumed = 7;
 

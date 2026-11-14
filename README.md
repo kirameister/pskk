@@ -92,6 +92,16 @@ In the IBus Preferences window:
   - Use `↑`/`↓` arrows to select candidates
   - Press `Enter` to confirm
   - Press `Escape` to cancel
+- **Predictive suggestions** (Normal mode):
+  - Prefix candidates appear automatically once the preedit reaches
+    `prediction_min_length` characters (default: 2)
+  - `Tab` selects the first candidate; `Tab` again cycles to the next one
+  - `↑`/`↓` move between candidates after one is selected
+  - `Enter` commits the selected candidate (and passes `Enter` to the app);
+    `Space` commits it and inserts a space
+  - `Backspace` or `Escape` returns to the typed reading
+  - Disable with `prediction_enabled: false`; tune `prediction_min_length` and
+    `prediction_rank_weights` in the configuration
 
 ### Fcitx 5 (Linux)
 

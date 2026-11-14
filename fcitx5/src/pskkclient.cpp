@@ -135,6 +135,7 @@ bool parseEngineOutput(const Json &json, EngineOutput *out) {
     result.preeditCursorPos = integer("preedit_cursor_pos", 0);
     result.candidateCursorPos = integer("candidate_cursor_pos", 0);
     result.showCandidates = boolean("show_candidates", false);
+    result.candidateCursorVisible = boolean("candidate_cursor_visible", true);
     result.consumed = boolean("consumed", false);
     result.currentMode = integer("current_mode", kAlphanumeric);
     result.markerState = integer("marker_state", 0);

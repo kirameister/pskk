@@ -28,7 +28,8 @@
 //! ```text
 //! {"commit_string":"","preedit_segments":[],"preedit_cursor_pos":0,
 //!  "candidates":[],"candidate_cursor_pos":0,"show_candidates":false,
-//!  "consumed":false,"current_mode":1,"marker_state":0,"engine_state":0,
+//!  "candidate_cursor_visible":false,"consumed":false,"current_mode":1,
+//!  "marker_state":0,"engine_state":0,
 //!  "status":0}
 //! ```
 //!

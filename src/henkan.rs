@@ -88,6 +88,9 @@ struct BunsetsuPrediction {
 pub struct HenkanProcessor {
     dictionary: Arc<Mutex<Dictionary>>,
     ready: Arc<Mutex<bool>>,
+    /// Sorted copy of the dictionary keys, used for prefix predictions.
+    /// Rebuilt whenever the dictionary is replaced.
+    prediction_keys: Arc<Mutex<Vec<String>>>,
     
     candidates: Vec<Candidate>,
     selected_index: usize,
@@ -119,6 +122,7 @@ impl HenkanProcessor {
         Self {
             dictionary: Arc::new(Mutex::new(HashMap::new())),
             ready: Arc::new(Mutex::new(false)),
+            prediction_keys: Arc::new(Mutex::new(Vec::new())),
             candidates: Vec::new(),
             selected_index: 0,
             current_yomi: String::new(),
@@ -156,15 +160,44 @@ impl HenkanProcessor {
     }
 
     pub fn with_dictionary(self, dictionary: Dictionary) -> Self {
-        *self.dictionary.lock().unwrap() = dictionary;
-        *self.ready.lock().unwrap() = true;
+        self.replace_dictionary(dictionary);
         self
     }
 
     /// Load the dictionary into an existing processor.
     pub fn load_dictionary(&self, dictionary: Dictionary) {
+        self.replace_dictionary(dictionary);
+    }
+
+    fn replace_dictionary(&self, dictionary: Dictionary) {
+        // Build the prefix index before taking any lock so a slow sort never
+        // blocks a lookup (and so lock order stays consistent).
+        let mut prediction_keys: Vec<String> = dictionary.keys().cloned().collect();
+        prediction_keys.sort_unstable();
+
         *self.dictionary.lock().unwrap() = dictionary;
+        *self.prediction_keys.lock().unwrap() = prediction_keys;
         *self.ready.lock().unwrap() = true;
+    }
+
+    /// Prefix prediction over the literal dictionary key space.
+    ///
+    /// Unlike `convert`, this is read-only: it never touches the conversion
+    /// state, so the suggestion window can be refreshed on every keystroke
+    /// while a conversion candidate list is inactive.
+    pub fn predict(
+        &self,
+        query: &str,
+        limit: usize,
+        weights: &crate::prediction::PredictionWeights,
+    ) -> Vec<Candidate> {
+        if query.is_empty() || !self.is_ready() {
+            return Vec::new();
+        }
+
+        let keys = self.prediction_keys.lock().unwrap();
+        let dictionary = self.dictionary.lock().unwrap();
+        crate::prediction::predict_prefix(&dictionary, &keys, query, limit, weights)
     }
 
     /// Install (or clear) the trained CRF model used for bunsetsu splitting.

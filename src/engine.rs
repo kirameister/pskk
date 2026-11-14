@@ -62,6 +62,11 @@ pub struct EngineOutput {
     pub candidates: Vec<Candidate>,
     pub candidate_cursor_pos: usize,
     pub show_candidates: bool,
+    /// Whether the candidate at `candidate_cursor_pos` should be drawn as
+    /// selected. Suggestions are visible before Tab but deliberately have no
+    /// highlighted entry until the user selects one.
+    #[serde(default)]
+    pub candidate_cursor_visible: bool,
     pub consumed: bool,
     pub current_mode: ProtoInputMode,
     pub marker_state: MarkerState,
@@ -83,6 +88,7 @@ impl EngineOutput {
             candidates: Vec::new(),
             candidate_cursor_pos: 0,
             show_candidates: false,
+            candidate_cursor_visible: false,
             consumed: false,
             current_mode: match mode {
                 InputMode::Alphanumeric => ProtoInputMode::Alphanumeric,
@@ -127,6 +133,16 @@ struct PureKanchokuSnapshot {
     preedit_pending: String,
 }
 
+/// Preedit buffers captured when a suggestion is selected, so Escape or
+/// Backspace can return to the yomi that produced the suggestion.
+#[derive(Debug, Clone, Default)]
+struct SuggestionSnapshot {
+    preedit_string: String,
+    preedit_hiragana: String,
+    preedit_ascii: String,
+    preedit_pending: String,
+}
+
 pub struct PSKKEngine {
     mode: InputMode,
     
@@ -159,6 +175,18 @@ pub struct PSKKEngine {
     
     engine_state: EngineState,
     conversion_yomi: String,
+
+    /// True while the user has promoted a suggestion with Tab. The visible
+    /// preedit then holds the candidate surface; `suggestion_snapshot` keeps
+    /// the original yomi for Escape/Backspace.
+    suggestion_selected: bool,
+    suggestion_candidates: Vec<Candidate>,
+    suggestion_cursor: usize,
+    suggestion_query: String,
+    suggestion_snapshot: Option<SuggestionSnapshot>,
+    prediction_enabled: bool,
+    prediction_min_length: usize,
+    prediction_weights: crate::prediction::PredictionWeights,
     
     // Full configuration
     config: serde_json::Value,
@@ -338,6 +366,17 @@ impl PSKKEngine {
         henkan_processor.load_passthrough_dictionary(passthrough_dict, passthrough_discount);
         henkan_processor.set_bunsetsu_n_best(bunsetsu_n_best_from_config(&config));
 
+        let prediction_enabled = config
+            .get("prediction_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let prediction_min_length = config
+            .get("prediction_min_length")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(2)
+            .max(1) as usize;
+        let prediction_weights = crate::prediction::PredictionWeights::from_config(&config);
+
         Ok(Self {
             mode: InputMode::Alphanumeric,
             simul_processor,
@@ -361,6 +400,14 @@ impl PSKKEngine {
             pure_kanchoku_consumed_keys: std::collections::HashSet::new(),
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
+            suggestion_selected: false,
+            suggestion_candidates: Vec::new(),
+            suggestion_cursor: 0,
+            suggestion_query: String::new(),
+            suggestion_snapshot: None,
+            prediction_enabled,
+            prediction_min_length,
+            prediction_weights,
             dictionary_reload_requested: false,
         })
     }
@@ -402,9 +449,36 @@ impl PSKKEngine {
         let bunsetsu_n_best = bunsetsu_n_best_from_config(&self.config);
         self.henkan_processor.set_bunsetsu_n_best(bunsetsu_n_best);
 
+        self.apply_prediction_config();
+
         info!("Config reloaded.");
 
         Ok(())
+    }
+
+    fn apply_prediction_config(&mut self) {
+        self.prediction_enabled = self
+            .config
+            .get("prediction_enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        self.prediction_min_length = self
+            .config
+            .get("prediction_min_length")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(2)
+            .max(1) as usize;
+        self.prediction_weights = crate::prediction::PredictionWeights::from_config(&self.config);
+
+        // A dictionary reload or a settings change invalidates the current
+        // suggestion list. Keep an in-flight selection usable, but refresh the
+        // list from the restored yomi.
+        if self.suggestion_selected {
+            self.restore_suggestion_yomi();
+        }
+        self.suggestion_candidates.clear();
+        self.suggestion_query.clear();
+        self.suggestion_cursor = 0;
     }
 
     pub fn set_mode(&mut self, mode: ProtoInputMode) -> EngineOutput {
@@ -464,7 +538,7 @@ impl PSKKEngine {
     }
 
     /// Build an EngineOutput that tells the client the henkan dictionary is still loading.
-    fn henkan_unavailable_output(&self) -> EngineOutput {
+    fn henkan_unavailable_output(&mut self) -> EngineOutput {
         let mut output = self.build_preedit_output();
         output.consumed = true;
         output.status = ProtoResponseStatus::HenkanUnavailable;
@@ -994,6 +1068,9 @@ impl PSKKEngine {
             // Handle arrow keys: in Converting mode they navigate, otherwise commit + passthrough
             match key_name {
                 "Down" | "ArrowDown" => {
+                    if self.suggestion_selected {
+                        return self.move_suggestion(1);
+                    }
                     if self.engine_state == EngineState::Converting {
                         return self.handle_down_arrow();
                     } else if !self.preedit_string.is_empty() {
@@ -1006,6 +1083,9 @@ impl PSKKEngine {
                     }
                 }
                 "Up" | "ArrowUp" => {
+                    if self.suggestion_selected {
+                        return self.move_suggestion(-1);
+                    }
                     if self.engine_state == EngineState::Converting {
                         return self.handle_up_arrow();
                     } else if !self.preedit_string.is_empty() {
@@ -1038,6 +1118,9 @@ impl PSKKEngine {
                         return output;
                     }
                 }
+                "Tab" if !has_shift && self.engine_state == EngineState::Normal => {
+                    return self.handle_tab_key();
+                }
                 "Return" | "KP_Enter" | "Enter" => return self.handle_enter(),
                 "Escape" => return self.handle_escape(),
                 "BackSpace" | "Backspace" => return self.handle_backspace(),
@@ -1063,6 +1146,19 @@ impl PSKKEngine {
             // Release of the fixed bunsetsu marker; see handle_space_press.
             if key_name == "space" || key_name == "Space" {
                 return self.handle_space_release();
+            }
+
+            // If Tab was consumed to select/cycle a suggestion, swallow the
+            // matching release too; otherwise the application sees a Tab
+            // release for a press it never received.
+            if key_name == "Tab"
+                && !has_shift
+                && self.engine_state == EngineState::Normal
+                && (self.suggestion_selected || !self.suggestion_candidates.is_empty())
+            {
+                let mut output = self.build_current_output_passthrough();
+                output.consumed = true;
+                return output;
             }
             
             // For arrow keys in conversion mode, return conversion output on release
@@ -1142,6 +1238,10 @@ impl PSKKEngine {
     }
 
     fn handle_escape(&mut self) -> EngineOutput {
+        if self.suggestion_selected {
+            return self.cancel_suggestion_selection();
+        }
+
         if self.engine_state == EngineState::Converting {
             return self.cancel_conversion();
         }
@@ -1155,6 +1255,10 @@ impl PSKKEngine {
     }
 
     fn handle_backspace(&mut self) -> EngineOutput {
+        if self.suggestion_selected {
+            return self.cancel_suggestion_selection();
+        }
+
         if self.engine_state == EngineState::Converting {
             return self.cancel_conversion();
         }
@@ -1202,6 +1306,11 @@ impl PSKKEngine {
             if let Some(keys) = conversion_keys.get("to_katakana").and_then(|v| v.as_array()) {
                 if self.matches_key_binding(&event, keys) {
                     debug!("Matched to_katakana");
+                    // A display conversion operates on the yomi, not on the
+                    // selected surface: return to the typed reading first.
+                    if self.suggestion_selected {
+                        self.restore_suggestion_yomi();
+                    }
                     return Some(self.convert_to_katakana());
                 }
             }
@@ -1210,6 +1319,11 @@ impl PSKKEngine {
             if let Some(keys) = conversion_keys.get("to_hiragana").and_then(|v| v.as_array()) {
                 if self.matches_key_binding(&event, keys) {
                     debug!("Matched to_hiragana");
+                    // A display conversion operates on the yomi, not on the
+                    // selected surface: return to the typed reading first.
+                    if self.suggestion_selected {
+                        self.restore_suggestion_yomi();
+                    }
                     return Some(self.convert_to_hiragana());
                 }
             }
@@ -1218,6 +1332,11 @@ impl PSKKEngine {
             if let Some(keys) = conversion_keys.get("to_ascii").and_then(|v| v.as_array()) {
                 if self.matches_key_binding(&event, keys) {
                     debug!("Matched to_ascii");
+                    // A display conversion operates on the yomi, not on the
+                    // selected surface: return to the typed reading first.
+                    if self.suggestion_selected {
+                        self.restore_suggestion_yomi();
+                    }
                     return Some(self.convert_to_ascii());
                 }
             }
@@ -1226,6 +1345,11 @@ impl PSKKEngine {
             if let Some(keys) = conversion_keys.get("to_zenkaku").and_then(|v| v.as_array()) {
                 if self.matches_key_binding(&event, keys) {
                     debug!("Matched to_zenkaku");
+                    // A display conversion operates on the yomi, not on the
+                    // selected surface: return to the typed reading first.
+                    if self.suggestion_selected {
+                        self.restore_suggestion_yomi();
+                    }
                     return Some(self.convert_to_zenkaku());
                 }
             }
@@ -1402,7 +1526,9 @@ impl PSKKEngine {
                     return output;
                 }
                 
-                // If there's existing preedit in normal mode, commit it first
+                // If there's existing preedit in normal mode, commit it first.
+                // A tap (release without an intervening key) then emits a
+                // literal space in handle_space_release.
                 if !self.preedit_string.is_empty() {
                     debug!("Space pressed with existing preedit '{}', committing it", self.preedit_string);
                     let commit = self.preedit_string.clone();
@@ -1484,7 +1610,10 @@ impl PSKKEngine {
                     self.marker_keys_held.clear();
                     self.trigger_conversion()
                 } else {
-                    // Normal mode: space tap commits preedit (no space character output)
+                    // Normal mode: the press already committed the preedit and
+                    // cleared it, so this branch emits the tap's literal space.
+                    // This is intended: Space commits the preedit and then
+                    // inserts a separator space.
                     let commit = self.preedit_string.clone();
                     self.reset_preedit();
                     self.marker_state = MarkerState::Idle;
@@ -1684,6 +1813,30 @@ impl PSKKEngine {
     }
 
     fn handle_character_input(&mut self, c: char, _has_shift: bool) -> EngineOutput {
+        // A selected suggestion is a committed candidate: the new character
+        // ends that preview and starts a fresh preedit, exactly like typing
+        // while converting (but without entering Bunsetsu conversion).
+        if self.suggestion_selected {
+            let commit = self.preedit_string.clone();
+            self.reset_preedit();
+            self.preedit_ascii.push(c);
+
+            let (output, pending) =
+                self.simul_processor.get_layout_output("", &c.to_string(), true);
+            if let Some(ref out) = output {
+                if !out.is_empty() {
+                    self.preedit_hiragana.push_str(out);
+                }
+            }
+            self.preedit_pending = pending.unwrap_or_default();
+            self.preedit_string = format!("{}{}", self.preedit_hiragana, self.preedit_pending);
+
+            let mut result = self.build_preedit_output();
+            result.commit_string = Some(commit);
+            result.consumed = true;
+            return result;
+        }
+
         // `preedit_ascii` records the raw key characters that make up the
         // preedit, which is what `to_ascii`/`to_zenkaku` render. It has to be
         // appended here, once per key press: a key press only flushes the
@@ -2068,6 +2221,11 @@ impl PSKKEngine {
         // Use preedit_string which includes both hiragana and pending
         self.conversion_yomi = self.preedit_string.clone();
         self.engine_state = EngineState::Converting;
+        self.suggestion_selected = false;
+        self.suggestion_snapshot = None;
+        self.suggestion_candidates.clear();
+        self.suggestion_query.clear();
+        self.suggestion_cursor = 0;
         
         debug!("Triggering conversion for yomi: '{}'", self.conversion_yomi);
         let candidates = self.henkan_processor.convert(&self.conversion_yomi).to_vec();
@@ -2077,6 +2235,7 @@ impl PSKKEngine {
         let mut output = EngineOutput::empty(self.mode);
         output.consumed = true;
         output.show_candidates = true;
+        output.candidate_cursor_visible = true;
         output.candidates = candidates.clone();
         output.candidate_cursor_pos = 0;
         
@@ -2193,15 +2352,153 @@ impl PSKKEngine {
         self.engine_state
     }
 
-    fn build_preedit_output(&self) -> EngineOutput {
+    /// Whether the current preedit should drive a suggestion lookup.
+    ///
+    /// Suggestions are currently a Normal-mode feature; Bunsetsu and
+    /// ForcedPreedit are intentionally excluded until the state machine is
+    /// extended. The marker states are excluded because a space-marker or
+    /// kanchoku sequence is not normal typing.
+    fn should_show_suggestions(&self) -> bool {
+        self.prediction_enabled
+            && self.engine_state == EngineState::Normal
+            && self.marker_state == MarkerState::Idle
+            && !self.pure_kanchoku_held
+            && !self.suggestion_selected
+            && self.preedit_string.chars().count() >= self.prediction_min_length.max(1)
+    }
+
+    fn capture_suggestion_snapshot(&self) -> SuggestionSnapshot {
+        SuggestionSnapshot {
+            preedit_string: self.preedit_string.clone(),
+            preedit_hiragana: self.preedit_hiragana.clone(),
+            preedit_ascii: self.preedit_ascii.clone(),
+            preedit_pending: self.preedit_pending.clone(),
+        }
+    }
+
+    /// Promote `index` to the selected suggestion. The first call captures the
+    /// yomi; later calls (Tab/arrow cycling) only change the visible surface.
+    fn select_suggestion(&mut self, index: usize) -> EngineOutput {
+        if self.suggestion_candidates.is_empty() {
+            return self.build_preedit_output();
+        }
+        let index = index.min(self.suggestion_candidates.len() - 1);
+        if !self.suggestion_selected {
+            self.suggestion_snapshot = Some(self.capture_suggestion_snapshot());
+            self.suggestion_selected = true;
+        }
+        self.suggestion_cursor = index;
+        let surface = self.suggestion_candidates[index].surface.clone();
+        self.preedit_string = surface.clone();
+        self.preedit_hiragana = surface;
+        self.preedit_pending.clear();
+        self.build_preedit_output()
+    }
+
+    fn move_suggestion(&mut self, delta: isize) -> EngineOutput {
+        let len = self.suggestion_candidates.len();
+        if len == 0 {
+            return self.build_preedit_output();
+        }
+        let index = (self.suggestion_cursor as isize + delta).rem_euclid(len as isize) as usize;
+        self.select_suggestion(index)
+    }
+
+    /// Put the original yomi back and forget the selection, without building
+    /// an output. Used by Escape, Backspace, and display-conversion keys.
+    fn restore_suggestion_yomi(&mut self) {
+        if let Some(snapshot) = self.suggestion_snapshot.take() {
+            self.preedit_string = snapshot.preedit_string;
+            self.preedit_hiragana = snapshot.preedit_hiragana;
+            self.preedit_ascii = snapshot.preedit_ascii;
+            self.preedit_pending = snapshot.preedit_pending;
+        }
+        self.suggestion_selected = false;
+        self.suggestion_cursor = 0;
+        self.suggestion_candidates.clear();
+        self.suggestion_query.clear();
+    }
+
+    fn cancel_suggestion_selection(&mut self) -> EngineOutput {
+        self.restore_suggestion_yomi();
+        self.build_preedit_output()
+    }
+
+    /// `Tab` promotes a suggestion (or cycles to the next one once selected).
+    /// It only acts when a suggestion list exists; otherwise it is passed to
+    /// the application.
+    fn handle_tab_key(&mut self) -> EngineOutput {
+        if self.suggestion_selected {
+            if self.suggestion_candidates.is_empty() {
+                self.restore_suggestion_yomi();
+                return self.build_preedit_output();
+            }
+            return self.move_suggestion(1);
+        }
+
+        if !self.should_show_suggestions() {
+            // Not eligible (disabled, too short, or not Normal): clear any
+            // stale cache and let the application see Tab.
+            let mut output = self.build_preedit_output();
+            output.consumed = false;
+            return output;
+        }
+
+        if self.suggestion_query != self.preedit_string || self.suggestion_candidates.is_empty() {
+            // Make sure the list reflects the current preedit.
+            let _ = self.build_preedit_output();
+        }
+
+        if !self.suggestion_candidates.is_empty() {
+            return self.select_suggestion(0);
+        }
+
+        let mut output = self.build_preedit_output();
+        output.consumed = false;
+        output
+    }
+
+    fn build_preedit_output(&mut self) -> EngineOutput {
         let mut output = EngineOutput::empty(self.mode);
         output.consumed = true;
         output.preedit_segments = self.build_preedit_segments();
         output.preedit_cursor_pos = self.preedit_string.chars().count();
         output.marker_state = self.marker_state;
         output.engine_state = self.get_engine_state();
-        debug!("Built preedit output: segments.len()={}, preedit_string='{}', cursor_pos={}",
-                  output.preedit_segments.len(), self.preedit_string, output.preedit_cursor_pos);
+
+        if self.suggestion_selected && !self.suggestion_candidates.is_empty() {
+            let cursor = self.suggestion_cursor.min(self.suggestion_candidates.len() - 1);
+            self.suggestion_cursor = cursor;
+            output.candidates = self.suggestion_candidates.clone();
+            output.show_candidates = true;
+            output.candidate_cursor_pos = cursor;
+            output.candidate_cursor_visible = true;
+        } else if self.should_show_suggestions() {
+            let query = self.preedit_string.clone();
+            let candidates = self.henkan_processor.predict(
+                &query,
+                crate::prediction::DEFAULT_LIMIT,
+                &self.prediction_weights,
+            );
+            self.suggestion_query = query;
+            self.suggestion_candidates = candidates;
+            self.suggestion_cursor = 0;
+
+            if !self.suggestion_candidates.is_empty() {
+                output.candidates = self.suggestion_candidates.clone();
+                output.show_candidates = true;
+                output.candidate_cursor_pos = 0;
+                output.candidate_cursor_visible = false;
+            }
+        } else {
+            self.suggestion_candidates.clear();
+            self.suggestion_query.clear();
+            self.suggestion_cursor = 0;
+        }
+
+        debug!("Built preedit output: segments.len()={}, preedit_string='{}', cursor_pos={}, suggestions={}",
+                  output.preedit_segments.len(), self.preedit_string, output.preedit_cursor_pos,
+                  output.candidates.len());
         output
     }
 
@@ -2218,6 +2515,7 @@ impl PSKKEngine {
         // Preserve conversion state if active
         if self.engine_state == EngineState::Converting {
             output.show_candidates = true;
+            output.candidate_cursor_visible = true;
             output.candidates = self.henkan_processor.get_candidates().to_vec();
             
             if let Some(selected) = self.henkan_processor.get_selected_candidate() {
@@ -2226,6 +2524,23 @@ impl PSKKEngine {
                     .position(|c| c.surface == selected.surface)
                     .unwrap_or(0);
             }
+        } else if self.suggestion_selected && !self.suggestion_candidates.is_empty() {
+            // Modifier keys and Shift+Tab must not make the suggestion window
+            // (or its selected entry) disappear.
+            output.show_candidates = true;
+            output.candidates = self.suggestion_candidates.clone();
+            output.candidate_cursor_pos = self
+                .suggestion_cursor
+                .min(self.suggestion_candidates.len() - 1);
+            output.candidate_cursor_visible = true;
+        } else if self.should_show_suggestions()
+            && self.suggestion_query == self.preedit_string
+            && !self.suggestion_candidates.is_empty()
+        {
+            output.show_candidates = true;
+            output.candidates = self.suggestion_candidates.clone();
+            output.candidate_cursor_pos = 0;
+            output.candidate_cursor_visible = false;
         }
         
         output.marker_state = self.marker_state;
@@ -2246,6 +2561,7 @@ impl PSKKEngine {
         let mut output = EngineOutput::empty(self.mode);
         output.consumed = true;
         output.show_candidates = true;
+        output.candidate_cursor_visible = true;
         output.candidates = self.henkan_processor.get_candidates().to_vec();
         output.preedit_segments = self.build_preedit_segments();
 
@@ -2293,6 +2609,11 @@ impl PSKKEngine {
         self.preedit_hiragana.clear();
         self.preedit_ascii.clear();
         self.preedit_pending.clear();
+        self.suggestion_selected = false;
+        self.suggestion_candidates.clear();
+        self.suggestion_cursor = 0;
+        self.suggestion_query.clear();
+        self.suggestion_snapshot = None;
     }
 
     pub fn reset_state(&mut self) {
@@ -2496,8 +2817,50 @@ mod tests {
             pure_kanchoku_consumed_keys: std::collections::HashSet::new(),
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
+            suggestion_selected: false,
+            suggestion_candidates: Vec::new(),
+            suggestion_cursor: 0,
+            suggestion_query: String::new(),
+            suggestion_snapshot: None,
+            prediction_enabled: true,
+            prediction_min_length: 2,
+            prediction_weights: crate::prediction::PredictionWeights::default(),
             dictionary_reload_requested: false,
         }
+    }
+
+    fn add_prediction_entries(
+        dict: &mut HashMap<String, HashMap<String, i32>>,
+        reading: &str,
+        entries: &[(&str, i32)],
+    ) {
+        let mut map = HashMap::new();
+        for (surface, count) in entries {
+            map.insert((*surface).to_string(), *count);
+        }
+        dict.insert(reading.to_string(), map);
+    }
+
+    /// Dictionary with several exact and prefix matches, including entries in
+    /// katakana/ASCII/kanji key spaces.
+    fn create_prediction_engine() -> PSKKEngine {
+        let engine = create_test_engine();
+        let mut dict: HashMap<String, HashMap<String, i32>> = HashMap::new();
+        add_prediction_entries(&mut dict, "あい", &[("愛", 100), ("相", 50), ("合い", 10)]);
+        add_prediction_entries(&mut dict, "あいさつ", &[("挨拶", 80)]);
+        add_prediction_entries(&mut dict, "あいこく", &[("愛国", 60)]);
+        add_prediction_entries(&mut dict, "あ", &[("亜", 1)]);
+        add_prediction_entries(&mut dict, "a", &[("α", 1)]);
+        add_prediction_entries(&mut dict, "aibo", &[("アイボ", 1)]);
+        add_prediction_entries(&mut dict, "愛", &[("愛子", 1)]);
+        engine.henkan_processor.load_dictionary(dict);
+        engine
+    }
+
+    fn type_ai(engine: &mut PSKKEngine) -> EngineOutput {
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine.process_key_event(Some('a'), "a", true, None);
+        engine.process_key_event(Some('i'), "i", true, None)
     }
 
     /// Engine with a layout where d+o / o+d form the chord み, and a kanchoku
@@ -2551,6 +2914,14 @@ mod tests {
             pure_kanchoku_consumed_keys: std::collections::HashSet::new(),
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
+            suggestion_selected: false,
+            suggestion_candidates: Vec::new(),
+            suggestion_cursor: 0,
+            suggestion_query: String::new(),
+            suggestion_snapshot: None,
+            prediction_enabled: true,
+            prediction_min_length: 2,
+            prediction_weights: crate::prediction::PredictionWeights::default(),
             dictionary_reload_requested: false,
         }
     }
@@ -2707,6 +3078,14 @@ mod tests {
             pure_kanchoku_consumed_keys: std::collections::HashSet::new(),
             engine_state: EngineState::Normal,
             conversion_yomi: String::new(),
+            suggestion_selected: false,
+            suggestion_candidates: Vec::new(),
+            suggestion_cursor: 0,
+            suggestion_query: String::new(),
+            suggestion_snapshot: None,
+            prediction_enabled: true,
+            prediction_min_length: 2,
+            prediction_weights: crate::prediction::PredictionWeights::default(),
             dictionary_reload_requested: false,
         }
     }
@@ -3254,18 +3633,20 @@ mod tests {
     }
 
     #[test]
-    fn space_triggers_conversion() {
+    fn space_tap_commits_preedit_then_emits_space() {
         let mut engine = create_test_engine();
         engine.set_mode(ProtoInputMode::Hiragana);
 
         engine.process_key_event(Some('a'), "a", true, None);
         engine.process_key_event(Some('i'), "i", true, None);
 
-        let output = engine.process_key_event(Some(' '), "space", true, None);
-        assert!(output.consumed);
-        assert!(output.show_candidates);
-        assert!(!output.candidates.is_empty());
-        assert_eq!(output.candidates[0].surface, "愛");
+        let press = engine.process_key_event(Some(' '), "space", true, None);
+        assert!(press.consumed);
+        assert_eq!(press.commit_string, Some("あい".to_string()));
+
+        let release = engine.process_key_event(Some(' '), "space", false, None);
+        assert!(release.consumed);
+        assert_eq!(release.commit_string, Some(" ".to_string()));
     }
 
     #[test]
@@ -3275,7 +3656,7 @@ mod tests {
 
         engine.process_key_event(Some('a'), "a", true, None);
         engine.process_key_event(Some('i'), "i", true, None);
-        engine.process_key_event(Some(' '), "space", true, None);
+        let _ = engine.trigger_conversion();
 
         assert_eq!(engine.engine_state, EngineState::Converting);
 
@@ -3293,7 +3674,7 @@ mod tests {
 
         engine.process_key_event(Some('a'), "a", true, None);
         engine.process_key_event(Some('i'), "i", true, None);
-        engine.process_key_event(Some(' '), "space", true, None);
+        let _ = engine.trigger_conversion();
 
         assert_eq!(engine.engine_state, EngineState::Converting);
 
@@ -3617,5 +3998,289 @@ mod tests {
         let output = engine.process_key_event(None, "Alt_L", true, alt_mods());
         assert!(!engine.pure_kanchoku_held);
         assert!(!output.consumed, "the modifier keeps its ordinary pass-through");
+    }
+
+    // ------------------------------------------------------------------
+    // Prefix prediction / suggestion state
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn suggestions_are_shown_while_typing() {
+        let mut engine = create_prediction_engine();
+        let output = type_ai(&mut engine);
+
+        assert_eq!(preedit_text(&output), "あい");
+        assert!(output.show_candidates);
+        assert!(!output.candidate_cursor_visible, "nothing is selected before Tab");
+        assert_eq!(output.candidate_cursor_pos, 0);
+        let surfaces: Vec<&str> = output.candidates.iter().map(|c| c.surface.as_str()).collect();
+        assert_eq!(&surfaces[..3], ["愛", "相", "合い"]);
+        assert!(surfaces.contains(&"挨拶"));
+    }
+
+    #[test]
+    fn tab_selects_then_cycles_suggestions() {
+        let mut engine = create_prediction_engine();
+        let _ = type_ai(&mut engine);
+
+        let output = engine.process_key_event(None, "Tab", true, None);
+        assert!(output.consumed);
+        assert_eq!(preedit_text(&output), "愛");
+        assert!(output.show_candidates);
+        assert!(output.candidate_cursor_visible);
+        assert_eq!(output.candidate_cursor_pos, 0);
+
+        let output = engine.process_key_event(None, "Tab", true, None);
+        assert_eq!(preedit_text(&output), "相");
+        assert_eq!(output.candidate_cursor_pos, 1);
+
+        let release = engine.process_key_event(None, "Tab", false, None);
+        assert!(release.consumed, "a handled Tab press must swallow its release");
+        assert_eq!(preedit_text(&release), "相");
+
+        let output = engine.process_key_event(None, "Up", true, None);
+        assert_eq!(preedit_text(&output), "愛");
+        assert_eq!(output.candidate_cursor_pos, 0);
+    }
+
+    #[test]
+    fn tab_wraps_after_the_last_suggestion() {
+        let mut engine = create_prediction_engine();
+        let _ = type_ai(&mut engine);
+        let total = engine.suggestion_candidates.len();
+        assert!(total >= 2);
+
+        engine.process_key_event(None, "Tab", true, None);
+        for _ in 0..total {
+            engine.process_key_event(None, "Tab", true, None);
+        }
+        assert_eq!(engine.suggestion_cursor, 0, "Tab wraps to the first candidate");
+        assert_eq!(engine.preedit_string, engine.suggestion_candidates[0].surface);
+    }
+
+    #[test]
+    fn enter_without_selection_commits_yomi_and_passes_enter() {
+        let mut engine = create_prediction_engine();
+        let _ = type_ai(&mut engine);
+
+        let output = engine.process_key_event(None, "Return", true, None);
+        assert_eq!(output.commit_string, Some("あい".to_string()));
+        assert!(!output.consumed, "Normal mode lets Enter reach the application");
+        assert!(engine.preedit_string.is_empty());
+        assert!(engine.suggestion_candidates.is_empty());
+    }
+
+    #[test]
+    fn enter_with_selection_commits_candidate_and_passes_enter() {
+        let mut engine = create_prediction_engine();
+        let _ = type_ai(&mut engine);
+        engine.process_key_event(None, "Tab", true, None);
+
+        let output = engine.process_key_event(None, "Return", true, None);
+        assert_eq!(output.commit_string, Some("愛".to_string()));
+        assert!(!output.consumed);
+        assert!(engine.preedit_string.is_empty());
+        assert!(!engine.suggestion_selected);
+    }
+
+    #[test]
+    fn space_with_selection_commits_candidate_then_space() {
+        let mut engine = create_prediction_engine();
+        let _ = type_ai(&mut engine);
+        engine.process_key_event(None, "Tab", true, None);
+
+        let press = engine.process_key_event(None, "space", true, None);
+        assert_eq!(press.commit_string, Some("愛".to_string()));
+        let release = engine.process_key_event(None, "space", false, None);
+        assert_eq!(release.commit_string, Some(" ".to_string()));
+        assert!(engine.preedit_string.is_empty());
+    }
+
+    #[test]
+    fn space_with_selection_commits_candidate_and_starts_bunsetsu_flow() {
+        let mut engine = create_prediction_engine();
+        let _ = type_ai(&mut engine);
+        // The first 'a' press from typing is still held; release it so the
+        // marker stroke is not suppressed as an OS key-repeat.
+        engine.process_key_event(Some('a'), "a", false, None);
+        engine.process_key_event(None, "Tab", true, None);
+
+        let press = engine.process_key_event(None, "space", true, None);
+        assert_eq!(press.commit_string, Some("愛".to_string()));
+
+        let first_key = engine.process_key_event(Some('a'), "a", true, None);
+        assert_eq!(preedit_text(&first_key), "あ");
+        engine.process_key_event(Some('a'), "a", false, None);
+
+        let release = engine.process_key_event(None, "space", false, None);
+        assert_eq!(release.engine_state, EngineState::Bunsetsu);
+        assert_eq!(preedit_text(&release), "あ");
+    }
+
+    #[test]
+    fn backspace_deselects_before_deleting() {
+        let mut engine = create_prediction_engine();
+        let _ = type_ai(&mut engine);
+        engine.process_key_event(None, "Tab", true, None);
+
+        let output = engine.process_key_event(None, "BackSpace", true, None);
+        assert!(output.consumed);
+        assert_eq!(preedit_text(&output), "あい");
+        assert!(!engine.suggestion_selected);
+        assert!(output.show_candidates);
+        assert!(!output.candidate_cursor_visible);
+
+        let output = engine.process_key_event(None, "BackSpace", true, None);
+        assert_eq!(preedit_text(&output), "あ");
+        assert!(!output.show_candidates);
+    }
+
+    #[test]
+    fn escape_deselects_then_cancels_the_preedit() {
+        let mut engine = create_prediction_engine();
+        let _ = type_ai(&mut engine);
+        engine.process_key_event(None, "Tab", true, None);
+
+        let output = engine.process_key_event(None, "Escape", true, None);
+        assert!(output.consumed);
+        assert_eq!(preedit_text(&output), "あい");
+        assert!(output.show_candidates);
+        assert!(!output.candidate_cursor_visible);
+
+        let output = engine.process_key_event(None, "Escape", true, None);
+        assert!(output.consumed);
+        assert!(engine.preedit_string.is_empty());
+        assert!(!output.show_candidates);
+    }
+
+    #[test]
+    fn typing_with_selection_commits_candidate_and_starts_new_preedit() {
+        let mut engine = create_prediction_engine();
+        let _ = type_ai(&mut engine);
+        engine.process_key_event(None, "Tab", true, None);
+
+        // Release the earlier 'a' press first; otherwise the engine treats the
+        // second 'a' as OS key-repeat and suppresses it.
+        engine.process_key_event(Some('a'), "a", false, None);
+        let output = engine.process_key_event(Some('a'), "a", true, None);
+        assert!(output.consumed);
+        assert_eq!(output.commit_string, Some("愛".to_string()));
+        assert_eq!(preedit_text(&output), "あ");
+        assert!(!output.show_candidates, "one character is below the default minimum");
+        assert!(!engine.suggestion_selected);
+    }
+
+    #[test]
+    fn left_right_commit_selected_candidate_and_pass_the_arrow() {
+        let mut engine = create_prediction_engine();
+        let _ = type_ai(&mut engine);
+        engine.process_key_event(None, "Tab", true, None);
+
+        let output = engine.process_key_event(None, "Right", true, None);
+        assert_eq!(output.commit_string, Some("愛".to_string()));
+        assert!(!output.consumed);
+        assert!(engine.preedit_string.is_empty());
+    }
+
+    #[test]
+    fn up_down_before_selection_commit_yomi_and_pass() {
+        let mut engine = create_prediction_engine();
+        let _ = type_ai(&mut engine);
+
+        let output = engine.process_key_event(None, "Down", true, None);
+        assert_eq!(output.commit_string, Some("あい".to_string()));
+        assert!(!output.consumed);
+        assert!(engine.preedit_string.is_empty());
+    }
+
+    #[test]
+    fn shift_tab_passes_through_without_touching_the_selection() {
+        let mut engine = create_prediction_engine();
+        let _ = type_ai(&mut engine);
+        engine.process_key_event(None, "Tab", true, None);
+
+        let output = engine.process_key_event(None, "ISO_Left_Tab", true, None);
+        assert!(!output.consumed);
+        assert_eq!(preedit_text(&output), "愛");
+        assert!(output.show_candidates);
+        assert!(output.candidate_cursor_visible);
+        assert!(engine.suggestion_selected);
+
+        let enter = engine.process_key_event(None, "Return", true, None);
+        assert_eq!(enter.commit_string, Some("愛".to_string()));
+        assert!(!enter.consumed);
+    }
+
+    #[test]
+    fn tab_passes_through_when_no_suggestion_is_available() {
+        let mut engine = create_prediction_engine();
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine.process_key_event(Some('a'), "a", true, None);
+
+        let output = engine.process_key_event(None, "Tab", true, None);
+        assert!(!output.consumed);
+        assert_eq!(preedit_text(&output), "あ");
+        assert!(!output.show_candidates);
+    }
+
+    #[test]
+    fn prediction_min_length_is_respected() {
+        let mut engine = create_prediction_engine();
+        engine.prediction_min_length = 3;
+        engine.set_mode(ProtoInputMode::Hiragana);
+        engine.process_key_event(Some('a'), "a", true, None);
+        let output = engine.process_key_event(Some('i'), "i", true, None);
+        assert!(!output.show_candidates, "two characters are below a minimum of three");
+
+        engine.prediction_min_length = 2;
+        let output = engine.build_preedit_output();
+        assert!(output.show_candidates);
+    }
+
+    #[test]
+    fn prediction_can_be_disabled() {
+        let mut engine = create_prediction_engine();
+        engine.prediction_enabled = false;
+
+        let output = type_ai(&mut engine);
+        assert!(!output.show_candidates);
+        let tab = engine.process_key_event(None, "Tab", true, None);
+        assert!(!tab.consumed);
+    }
+
+    #[test]
+    fn conversion_candidates_still_show_the_cursor() {
+        let mut engine = create_prediction_engine();
+        let _ = type_ai(&mut engine);
+
+        let output = engine.trigger_conversion();
+        assert!(output.show_candidates);
+        assert!(output.candidate_cursor_visible);
+        assert_eq!(output.candidates[0].surface, "愛");
+    }
+
+    #[test]
+    fn display_conversion_restores_yomi_before_converting() {
+        let mut engine = create_prediction_engine();
+        engine.config["conversion_keys"] = serde_json::json!({
+            "to_katakana": ["Ctrl+k"],
+            "to_hiragana": ["Ctrl+j"],
+            "to_ascii": ["Ctrl+l"],
+            "to_zenkaku": ["Ctrl+Shift+L"],
+        });
+        let _ = type_ai(&mut engine);
+        engine.process_key_event(None, "Tab", true, None);
+
+        let ctrl = Some(ProtoKeyModifiers {
+            shift: false,
+            ctrl: true,
+            alt: false,
+            super_: false,
+        });
+        let output = engine.process_key_event(Some('k'), "k", true, ctrl);
+        assert_eq!(preedit_text(&output), "アイ");
+        assert!(!engine.suggestion_selected);
+        assert!(engine.suggestion_snapshot.is_none());
+        assert!(!output.show_candidates, "the dictionary has no katakana アイ key");
     }
 }

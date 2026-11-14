@@ -53,6 +53,7 @@ pub fn engine_output_to_proto(output: RustEngineOutput) -> EngineOutput {
             .collect(),
         candidate_cursor_pos: output.candidate_cursor_pos as u32,
         show_candidates: output.show_candidates,
+        candidate_cursor_visible: output.candidate_cursor_visible,
         consumed: output.consumed,
         current_mode: output.current_mode as i32,
         marker_state: marker_state as i32,
@@ -60,5 +61,30 @@ pub fn engine_output_to_proto(output: RustEngineOutput) -> EngineOutput {
         status,
         open_dictionary_editor: output.open_dictionary_editor,
         dictionary_editor_yomi: output.dictionary_editor_yomi,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::InputMode;
+    use crate::henkan::Candidate as RustCandidate;
+
+    #[test]
+    fn maps_candidate_cursor_visible_into_proto_and_json() {
+        let mut output = RustEngineOutput::empty(InputMode::Hiragana);
+        output.show_candidates = true;
+        output.candidates = vec![RustCandidate::new(
+            "愛".to_string(),
+            "あい".to_string(),
+            1,
+        )];
+        output.candidate_cursor_visible = true;
+
+        let proto = engine_output_to_proto(output);
+        assert!(proto.candidate_cursor_visible);
+
+        let json = serde_json::to_value(&proto).expect("proto output is serializable");
+        assert_eq!(json["candidate_cursor_visible"], true);
     }
 }

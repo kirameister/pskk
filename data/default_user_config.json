@@ -61,5 +61,21 @@
 
     "force_commit_key": ["Ctrl+o"],
     "force_commit_key_": "Key to commit preedit as-is without kanji conversion. If buffer is empty, passes key to application.",
-    "force_commit_key_ja": "漢字変換せずに現在のプリエディットをそのまま確定するキー。バッファが空の場合、キーはアプリケーションに渡されます。"
+    "force_commit_key_ja": "漢字変換せずに現在のプリエディットをそのまま確定するキー。バッファが空の場合、キーはアプリケーションに渡されます。",
+
+    "prediction_enabled": true,
+    "prediction_enabled_": "Show prefix prediction candidates while typing in Normal mode. The candidate window appears automatically; Tab selects a candidate.",
+    "prediction_enabled_ja": "通常モードでの入力中に、前方一致の予測候補を表示します。候補ウィンドウは自動的に表示され、Tab キーで候補を選択します。",
+
+    "prediction_min_length": 2,
+    "prediction_min_length_": "Minimum preedit length (in characters) before prediction candidates are shown.",
+    "prediction_min_length_ja": "予測候補を表示する最小のプリエディット長（文字数）。",
+
+    "prediction_rank_weights": {
+        "exact": 1000000.0,
+        "count": 1.0,
+        "key_length": 1.0
+    },
+    "prediction_rank_weights_": "Weights of the prediction ranking score: exact * (key == input) + count * count - key_length * (key length - input length).",
+    "prediction_rank_weights_ja": "予測候補のランキングスコアの重み: exact * (キー == 入力) + count * 出現数 - key_length * (キー長 - 入力長)。"
 }

@@ -21,6 +21,7 @@ interface EngineOutput {
   candidates: Candidate[];
   candidate_cursor_pos: number;
   show_candidates: boolean;
+  candidate_cursor_visible: boolean;
   consumed: boolean;
   current_mode: number; // 0 = ALPHANUMERIC, 1 = HIRAGANA
   marker_state: number; // 0 = IDLE, 1 = MARKER_HELD, 2 = FIRST_PRESSED, 3 = FIRST_RELEASED, 4 = KANCHOKU_SECOND_PRESSED
@@ -36,6 +37,7 @@ function App() {
   const [preeditSegments, setPreeditSegments] = useState<PreeditSegment[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [candidateCursor, setCandidateCursor] = useState(0);
+  const [candidateCursorVisible, setCandidateCursorVisible] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -111,6 +113,7 @@ function App() {
     setPreeditSegments(output.preedit_segments);
     setCandidates(output.candidates);
     setCandidateCursor(output.candidate_cursor_pos);
+    setCandidateCursorVisible(output.candidate_cursor_visible ?? false);
 
     // Sync mode from engine output (0 = ALPHANUMERIC, 1 = HIRAGANA)
     const newMode: InputMode = output.current_mode === 0 ? "A" : "あ";
@@ -584,7 +587,9 @@ function App() {
                     <div
                       key={actualIdx}
                       className={`candidate-row ${
-                        actualIdx === candidateCursor ? "selected" : ""
+                        candidateCursorVisible && actualIdx === candidateCursor
+                          ? "selected"
+                          : ""
                       }`}
                     >
                       {candidate.surface}

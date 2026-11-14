@@ -678,7 +678,9 @@ class PSKKEngine(IBus.Engine):
             lookup_table = IBus.LookupTable.new(
                 page_size=9,
                 cursor_pos=output.candidate_cursor_pos,
-                cursor_visible=True,
+                # Suggestions are visible before Tab but have no highlighted
+                # entry until the user selects one.
+                cursor_visible=getattr(output, "candidate_cursor_visible", True),
                 round=True
             )
             
