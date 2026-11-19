@@ -7,7 +7,7 @@ console.log('PSKK Dictionary Editor loaded');
 
 let allEntries = [];
 let filteredEntries = [];
-let selectedRows = new Set();
+let selectedEntries = new Set();
 let sortColumn = null;
 let sortDirection = 'asc';
 
@@ -255,24 +255,25 @@ function handleSort(column) {
 
 // Handle Delete
 async function handleDelete() {
-    if (selectedRows.size === 0) {
+    if (selectedEntries.size === 0) {
         alert('Please select entries to delete.');
         return;
     }
 
-    const count = selectedRows.size;
+    const count = selectedEntries.size;
     if (!confirm(`Delete ${count} selected entry(s)?`)) {
         return;
     }
 
-    // Remove selected entries
-    const toDelete = Array.from(selectedRows);
-    allEntries = allEntries.filter((_, index) => !toDelete.includes(index));
-    
+    // Remove the selected entry objects, not their row indexes: the visible
+    // table may be filtered or sorted, so an index into `filteredEntries` is
+    // not an index into `allEntries`.
+    allEntries = allEntries.filter(entry => !selectedEntries.has(entry));
+
     // Save to file
     await saveDictionaryToFile();
-    
-    selectedRows.clear();
+
+    selectedEntries.clear();
     handleSearch(); // Refilter
     renderTable();
     updateEntryCount();
@@ -280,7 +281,7 @@ async function handleDelete() {
 
 // Handle Refresh
 async function handleRefresh() {
-    selectedRows.clear();
+    selectedEntries.clear();
     await loadDictionaryFromFile();
     handleSearch(); // Reapply current search filter
     renderTable();
@@ -296,11 +297,10 @@ async function handleClose() {
 // Render Table
 function renderTable() {
     entriesTbody.innerHTML = '';
-    selectedRows.clear();
+    selectedEntries.clear();
 
-    filteredEntries.forEach((entry, index) => {
+    filteredEntries.forEach((entry) => {
         const row = document.createElement('tr');
-        row.dataset.index = index;
 
         // Reading cell
         const readingCell = document.createElement('td');
@@ -326,18 +326,19 @@ function renderTable() {
             
             if (e.ctrlKey || e.metaKey) {
                 // Multi-select
-                row.classList.toggle('selected');
-                if (row.classList.contains('selected')) {
-                    selectedRows.add(index);
+                if (selectedEntries.has(entry)) {
+                    selectedEntries.delete(entry);
+                    row.classList.remove('selected');
                 } else {
-                    selectedRows.delete(index);
+                    selectedEntries.add(entry);
+                    row.classList.add('selected');
                 }
             } else {
                 // Single select
                 document.querySelectorAll('tbody tr').forEach(r => r.classList.remove('selected'));
-                selectedRows.clear();
+                selectedEntries.clear();
                 row.classList.add('selected');
-                selectedRows.add(index);
+                selectedEntries.add(entry);
             }
         });
 
